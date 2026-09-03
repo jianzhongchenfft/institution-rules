@@ -3,38 +3,61 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>機構內規查詢系統</title>
+  <title>劉信子居家長照機構－內部管理系統</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div>
+  <section id="authScreen" class="auth-screen">
+    <div class="auth-card">
       <h1>桃園市私立劉信子居家長照機構</h1>
-      <p>內規查詢系統</p>
+      <h2>內部管理系統</h2>
+      <p>本系統僅供機構核准之工作人員使用。</p>
+      <button id="googleLoginBtn" class="google-button" type="button">使用 Google 帳號登入</button>
+      <p id="authMessage" class="auth-message"></p>
     </div>
-  </header>
+  </section>
 
-  <main class="layout">
-    <aside class="sidebar">
-      <input id="searchInput" type="search" placeholder="搜尋辦法、關鍵字…" />
-      <select id="categoryFilter">
-        <option value="">全部類別</option>
-      </select>
-      <div id="regulationList" class="regulation-list"></div>
-    </aside>
+  <section id="unauthorizedScreen" class="auth-screen hidden">
+    <div class="auth-card">
+      <h1>尚未取得使用權限</h1>
+      <p>此 Google 帳號尚未列入機構在職人員名單，請洽機構管理者。</p>
+      <p id="unauthorizedEmail" class="account-email"></p>
+      <button id="unauthorizedLogoutBtn" class="secondary-button" type="button">登出並更換帳號</button>
+    </div>
+  </section>
 
-    <section class="content">
-      <div id="emptyState" class="empty-state">
-        請從左側選擇一份內規。
+  <div id="appShell" class="hidden">
+    <header class="topbar">
+      <div>
+        <h1>桃園市私立劉信子居家長照機構</h1>
+        <p>內規查詢系統</p>
       </div>
-      <article id="regulationDetail" class="detail hidden"></article>
-    </section>
-  </main>
+      <div class="user-area">
+        <span id="userDisplay"></span>
+        <button id="logoutBtn" class="secondary-button" type="button">登出</button>
+      </div>
+    </header>
 
-  <footer>
-    <span id="footerVersion">內規資料載入中…</span>
-  </footer>
+    <main class="layout">
+      <aside class="sidebar">
+        <input id="searchInput" type="search" placeholder="搜尋辦法、關鍵字…" />
+        <select id="categoryFilter">
+          <option value="">全部類別</option>
+        </select>
+        <div id="regulationList" class="regulation-list"></div>
+      </aside>
+      <section class="content">
+        <div id="emptyState" class="empty-state">請從左側選擇一份內規。</div>
+        <article id="regulationDetail" class="detail hidden"></article>
+      </section>
+    </main>
 
+    <footer>
+      <span id="footerVersion">內規資料載入中…</span>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
