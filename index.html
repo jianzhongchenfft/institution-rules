@@ -28,33 +28,137 @@
 
   <div id="appShell" class="hidden">
     <header class="topbar">
-      <div>
+      <div class="brand">
         <h1>桃園市私立劉信子居家長照機構</h1>
-        <p>內規查詢系統</p>
+        <p>內部管理系統</p>
       </div>
-      <div class="user-area">
-        <span id="userDisplay"></span>
+
+      <nav class="top-actions">
+        <button id="readerNavBtn" class="nav-button active" type="button">查閱內規</button>
+        <button id="adminNavBtn" class="nav-button hidden" type="button">管理內規</button>
+        <span id="userDisplay" class="user-display"></span>
         <button id="logoutBtn" class="secondary-button" type="button">登出</button>
-      </div>
+      </nav>
     </header>
 
-    <main class="layout">
-      <aside class="sidebar">
-        <input id="searchInput" type="search" placeholder="搜尋辦法、關鍵字…" />
-        <select id="categoryFilter">
-          <option value="">全部類別</option>
-        </select>
-        <div id="regulationList" class="regulation-list"></div>
-      </aside>
-      <section class="content">
-        <div id="emptyState" class="empty-state">請從左側選擇一份內規。</div>
-        <article id="regulationDetail" class="detail hidden"></article>
-      </section>
-    </main>
+    <section id="readerView">
+      <main class="layout">
+        <aside class="sidebar">
+          <input id="searchInput" type="search" placeholder="搜尋辦法、關鍵字…" />
+          <select id="categoryFilter">
+            <option value="">全部類別</option>
+          </select>
+          <div id="regulationList" class="regulation-list"></div>
+        </aside>
 
-    <footer>
-      <span id="footerVersion">內規資料載入中…</span>
-    </footer>
+        <section class="content">
+          <div id="emptyState" class="empty-state">請從左側選擇一份內規。</div>
+          <article id="regulationDetail" class="detail hidden"></article>
+        </section>
+      </main>
+
+      <footer>
+        <span id="footerVersion">內規資料載入中…</span>
+      </footer>
+    </section>
+
+    <section id="adminView" class="hidden">
+      <div class="admin-shell">
+        <aside class="admin-sidebar">
+          <div class="admin-sidebar-header">
+            <div>
+              <h2>內規管理</h2>
+              <p>草稿只有管理人員看得到。</p>
+            </div>
+            <button id="newRegulationBtn" class="primary-button" type="button">＋ 新增內規</button>
+          </div>
+          <input id="adminSearchInput" type="search" placeholder="搜尋內規…" />
+          <div id="adminRegulationList" class="admin-regulation-list"></div>
+        </aside>
+
+        <main class="admin-content">
+          <section id="adminEmptyState" class="admin-empty-state">
+            <h2>請選擇一份內規</h2>
+            <p>你可以查看版本歷程、建立新版草稿，或新增一份內規。</p>
+          </section>
+
+          <section id="adminDetail" class="hidden">
+            <div class="admin-detail-head">
+              <div>
+                <h2 id="adminTitle"></h2>
+                <p id="adminCategory"></p>
+              </div>
+              <button id="createDraftBtn" class="primary-button" type="button">建立新版草稿</button>
+            </div>
+
+            <div id="draftNotice" class="notice hidden"></div>
+
+            <div class="admin-card">
+              <h3>版本紀錄</h3>
+              <div id="versionList" class="version-list"></div>
+            </div>
+          </section>
+
+          <section id="editorPanel" class="editor-panel hidden">
+            <div class="editor-head">
+              <div>
+                <h2 id="editorHeading">編輯草稿</h2>
+                <p>儲存草稿不會影響員工目前看到的正式版本。</p>
+              </div>
+              <button id="closeEditorBtn" class="secondary-button" type="button">關閉</button>
+            </div>
+
+            <form id="regulationForm">
+              <div class="form-grid">
+                <label>
+                  <span>內規名稱 *</span>
+                  <input id="formTitle" required />
+                </label>
+                <label>
+                  <span>類別 *</span>
+                  <input id="formCategory" required placeholder="例如：個案服務、服務管理" />
+                </label>
+                <label>
+                  <span>版本 *</span>
+                  <input id="formVersion" required placeholder="例如：1.1" />
+                </label>
+                <label>
+                  <span>生效日期 *</span>
+                  <input id="formEffectiveDate" type="date" required />
+                </label>
+              </div>
+
+              <label class="full-field">
+                <span>摘要</span>
+                <textarea id="formSummary" rows="3" placeholder="簡短說明本辦法的目的或範圍"></textarea>
+              </label>
+
+              <label class="full-field">
+                <span>本次修訂說明</span>
+                <textarea id="formRevisionNotes" rows="3" placeholder="例如：新增跌倒事件通報流程"></textarea>
+              </label>
+
+              <div class="sections-head">
+                <div>
+                  <h3>內規內容</h3>
+                  <p>每一段可設定一個標題及本文。</p>
+                </div>
+                <button id="addSectionBtn" class="secondary-button" type="button">＋ 新增段落</button>
+              </div>
+
+              <div id="sectionsEditor" class="sections-editor"></div>
+
+              <div id="editorMessage" class="editor-message"></div>
+
+              <div class="editor-actions">
+                <button id="saveDraftBtn" class="secondary-button" type="submit">儲存草稿</button>
+                <button id="publishBtn" class="primary-button" type="button">發布新版</button>
+              </div>
+            </form>
+          </section>
+        </main>
+      </div>
+    </section>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
