@@ -3,19 +3,16 @@
   regulationsListStyle.id = 'v51-regulations-list-style';
   regulationsListStyle.textContent = `
     .reg-list-shell{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
-    .reg-list-head{min-width:720px;display:grid;grid-template-columns:minmax(320px,1fr) 100px 150px 96px;gap:18px;align-items:center;padding:10px 18px;background:#f8faf9;border-bottom:1px solid var(--line);font-size:11px;font-weight:900;color:#667085}
+    .reg-list-head,
+    .reg-card.reg-row{min-width:720px;display:grid!important;grid-template-columns:minmax(320px,1fr) 110px 160px 100px;column-gap:18px;align-items:center;padding-left:18px!important;padding-right:18px!important}
+    .reg-list-head{padding-top:10px!important;padding-bottom:10px!important;background:#f8faf9;border-bottom:1px solid var(--line);font-size:11px;font-weight:900;color:#667085}
     .reg-grid.reg-list{min-width:720px;display:block!important;gap:0!important}
-    .reg-card.reg-row{min-height:0!important;padding:0 18px!important;border:0!important;border-bottom:1px solid var(--line)!important;border-radius:0!important;box-shadow:none!important;display:grid!important;grid-template-columns:minmax(320px,1fr) 100px 150px 96px;gap:18px;align-items:center;background:#fff}
+    .reg-card.reg-row{min-height:0!important;padding-top:0!important;padding-bottom:0!important;border:0!important;border-bottom:1px solid var(--line)!important;border-radius:0!important;box-shadow:none!important;background:#fff}
     .reg-card.reg-row:last-child{border-bottom:0!important}
     .reg-card.reg-row:hover{background:#fbfdfc}
-    .reg-row .reg-top,.reg-row .reg-meta{display:contents}
-    .reg-row .reg-top>div{grid-column:1;min-width:0;padding:13px 0}
-    .reg-row .status{grid-column:4;justify-self:start}
-    .reg-row .reg-meta>div:nth-child(1){grid-column:2}
-    .reg-row .reg-meta>div:nth-child(2){grid-column:3}
-    .reg-row .meta-label{display:none!important}
-    .reg-row .meta-value{font-size:13px;font-weight:800;color:#344054;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .reg-title-btn{appearance:none;border:0;background:transparent;padding:0;margin:0;color:#1f2937;font:inherit;font-size:14px;font-weight:900;line-height:1.45;text-align:left;cursor:pointer}
+    .reg-cell{min-width:0;padding:13px 0;font-size:13px;font-weight:800;color:#344054;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .reg-cell.status-cell{overflow:visible}
+    .reg-title-btn{appearance:none;border:0;background:transparent;padding:0;margin:0;color:#1f2937;font:inherit;font-size:14px;font-weight:900;line-height:1.45;text-align:left;cursor:pointer;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
     .reg-title-btn:hover{color:var(--green-700);text-decoration:underline;text-underline-offset:3px}
     .reg-title-btn:focus-visible{outline:2px solid #86b99f;outline-offset:3px;border-radius:3px}
     .reg-detail-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px}
@@ -54,8 +51,10 @@
     const statusText=status==='published'?'已發布':status==='draft'?'草稿':'歷史版本';
     const card=el('article',{class:'reg-card reg-row'});
     card.innerHTML=`
-      <div class="reg-top"><div><button type="button" class="reg-title-btn">${escapeHTML(reg.title)}</button></div><span class="status ${status}">${statusText}</span></div>
-      <div class="reg-meta"><div><div class="meta-label">目前版本</div><div class="meta-value">${current?'V'+escapeHTML(current.version_label):'—'}</div></div><div><div class="meta-label">生效日期</div><div class="meta-value">${current?.effective_date?rocDate(current.effective_date+'T00:00:00'):'—'}</div></div></div>`;
+      <div class="reg-cell title-cell"><button type="button" class="reg-title-btn">${escapeHTML(reg.title)}</button></div>
+      <div class="reg-cell version-cell">${current?'V'+escapeHTML(current.version_label):'—'}</div>
+      <div class="reg-cell date-cell">${current?.effective_date?rocDate(current.effective_date+'T00:00:00'):'—'}</div>
+      <div class="reg-cell status-cell"><span class="status ${status}">${statusText}</span></div>`;
     card.querySelector('.reg-title-btn').addEventListener('click',()=>openRegulationDetailModal(reg));
     return card;
   }
