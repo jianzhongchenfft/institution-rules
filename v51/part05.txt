@@ -1,0 +1,93 @@
+.textContent = m.label; $('crumb').textContent = m.crumb;
+    $('sidebar').classList.remove('open');
+    if(m.id==='dashboard') renderDashboard();
+    else if(m.id==='regulations') renderRegulations();
+    else renderBuildPage(m);
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+
+  function getVersionArrays(reg){
+    const versions = [...(reg.regulation_versions || [])].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    const published = versions.filter(v=>v.status==='published').sort((a,b)=>new Date(b.published_at||b.created_at)-new Date(a.published_at||a.created_at));
+    const drafts = versions.filter(v=>v.status==='draft');
+    return {versions,published,drafts,current:published[0] || drafts[0] || versions[0] || null};
+  }
+
+  async function loadRegulations(){
+    state.loadingRegs=true;
+    const { data, error } = await db.from('regulations').select(`id,slug,title,category,is_active,created_at,updated_at,regulation_versions(id,version_label,effective_date,summary,revision_notes,status,published_at,created_at,file_path,file_name,file_mime_type,file_size)`).eq('is_active',true).order('title');
+    state.loadingRegs=false;
+    if(error){ console.error(error); toast('讀取內規資料失敗：'+error.message,'error'); state.regulations=[]; return; }
+    state.regulations = data || [];
+  }
+
+  function renderDashboard(){
+    const name = state.profile?.display_name || '使用者';
+    const regCount = state.regulations.length;
+    const recent = [...state.regulations].sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at)).slice(0,3);
+    const content = $('content');
+    content.innerHTML = `
+      <section class="welcome">
+        <div><h1>${greeting()}，${escapeHTML(name)}</h1><p>今天是民國 ${rocDate(new Date())}。以下是您的機構工作台。</p></div>
+      </section>
+      <section class="stats">
+        <article class="stat-card"><div class="stat-head"><span>待處理</span><span class="stat-icon">✓</span></div><div class="stat-value">—</div><div class="stat-foot">相關功能尚未啟用</div></article>
+        <article class="stat-card"><div class="stat-head"><span>待審核</span><span class="stat-icon">📄</span></div><div class="stat-value">—</div><div class="stat-foot">相關功能尚未啟用</div></article>
+        <article class="stat-card"><div class="stat-head"><span>即將到期</span><span class="stat-icon">⏱</span></div><div class="stat-value">—</div><div class="stat-foot">相關功能尚未啟用</div></article>
+        <article class="stat-card"><div class="stat-head"><span>內規文件</span><span class="stat-icon">📚</span></div><div class="stat-value">${regCount}</div><div class="stat-foot live">可查閱與管理內規文件</div></article>
+      </section>
+      <section class="grid-2">
+        <div class="panel">
+          <div class="panel-head"><div><h3>我的待辦</h3><small>需要您處理的工作會集中顯示於此</small></div></div>
+          <div class="panel-body"><div class="empty" style="padding:34px 18px"><div class="icon" style="font-size:28px">✓</div><h3>目前沒有可顯示的待辦事項</h3><p>事件追蹤、文件審核等相關功能啟用後，待辦與提醒會自動集中顯示於此。</p></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h3>最近內規</h3><small>最近更新的內規文件</small></div><button class="btn sm" id="goRegs">查看全部</button></div>
+          <div class="panel-body"><div class="reg-mini">${recent.length ? recent.map(r=>{
+            const {current}=getVersionArrays(r); return `<div class="reg-mini-item"><strong>${escapeHTML(r.title)}</strong><span>${escapeHTML(r.category||'未分類')}　${current ? 'V'+escapeHTML(current.version_label) : '尚無版本'}　${current?.status==='published'?'已發布':current?.status==='draft'?'草稿':'—'}</span></div>`
+          }).join('') : '<div class="empty" style="padding:28px 12px">目前沒有內規資料</div>'}</div></div>
+        </div>
+      </section>
+      <section class="panel"><div class="panel-head"><div><h3>系統功能</h3><small>依機構工作需求逐步啟用各項管理功能</small></div></div><div class="panel-body"><div class="module-grid" id="moduleGrid"></div></div></section>
+    `;
+    $('goRegs')?.addEventListener('click',()=>navigate('regulations'));
+    const mg = $('moduleGrid');
+    modules.filter(m=>m.id!=='dashboard' && m.id!=='settings').forEach(m=>{
+      const card=el('button',{class:'module-card',onClick:()=>navigate(m.id)});
+      card.innerHTML=`<span class="mi">${m.icon}</span><strong>${escapeHTML(m.label)}</strong><span class="${m.ready?'ready':''}">${m.ready?'已啟用':'尚未啟用'}</span>`;
+      mg.append(card);
+    });
+  }
+
+  function renderBuildPage(m){
+    $('content').innerHTML = `
+      <div class="page-head"><div><h1>${m.icon} ${escapeHTML(m.label)}</h1><p>${escapeHTML(m.crumb)}</p></div></div>
+      <section class="build-page">
+        <div class="build-hero"><div class="bigicon">${m.icon}</div><h2>${escapeHTML(m.label)}</h2><p>此功能目前尚未啟用。未來啟用後，將直接於此頁提供相關管理作業。</p><div class="build-state">目前狀態：尚未啟用</div></div>
+        <div><div style="font-size:13px;font-weight:900;margin-bottom:12px;color:#475467">預計功能</div><div class="build-list">${(m.features||[]).map(x=>`<div class="build-item">${escapeHTML(x)}</div>`).join('')}</div></div>
+      </section>`;
+  }
+
+  function renderRegulations(){
+    const cats=[...new Set(state.regulations.map(r=>r.category).filter(Boolean))].sort();
+    const q=state.regulationQuery.trim().toLowerCase();
+    const filtered=state.regulations.filter(r=>{
+      const matchQ=!q || r.title.toLowerCase().includes(q) || (r.category||'').toLowerCase().includes(q);
+      const matchCat=state.regulationCategory==='all' || r.category===state.regulationCategory;
+      return matchQ&&matchCat;
+    });
+    $('content').innerHTML=`
+      <div class="toolbar"><div class="searchbox"><input id="regSearch" placeholder="搜尋內規名稱或分類" value="${escapeHTML(state.regulationQuery)}"></div><select id="regCat"><option value="all">全部分類</option>${cats.map(c=>`<option ${state.regulationCategory===c?'selected':''} value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}</select><button id="reloadRegs" class="btn">↻ 重新整理</button>${canManage()?'<button id="addRegBtn" class="btn primary">＋ 上傳新內規</button>':''}</div>
+      <div id="regList" class="reg-grid"></div>`;
+    $('regSearch').addEventListener('input',e=>{ const pos=e.target.selectionStart; state.regulationQuery=e.target.value; renderRegulations(); const input=$('regSearch'); if(input){ input.focus(); try{input.setSelectionRange(pos,pos);}catch(_){}} });
+    $('regCat').addEventListener('change',e=>{state.regulationCategory=e.target.value; renderRegulations();});
+    $('reloadRegs').addEventListener('click',async()=>{showLoading(true);await loadRegulations();showLoading(false);renderRegulations();toast('已重新整理內規資料','success');});
+    $('addRegBtn')?.addEventListener('click',()=>openRegulationModal());
+    const list=$('regList');
+    if(!filtered.length){ list.className=''; list.innerHTML='<div class="empty"><div class="icon">📂</div><h3>沒有符合條件的內規</h3><p>請調整搜尋條件，或由有管理權限的人員上傳新的內規文件。</p></div>'; return; }
+    filtered.forEach(reg=>list.append(renderRegCard(reg)));
+  }
+
+  function renderRegCard(reg){
+    const {versions,current,drafts,published}=getVersionArrays(reg);
+    const status=curre
