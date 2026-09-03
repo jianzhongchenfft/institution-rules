@@ -1,0 +1,103 @@
+nt?.status||'draft';
+    const statusText=status==='published'?'已發布':status==='draft'?'草稿':'歷史版本';
+    const card=el('article',{class:'reg-card'});
+    card.innerHTML=`
+      <div class="reg-top"><div><div class="reg-title">${escapeHTML(reg.title)}</div><span class="reg-cat">${escapeHTML(reg.category||'未分類')}</span></div><span class="status ${status}">${statusText}</span></div>
+      <div class="reg-meta"><div><div class="meta-label">目前版本</div><div class="meta-value">${current?'V'+escapeHTML(current.version_label):'—'}</div></div><div><div class="meta-label">生效日期</div><div class="meta-value">${current?.effective_date?rocDate(current.effective_date+'T00:00:00'):'—'}</div></div><div><div class="meta-label">檔案</div><div class="meta-value">${current?.file_name?escapeHTML(current.file_name):'尚未上傳檔案'}</div></div><div><div class="meta-label">版本數</div><div class="meta-value">${versions.length} 個版本${drafts.length?`・${drafts.length} 草稿`:''}</div></div></div>
+      <div class="reg-actions"></div>`;
+    const actions=card.querySelector('.reg-actions');
+    if(current?.file_path) actions.append(el('button',{class:'btn sm primary',text:'下載最新版',onClick:()=>downloadVersion(current)}));
+    actions.append(el('button',{class:'btn sm',text:`版本紀錄 (${versions.length})`,onClick:()=>openVersionsModal(reg)}));
+    if(canManage()) actions.append(el('button',{class:'btn sm',text:'＋ 上傳新版本',onClick:()=>openRegulationModal(reg)}));
+    if(canManage() && drafts[0]) actions.append(el('button',{class:'btn sm',text:'發布草稿',onClick:()=>publishVersion(reg,drafts[0])}));
+    return card;
+  }
+
+  async function downloadVersion(v){
+    if(!v.file_path){ toast('此版本沒有附件檔案','warn'); return; }
+    showLoading(true);
+    try{
+      const { data, error }=await db.storage.from(STORAGE_BUCKET).download(v.file_path);
+      if(error) throw error;
+      const url=URL.createObjectURL(data); const a=document.createElement('a'); a.href=url; a.download=v.file_name||'內規文件'; document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+      toast('檔案下載已開始','success');
+    }catch(err){ toast('下載失敗：'+(err?.message||err),'error'); }
+    finally{showLoading(false);}
+  }
+
+  function openRegulationModal(existing=null){
+    const isNew=!existing;
+    const today=isoDate();
+    openModal({title:isNew?'上傳新內規':'上傳新版本',html:`
+      <div class="form-grid">
+        ${isNew?`<div class="field full"><label>內規名稱 *</label><input id="fTitle" placeholder="例如：派案、排班及服務執行作業辦法"></div><div class="field"><label>分類 *</label><input id="fCategory" placeholder="例如：服務管理"></div>`:`<div class="field full"><label>內規名稱</label><input value="${escapeHTML(existing.title)}" disabled></div>`}
+        <div class="field"><label>版本 *</label><input id="fVersion" value="1.0" placeholder="例如 1.0、2.1"></div>
+        <div class="field"><label>生效日期</label><input id="fDate" type="date" value="${today}"></div>
+        <div class="field full"><label>修訂說明</label><textarea id="fNotes" placeholder="可簡要說明本版修改重點"></textarea></div>
+        <div class="field full"><label>附件檔案 *</label><div class="file-drop"><input id="fFile" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><div class="help">可上傳 PDF、DOC、DOCX；目前 Supabase bucket 單檔上限為 25 MB。</div></div></div>
+        <div class="field full"><label class="check-row"><input id="fPublish" type="checkbox"> 上傳完成後立即發布（原已發布版本會改為歷史版本）</label></div>
+      </div>`,
+      confirmText:isNew?'上傳內規':'上傳版本',
+      onConfirm:()=>saveRegulation(existing)
+    });
+  }
+
+  async function saveRegulation(existing){
+    const title=existing?.title || $('fTitle')?.value.trim();
+    const category=existing?.category || $('fCategory')?.value.trim();
+    const version=$('fVersion').value.trim();
+    const effectiveDate=$('fDate').value || null;
+    const notes=$('fNotes').value.trim();
+    const file=$('fFile').files[0];
+    const publishNow=$('fPublish').checked;
+    if(!title || !category || !version || !file){ toast('請填妥名稱、分類、版本並選擇附件檔案','warn'); return false; }
+    const allowed=['application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if(!allowed.includes(file.type) && !/\.(pdf|doc|docx)$/i.test(file.name)){ toast('附件只允許 PDF、DOC 或 DOCX','warn'); return false; }
+    if(file.size>25*1024*1024){ toast('檔案不可超過 25 MB','warn'); return false; }
+    showLoading(true);
+    let uploadedPath=null;
+    try{
+      const regId=existing?.id || crypto.randomUUID();
+      const ext=(file.name.split('.').pop()||'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+      const path=`${regId}/${crypto.randomUUID()}.${ext}`;
+      const { error:upErr }=await db.storage.from(STORAGE_BUCKET).upload(path,file,{contentType:file.type||undefined,upsert:false});
+      if(upErr) throw upErr; uploadedPath=path;
+      if(!existing){
+        const slug='rule-'+Date.now()+'-'+crypto.randomUUID().slice(0,8);
+        const { error:rErr }=await db.from('regulations').insert({id:regId,slug,title,category,is_active:true});
+        if(rErr) throw rErr;
+      }
+      const versionId=crypto.randomUUID();
+      const { error:vErr }=await db.from('regulation_versions').insert({
+        id:versionId,regulation_id:regId,version_label:version,effective_date:effectiveDate,summary:'',revision_notes:notes,
+        status:'draft',created_by:state.user.id,file_path:path,file_name:file.name,file_mime_type:file.type||null,file_size:file.size
+      });
+      if(vErr) throw vErr;
+      if(publishNow){ await publishVersionByIds(regId,versionId,false); }
+      closeModal(); await loadRegulations(); renderRegulations(); toast(publishNow?'內規已上傳並發布':'內規草稿已上傳','success'); return true;
+    }catch(err){
+      console.error(err);
+      if(uploadedPath){ try{ await db.storage.from(STORAGE_BUCKET).remove([uploadedPath]); }catch(_){} }
+      toast('上傳失敗：'+(err?.message||err),'error'); return false;
+    }finally{showLoading(false);}
+  }
+
+  async function publishVersion(reg,version){
+    if(!confirm(`確定要發布「${reg.title}」V${version.version_label} 嗎？\n原已發布版本會改為歷史版本。`)) return;
+    showLoading(true);
+    try{ await publishVersionByIds(reg.id,version.id,true); await loadRegulations(); renderRegulations(); toast('版本已正式發布','success'); }
+    catch(err){toast('發布失敗：'+(err?.message||err),'error');}
+    finally{showLoading(false);}
+  }
+
+  async function publishVersionByIds(regId,versionId,throwErrors=true){
+    const { error:e1 }=await db.from('regulation_versions').update({status:'superseded'}).eq('regulation_id',regId).eq('status','published').neq('id',versionId);
+    if(e1){ if(throwErrors) throw e1; else throw e1; }
+    const { error:e2 }=await db.from('regulation_versions').update({status:'published',published_at:new Date().toISOString()}).eq('id',versionId);
+    if(e2) throw e2;
+  }
+
+  function openVersionsModal(reg){
+    const {versions}=getVersionArrays(reg);
+    const html=`<div class="version-list">${versions.length?versions.map(v=>`
+      <div 
