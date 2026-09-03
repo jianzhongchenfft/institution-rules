@@ -1,0 +1,21 @@
+class="version-row"><div class="version-info"><div class="version-title">V${escapeHTML(v.version_label)} <span class="status ${v.status}">${v.status==='published'?'已發布':v.status==='draft'?'草稿':'歷史版本'}</span></div><div class="version-sub">生效：${v.effective_date?rocDate(v.effective_date+'T00:00:00'):'未設定'}${v.file_name?`<br>檔案：${escapeHTML(v.file_name)}（${formatBytes(v.file_size)}）`:''}${v.revision_notes?`<br>說明：${escapeHTML(v.revision_notes)}`:''}</div></div><div class="version-actions"><button class="btn sm" data-download="${v.id}" ${!v.file_path?'disabled':''}>下載</button>${canManage()&&v.status==='draft'?`<button class="btn sm primary" data-publish="${v.id}">發布</button>`:''}</div></div>`).join(''):'<div class="empty">尚無版本紀錄</div>'}</div>`;
+    openModal({title:`版本紀錄｜${reg.title}`,html,large:true,showConfirm:false});
+    versions.forEach(v=>{
+      document.querySelector(`[data-download="${v.id}"]`)?.addEventListener('click',()=>downloadVersion(v));
+      document.querySelector(`[data-publish="${v.id}"]`)?.addEventListener('click',()=>{closeModal();publishVersion(reg,v);});
+    });
+  }
+
+  function openModal({title,html,confirmText='確定',onConfirm=null,large=false,showConfirm=true}){
+    $('modalRoot').innerHTML=`<div class="modal-backdrop"><div class="modal ${large?'lg':''}"><div class="modal-head"><h3>${escapeHTML(title)}</h3><button id="modalClose" class="close-btn">×</button></div><div class="modal-body">${html}</div><div class="modal-foot"><button id="modalCancel" class="btn">關閉</button>${showConfirm?`<button id="modalConfirm" class="btn primary">${escapeHTML(confirmText)}</button>`:''}</div></div></div>`;
+    $('modalClose').addEventListener('click',closeModal); $('modalCancel').addEventListener('click',closeModal);
+    $('modalRoot').querySelector('.modal-backdrop').addEventListener('click',e=>{if(e.target.classList.contains('modal-backdrop'))closeModal();});
+    if(showConfirm) $('modalConfirm').addEventListener('click',async()=>{ if(onConfirm) await onConfirm(); });
+  }
+  function closeModal(){ $('modalRoot').innerHTML=''; }
+
+  init();
+})();
+</script>
+</body>
+</html>
