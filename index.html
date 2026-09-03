@@ -90,9 +90,9 @@
           @media(max-width:560px){.stat-card{padding:11px 12px!important}.nav-btn{min-height:40px!important}}
         </style>`;
         let html=parts.join('').replace('</head>',compactCSS+'</head>');
-        const initMarker='\n  init();\n})();\n</script>';
+        const initMarker='\n  init();\n})();';
         if(!html.includes(initMarker)) throw new Error('V5.1 內規模組插入點不存在');
-        html=html.replace(initMarker,'\n'+regulationsPatch+'\n  init();\n})();\n</script>');
+        html=html.replace(initMarker,'\n'+regulationsPatch+'\n  init();\n})();');
         document.open();
         document.write(html);
         document.close();
