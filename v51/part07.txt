@@ -14,6 +14,22 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
   }
   function closeModal(){ $('modalRoot').innerHTML=''; }
 
+  async function loadCaseVisitsModulePatch(){
+    try{
+      const res=await fetch('v51/case-visits-patch.txt',{cache:'no-store'});
+      if(!res.ok) throw new Error(`v51/case-visits-patch.txt 載入失敗（${res.status}）`);
+      const source=await res.text();
+      eval(source);
+      if(state.profile && state.page==='dashboard') renderDashboard();
+      else if(state.profile && state.page==='cases') navigate('cases');
+    }catch(err){
+      console.error('個案家訪／電訪模組載入失敗',err);
+      if(state.profile) toast('個案家訪／電訪模組載入失敗，請重新整理頁面。','error');
+    }
+  }
+
+  loadCaseVisitsModulePatch();
+
   init();
 })();
 </script>
