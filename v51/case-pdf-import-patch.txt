@@ -1,0 +1,245 @@
+  // V5.1 個案管理：照顧服務管理資訊平台 PDF 匯入
+  const caseImportStyle=document.createElement('style');
+  caseImportStyle.id='v51-case-pdf-import-style';
+  caseImportStyle.textContent=`
+    .import-choice{display:grid;grid-template-columns:1.25fr .75fr;gap:12px}
+    .import-choice-card{border:1px solid var(--line);background:#fff;border-radius:14px;padding:17px;text-align:left;cursor:pointer}
+    .import-choice-card:hover{border-color:#e5b29f;background:#fffaf8}
+    .import-choice-card.primary{border-color:#f0c4b6;background:#fff8f5}
+    .import-choice-card .ic{font-size:24px}.import-choice-card strong{display:block;font-size:15px;margin-top:10px}.import-choice-card span{display:block;font-size:11.5px;line-height:1.6;color:var(--muted);margin-top:5px}
+    .pdf-import-note{padding:11px 12px;border-radius:10px;background:#fff8f5;border:1px solid #f0ded7;color:#6f625d;font-size:11.5px;line-height:1.6;margin-bottom:13px}
+    .pdf-import-status{margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.6}
+    .import-preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+    .import-preview-grid .field.full{grid-column:1/-1}
+    .import-section{margin:18px 0 9px;font-size:12px;font-weight:900;color:#475467;padding-bottom:7px;border-bottom:1px solid var(--line)}
+    .service-edit-table{width:100%;border-collapse:collapse;min-width:620px}.service-edit-wrap{overflow:auto;border:1px solid var(--line);border-radius:11px}
+    .service-edit-table th{font-size:10.5px;text-align:left;color:#667085;background:#faf8f7;padding:8px;border-bottom:1px solid var(--line)}
+    .service-edit-table td{padding:7px;border-bottom:1px solid var(--line)}.service-edit-table tr:last-child td{border-bottom:0}
+    .service-edit-table input{width:100%;padding:8px;font-size:11.5px}.service-edit-table .code{width:92px}.service-edit-table .qty{width:84px}.service-edit-table .del{width:52px}
+    .import-detail-block{margin-top:14px;border-top:1px solid var(--line);padding-top:13px}
+    .import-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .import-detail-cell{border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fffaf8;min-width:0}
+    .import-detail-cell label{display:block;font-size:9.5px;color:var(--muted);font-weight:800;margin-bottom:3px}.import-detail-cell div{font-size:11.5px;font-weight:800;color:#344054;word-break:break-word}
+    .approved-chip-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.approved-chip{font-size:10.5px;font-weight:800;background:#f8dbd5;color:#8e5a49;padding:5px 8px;border-radius:999px}
+    @media(max-width:650px){.import-choice{grid-template-columns:1fr}.import-preview-grid{grid-template-columns:1fr}.import-preview-grid .field.full{grid-column:auto}.import-detail-grid{grid-template-columns:1fr 1fr}}
+  `;
+  document.head.appendChild(caseImportStyle);
+
+  function importSupervisors(){ return (state.caseStaff||[]).filter(s=>s.role==='supervisor'); }
+  function importMaskId(v=''){ const s=String(v||'').trim(); return s.length>=6?s.slice(0,5)+'*****':(s||'—'); }
+  function importFmtDate(v){ return v?rocDate(v+'T00:00:00'):'—'; }
+  function importRocToIso(v){
+    if(!v)return '';
+    const m=String(v).trim().match(/(\d{1,4})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})/); if(!m)return '';
+    let y=Number(m[1]); if(y<1911)y+=1911;
+    return `${String(y).padStart(4,'0')}-${String(Number(m[2])).padStart(2,'0')}-${String(Number(m[3])).padStart(2,'0')}`;
+  }
+  function importCleanText(s=''){ return String(s).replace(/[｜|]/g,' ').replace(/[\t\u00a0]+/g,' ').replace(/ +/g,' ').trim(); }
+  function importLines(text=''){ return String(text).split(/\r?\n/).map(importCleanText).filter(Boolean); }
+  function importFindLineValue(text,labels){
+    const lines=importLines(text);
+    for(const label of labels){
+      for(let i=0;i<lines.length;i++){
+        const p=lines[i].indexOf(label); if(p<0)continue;
+        let rest=lines[i].slice(p+label.length).replace(/^[\s:：*＊]+/,'').trim();
+        if(rest)return rest;
+        if(lines[i+1])return lines[i+1];
+      }
+    }
+    return '';
+  }
+  function importFirstMatch(text,patterns,group=1){ for(const re of patterns){const m=String(text).match(re);if(m&&m[group])return importCleanText(m[group]);} return ''; }
+  function importTrimAtLabels(v,labels){ let out=String(v||''); labels.forEach(x=>{const p=out.indexOf(x);if(p>=0)out=out.slice(0,p);}); return out.replace(/^[\s:：*＊]+|[\s*＊]+$/g,'').trim(); }
+
+  async function importLoadLib(src,test){
+    if(test())return;
+    await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.async=true;s.onload=resolve;s.onerror=()=>reject(new Error('外部解析元件載入失敗'));document.head.appendChild(s);});
+  }
+
+  async function importPrepareOcr(){
+    await importLoadLib('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',()=>!!window.pdfjsLib);
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    await importLoadLib('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',()=>!!window.Tesseract);
+  }
+
+  async function importOcrPdf(file,onProgress){
+    await importPrepareOcr();
+    const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+    const wanted=[1,2,14,19,20].filter(n=>n<=pdf.numPages);
+    const result={};
+    const worker=await window.Tesseract.createWorker('chi_tra+eng',1,{logger:m=>{if(m.status==='recognizing text'&&onProgress)onProgress(`文字辨識中 ${Math.round((m.progress||0)*100)}%`);}});
+    try{
+      for(let i=0;i<wanted.length;i++){
+        const n=wanted[i]; if(onProgress)onProgress(`正在解析第 ${n} 頁（${i+1}/${wanted.length}）…`);
+        const page=await pdf.getPage(n); const viewport=page.getViewport({scale:1.65});
+        const canvas=document.createElement('canvas'); canvas.width=Math.ceil(viewport.width); canvas.height=Math.ceil(viewport.height);
+        const ctx=canvas.getContext('2d',{willReadFrequently:true}); await page.render({canvasContext:ctx,viewport}).promise;
+        const r=await worker.recognize(canvas); result[n]=r?.data?.text||'';
+      }
+    }finally{ await worker.terminate(); }
+    return result;
+  }
+
+  function importParseServices(text){
+    const map=new Map();
+    for(let raw of importLines(text)){
+      raw=raw.replace(/\b(BA|GA)\s+(\d)/gi,'$1$2');
+      const cm=raw.match(/\b(BA\d{2}(?:-\d+)?|GA\d{2})\b/i); if(!cm)continue;
+      const code=cm[1].toUpperCase(); const group=code.startsWith('GA')?'GA':'BA';
+      const after=raw.slice(cm.index+cm[0].length);
+      const price=after.match(/\d+(?:\.\d+)?\s*元/);
+      let name=price?after.slice(0,price.index):after;
+      name=name.replace(/[\[\]【】]/g,'').replace(/[（(]\s*\d{3,}\s*[）)]/g,'').replace(/^[\s:：*-]+/,'').trim();
+      const nums=after.match(/\d+(?:\.\d+)?/g)||[];
+      let qty=''; if(nums.length>=2)qty=nums[nums.length-2];
+      if(!map.has(code))map.set(code,{service_group:group,service_code:code,service_name:name,approved_quantity:qty});
+    }
+    return [...map.values()].sort((a,b)=>a.service_code.localeCompare(b.service_code));
+  }
+
+  function importParsePages(pages){
+    const p1=pages[1]||'',p2=pages[2]||'',p14=pages[14]||'',p19=pages[19]||'',p20=pages[20]||'';
+    const all=[p1,p2,p14,p19,p20].join('\n');
+    let nationalId=importFirstMatch(p1,[/([A-Z][12]\d{8})/i]);
+    let caseName=importFirstMatch(p1,[/個案姓名(?:\s*[\/／]\s*身分證字號)?\s*[：:]?\s*([\u4e00-\u9fff]{2,5})/]);
+    if(!caseName&&nationalId){const idx=p1.indexOf(nationalId);const before=p1.slice(Math.max(0,idx-40),idx);caseName=importFirstMatch(before,[/([\u4e00-\u9fff]{2,5})\s*[\/／]?\s*$/]);}
+    let birth=importFirstMatch(p1,[/個案生日\s*[：:]?\s*(\d{1,3}\s*[\/.-]\s*\d{1,2}\s*[\/.-]\s*\d{1,2})/]);
+    let gender=importFirstMatch(p1,[/性別\s*[：:]?\s*([男女])/]);
+    let phone=importFirstMatch(p1,[/個案電話\s*[：:]?\s*(0\d[\d\-\s]{7,14})/]);
+    let address=importFindLineValue(p1,['居住(通訊)地址','居住（通訊）地址','居住地址','通訊地址']);
+    address=importTrimAtLabels(address,['戶籍地址','常用語言','個案電話','性別']);
+    let living=importFindLineValue(p1,['目前居住狀況']);
+    let livesAlone=null; if(/獨居/.test(living))livesAlone=true; else if(/同住|與他人/.test(living))livesAlone=false;
+
+    let contactName=importFindLineValue(p2,['聯絡人姓名']); contactName=importTrimAtLabels(contactName,['聯絡人電話','聯絡人手機','與個案']);
+    let contactRel=importFindLineValue(p2,['與個案服務者關係或身分','與個案關係','服務者關係或身分']); contactRel=importTrimAtLabels(contactRel,['其他關係說明','聯絡人Email','聯絡人地址']);
+    let contactPhone=importFirstMatch(p2,[/聯絡人手機\s*[：:]?\s*(0\d[\d\-\s]{7,14})/,/聯絡人電話\s*[：:]?\s*(0\d[\d\-\s]{7,14})/]);
+
+    let assessment=importFirstMatch(all,[/(?:評估完成日期|評估完成日|評估日期)\s*[：:]?\s*(\d{1,3}[\/.-]\d{1,2}[\/.-]\d{1,2})/]);
+    let planApproval=importFirstMatch(p14+'\n'+all,[/(?:計畫核定日期|計畫核定日|核定日期)\s*[：:]?\s*(\d{1,3}[\/.-]\d{1,2}[\/.-]\d{1,2})/]);
+    let cms=importFirstMatch(p14+'\n'+p19+'\n'+all,[/CMS\s*(?:第)?\s*([1-8])\s*級/i]);
+    let aUnit=importFindLineValue(p19,['A單位名稱']); aUnit=importTrimAtLabels(aUnit,['A個管姓名','聯絡電話','聯絡Email']);
+    let manager=importFindLineValue(p19,['A個管姓名']); manager=importTrimAtLabels(manager,['聯絡電話','聯絡Email']);
+    let managerPhone=importFirstMatch(p19,[/聯絡電話\s*[：:]?\s*(0\d[\d\-\s]{7,14})/]);
+    let assessor=importFindLineValue(p1,['承辦人','評估人員','照顧專員']); assessor=importTrimAtLabels(assessor,['原照管者','原照管員','是否為A輔干','備註']);
+    const services=importParseServices(p19+'\n'+p20);
+    return {
+      case_name:caseName,national_id:nationalId.toUpperCase(),birth_date:importRocToIso(birth),gender,
+      address,phone:phone.replace(/\s/g,''),lives_alone:livesAlone,
+      contact:{contact_name:contactName,relationship:contactRel,phone:contactPhone.replace(/\s/g,'')},
+      assessment_date:importRocToIso(assessment),cms_level:cms,plan_approval_date:importRocToIso(planApproval),
+      a_unit_name:aUnit,case_manager_name:manager,case_manager_phone:managerPhone.replace(/\s/g,''),assessor_name:assessor,
+      services
+    };
+  }
+
+  function importOpenChoice(){
+    openModal({title:'新增個案',showConfirm:false,html:`<div class="import-choice"><button id="choosePdfImport" class="import-choice-card primary"><div class="ic">📄</div><strong>從照管平台 PDF 匯入</strong><span>上傳平常從照顧服務管理資訊平台下載的照顧管理評估量表與照顧計畫，系統自動辨識您指定的欄位。</span></button><button id="chooseManualImport" class="import-choice-card"><div class="ic">✍️</div><strong>手動建立</strong><span>無 PDF 時仍可使用基本欄位建立個案。</span></button></div>`});
+    $('choosePdfImport').addEventListener('click',importOpenPdfModal);
+    $('chooseManualImport').addEventListener('click',importOpenManualModal);
+  }
+
+  function importSupervisorOptions(selected=''){
+    const list=importSupervisors(); const meSupervisor=state.profile?.role==='supervisor'; const actual=meSupervisor?state.profile.id:selected;
+    return `<option value="">尚未指派</option>${list.map(s=>`<option value="${s.id}" ${actual===s.id?'selected':''}>${escapeHTML(s.display_name)}</option>`).join('')}`;
+  }
+
+  function importOpenPdfModal(){
+    openModal({title:'從照管平台 PDF 匯入個案',showConfirm:false,large:true,html:`
+      <div class="pdf-import-note">PDF 會直接在目前瀏覽器中進行辨識；系統只會保存您指定的 A、B、C、H 欄位，不會把疾病、ADL 或其他未選資料寫入個案資料庫。首次使用需下載文字辨識元件，可能需要一些時間。</div>
+      <div class="form-grid"><div class="field full"><label>照管平台 PDF *</label><div class="file-drop"><input id="casePdfFile" type="file" accept="application/pdf,.pdf"></div></div><div class="field"><label>負責督導</label><select id="casePdfSupervisor" ${state.profile?.role==='supervisor'?'disabled':''}>${importSupervisorOptions('')}</select></div><div class="field"><label>&nbsp;</label><button id="startCasePdf" class="btn primary" style="width:100%">開始解析 PDF</button></div></div><div id="casePdfStatus" class="pdf-import-status">尚未開始解析。</div>`});
+    $('startCasePdf').addEventListener('click',async()=>{
+      const file=$('casePdfFile').files[0]; if(!file){toast('請先選擇 PDF 檔案','warn');return;}
+      const supervisorId=state.profile?.role==='supervisor'?state.profile.id:$('casePdfSupervisor').value;
+      const status=$('casePdfStatus'); $('startCasePdf').disabled=true;
+      try{
+        const pages=await importOcrPdf(file,msg=>{if(status)status.textContent=msg;});
+        const parsed=importParsePages(pages); parsed.supervisor_id=supervisorId;
+        importOpenPreview(parsed,file.name);
+      }catch(err){console.error(err);toast('PDF 解析失敗：'+(err?.message||err),'error');if(status)status.textContent='解析失敗，請確認網路連線與 PDF 格式。';$('startCasePdf').disabled=false;}
+    });
+  }
+
+  function importOpenManualModal(){
+    const meSupervisor=state.profile?.role==='supervisor';
+    openModal({title:'手動建立個案',confirmText:'建立個案',large:true,html:`<div class="import-preview-grid">
+      <div class="field"><label>個案姓名 *</label><input id="miName"></div><div class="field"><label>身分證字號</label><input id="miNationalId"></div>
+      <div class="field"><label>出生日期</label><input id="miBirth" type="date"></div><div class="field"><label>性別</label><select id="miGender"><option value="">未填</option><option>女</option><option>男</option></select></div>
+      <div class="field full"><label>居住／通訊地址</label><input id="miAddress"></div><div class="field"><label>個案電話</label><input id="miPhone"></div><div class="field"><label>是否獨居</label><select id="miAlone"><option value="">未填</option><option value="true">是</option><option value="false">否</option></select></div>
+      <div class="field"><label>CMS 等級</label><input id="miCms"></div><div class="field"><label>負責督導</label><select id="miSupervisor" ${meSupervisor?'disabled':''}>${importSupervisorOptions('')}</select></div>
+    </div>`,onConfirm:async()=>{
+      const data={case_name:$('miName').value.trim(),national_id:$('miNationalId').value.trim().toUpperCase(),birth_date:$('miBirth').value,gender:$('miGender').value,address:$('miAddress').value.trim(),phone:$('miPhone').value.trim(),cms_level:$('miCms').value.trim(),supervisor_id:meSupervisor?state.profile.id:$('miSupervisor').value,contact:{},services:[]};
+      if($('miAlone').value!=='')data.lives_alone=$('miAlone').value==='true';
+      return importSave(data);
+    }});
+  }
+
+  function importOpenPreview(d,fileName){
+    const meSupervisor=state.profile?.role==='supervisor';
+    openModal({title:'確認 PDF 匯入資料',large:true,confirmText:'確認建立／更新個案',html:`
+      <div class="pdf-import-note">來源：${escapeHTML(fileName)}。請先核對辨識結果；任何欄位都可以在儲存前修正。相同身分證字號若已存在，會更新既有個案，不會重複建立。</div>
+      <div class="import-section">A｜個案基本資料</div><div class="import-preview-grid">
+        <div class="field"><label>個案姓名 A1 *</label><input id="piName" value="${escapeHTML(d.case_name||'')}"></div><div class="field"><label>身分證字號 A2</label><input id="piNationalId" value="${escapeHTML(d.national_id||'')}"></div>
+        <div class="field"><label>出生日期 A3</label><input id="piBirth" type="date" value="${escapeHTML(d.birth_date||'')}"></div><div class="field"><label>性別 A4</label><select id="piGender"><option value="">未辨識</option><option value="女" ${d.gender==='女'?'selected':''}>女</option><option value="男" ${d.gender==='男'?'selected':''}>男</option></select></div>
+        <div class="field full"><label>居住／通訊地址 A6</label><input id="piAddress" value="${escapeHTML(d.address||'')}"></div><div class="field"><label>個案電話 A7</label><input id="piPhone" value="${escapeHTML(d.phone||'')}"></div>
+        <div class="field"><label>是否獨居 A13</label><select id="piAlone"><option value="" ${d.lives_alone===null?'selected':''}>未辨識</option><option value="true" ${d.lives_alone===true?'selected':''}>是</option><option value="false" ${d.lives_alone===false?'selected':''}>否</option></select></div>
+      </div>
+      <div class="import-section">B｜主要聯絡人</div><div class="import-preview-grid">
+        <div class="field"><label>姓名 B1</label><input id="piContactName" value="${escapeHTML(d.contact?.contact_name||'')}"></div><div class="field"><label>與個案關係 B2</label><input id="piContactRel" value="${escapeHTML(d.contact?.relationship||'')}"></div><div class="field"><label>電話 B3</label><input id="piContactPhone" value="${escapeHTML(d.contact?.phone||'')}"></div>
+      </div>
+      <div class="import-section">C｜長照案件資訊</div><div class="import-preview-grid">
+        <div class="field"><label>評估日期 C3</label><input id="piAssessment" type="date" value="${escapeHTML(d.assessment_date||'')}"></div><div class="field"><label>CMS 等級 C4</label><input id="piCms" value="${escapeHTML(d.cms_level||'')}"></div>
+        <div class="field"><label>計畫核定日期 C5</label><input id="piApproval" type="date" value="${escapeHTML(d.plan_approval_date||'')}"></div><div class="field"><label>A 單位名稱 C8</label><input id="piAUnit" value="${escapeHTML(d.a_unit_name||'')}"></div>
+        <div class="field"><label>A 個管姓名 C9</label><input id="piManager" value="${escapeHTML(d.case_manager_name||'')}"></div><div class="field"><label>A 個管電話 C10</label><input id="piManagerPhone" value="${escapeHTML(d.case_manager_phone||'')}"></div>
+        <div class="field"><label>照專／評估人員 C12</label><input id="piAssessor" value="${escapeHTML(d.assessor_name||'')}"></div><div class="field"><label>負責督導</label><select id="piSupervisor" ${meSupervisor?'disabled':''}>${importSupervisorOptions(d.supervisor_id||'')}</select></div>
+      </div>
+      <div class="import-section">H｜核定服務</div><div id="piServices"></div><div style="margin-top:8px"><button id="piAddService" type="button" class="btn sm">＋ 補一筆服務</button></div>
+    `,onConfirm:()=>importSaveFromPreview()});
+    importRenderServiceEditor(d.services||[]);
+    $('piAddService').addEventListener('click',()=>{const rows=importReadServiceEditor();rows.push({service_group:'BA',service_code:'',service_name:'',approved_quantity:''});importRenderServiceEditor(rows);});
+  }
+
+  function importRenderServiceEditor(rows){
+    const host=$('piServices'); if(!host)return;
+    host.innerHTML=`<div class="service-edit-wrap"><table class="service-edit-table"><thead><tr><th>類別</th><th>服務碼 H1/H6</th><th>服務名稱 H2</th><th>核定量 H3/H7</th><th></th></tr></thead><tbody>${rows.length?rows.map((r,i)=>`<tr data-svc-row><td><select data-svc-group><option value="BA" ${r.service_group==='BA'?'selected':''}>BA／月</option><option value="GA" ${r.service_group==='GA'?'selected':''}>GA／年</option></select></td><td><input class="code" data-svc-code value="${escapeHTML(r.service_code||'')}"></td><td><input data-svc-name value="${escapeHTML(r.service_name||'')}"></td><td><input class="qty" data-svc-qty value="${escapeHTML(r.approved_quantity||'')}"></td><td class="del"><button type="button" class="btn sm" data-del-svc="${i}">刪除</button></td></tr>`).join(''):'<tr><td colspan="5" style="font-size:11.5px;color:#667085;padding:12px">未辨識到 BA／GA 核定服務，可手動補上。</td></tr>'}</tbody></table></div>`;
+    host.querySelectorAll('[data-del-svc]').forEach(btn=>btn.addEventListener('click',()=>{const arr=importReadServiceEditor();arr.splice(Number(btn.dataset.delSvc),1);importRenderServiceEditor(arr);}));
+  }
+  function importReadServiceEditor(){ return [...document.querySelectorAll('[data-svc-row]')].map(tr=>({service_group:tr.querySelector('[data-svc-group]').value,service_code:tr.querySelector('[data-svc-code]').value.trim().toUpperCase(),service_name:tr.querySelector('[data-svc-name]').value.trim(),approved_quantity:tr.querySelector('[data-svc-qty]').value.trim()})).filter(x=>x.service_code); }
+  function importSaveFromPreview(){
+    const d={case_name:$('piName').value.trim(),national_id:$('piNationalId').value.trim().toUpperCase(),birth_date:$('piBirth').value,gender:$('piGender').value,address:$('piAddress').value.trim(),phone:$('piPhone').value.trim(),assessment_date:$('piAssessment').value,cms_level:$('piCms').value.trim(),plan_approval_date:$('piApproval').value,a_unit_name:$('piAUnit').value.trim(),case_manager_name:$('piManager').value.trim(),case_manager_phone:$('piManagerPhone').value.trim(),assessor_name:$('piAssessor').value.trim(),supervisor_id:state.profile?.role==='supervisor'?state.profile.id:$('piSupervisor').value,contact:{contact_name:$('piContactName').value.trim(),relationship:$('piContactRel').value.trim(),phone:$('piContactPhone').value.trim()},services:importReadServiceEditor()};
+    if($('piAlone').value!=='')d.lives_alone=$('piAlone').value==='true'; return importSave(d);
+  }
+  async function importSave(data){
+    if(!data.case_name){toast('個案姓名不可空白','warn');return false;}
+    showLoading(true);
+    try{
+      const {data:r,error}=await db.rpc('import_case_pdf_data',{payload:data}); if(error)throw error;
+      closeModal(); toast(r?.action==='updated'?'已更新既有個案資料':'個案已建立','success'); navigate('cases'); return true;
+    }catch(err){console.error(err);toast('個案匯入失敗：'+(err?.message||err),'error');return false;} finally{showLoading(false);}
+  }
+
+  async function importAugmentCaseModal(caseId){
+    try{
+      const [{data:c,error:e1},{data:contacts,error:e2},{data:services,error:e3}]=await Promise.all([
+        db.from('care_cases').select('id,national_id,birth_date,gender,address,phone,lives_alone,assessment_date,plan_approval_date,a_unit_name,case_manager_name,case_manager_phone,assessor_name,cms_level,imported_at').eq('id',caseId).maybeSingle(),
+        db.from('case_contacts').select('contact_name,relationship,phone,is_primary').eq('case_id',caseId).eq('is_primary',true).limit(1),
+        db.from('case_approved_services').select('service_group,service_code,service_name,approved_quantity,quantity_period').eq('case_id',caseId).order('service_group').order('service_code')
+      ]); if(e1||e2||e3)throw(e1||e2||e3); if(!c)return;
+      const body=document.querySelector('#modalRoot .modal-body'); if(!body||body.querySelector('.import-detail-block'))return;
+      const ct=contacts?.[0]; const block=document.createElement('div'); block.className='import-detail-block';
+      block.innerHTML=`<div class="case-section-title"><strong>照管平台匯入資料</strong><small style="font-size:10.5px;color:#667085">${c.imported_at?'最近匯入 '+rocDate(c.imported_at):''}</small></div><div class="import-detail-grid">
+        <div class="import-detail-cell"><label>身分證字號</label><div>${escapeHTML(importMaskId(c.national_id))}</div></div><div class="import-detail-cell"><label>出生日期</label><div>${importFmtDate(c.birth_date)}</div></div><div class="import-detail-cell"><label>性別</label><div>${escapeHTML(c.gender||'—')}</div></div>
+        <div class="import-detail-cell"><label>個案電話</label><div>${escapeHTML(c.phone||'—')}</div></div><div class="import-detail-cell"><label>是否獨居</label><div>${c.lives_alone===null?'—':c.lives_alone?'是':'否'}</div></div><div class="import-detail-cell"><label>CMS</label><div>${escapeHTML(c.cms_level||'—')}</div></div>
+        <div class="import-detail-cell" style="grid-column:1/-1"><label>居住／通訊地址</label><div>${escapeHTML(c.address||'—')}</div></div>
+        <div class="import-detail-cell"><label>評估日期</label><div>${importFmtDate(c.assessment_date)}</div></div><div class="import-detail-cell"><label>計畫核定日期</label><div>${importFmtDate(c.plan_approval_date)}</div></div><div class="import-detail-cell"><label>照專／評估人員</label><div>${escapeHTML(c.assessor_name||'—')}</div></div>
+        <div class="import-detail-cell"><label>A單位</label><div>${escapeHTML(c.a_unit_name||'—')}</div></div><div class="import-detail-cell"><label>A個管</label><div>${escapeHTML(c.case_manager_name||'—')}</div></div><div class="import-detail-cell"><label>A個管電話</label><div>${escapeHTML(c.case_manager_phone||'—')}</div></div>
+        <div class="import-detail-cell"><label>主要聯絡人</label><div>${escapeHTML(ct?.contact_name||'—')}</div></div><div class="import-detail-cell"><label>關係</label><div>${escapeHTML(ct?.relationship||'—')}</div></div><div class="import-detail-cell"><label>聯絡電話</label><div>${escapeHTML(ct?.phone||'—')}</div></div>
+      </div><div class="case-section-title"><strong>核定服務</strong></div><div class="approved-chip-wrap">${services?.length?services.map(s=>`<span class="approved-chip">${escapeHTML(s.service_code)}${s.service_name?' '+escapeHTML(s.service_name):''}・${s.approved_quantity??'—'}${s.service_group==='GA'?'/年':'/月'}</span>`).join(''):'<span style="font-size:11px;color:#667085">尚無核定服務資料</span>'}</div>`;
+      const history=body.querySelector('.case-section-title'); if(history)body.insertBefore(block,history); else body.prepend(block);
+    }catch(err){console.error('讀取匯入個案資料失敗',err);}
+  }
+
+  document.addEventListener('click',e=>{
+    const add=e.target.closest?.('#addCaseBtn'); if(add){e.preventDefault();e.stopImmediatePropagation();importOpenChoice();return;}
+    const caseBtn=e.target.closest?.('.case-name-btn'); if(caseBtn){const id=caseBtn.dataset.caseId;setTimeout(()=>importAugmentCaseModal(id),60);}
+  },true);
