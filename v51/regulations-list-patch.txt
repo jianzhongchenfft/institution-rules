@@ -1,0 +1,83 @@
+  // V5.1 內規文件：單列清單＋點擊文件名稱後開啟管理視窗
+  const regulationsListStyle = document.createElement('style');
+  regulationsListStyle.id = 'v51-regulations-list-style';
+  regulationsListStyle.textContent = `
+    .reg-list-shell{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+    .reg-list-head{min-width:720px;display:grid;grid-template-columns:minmax(320px,1fr) 100px 150px 96px;gap:18px;align-items:center;padding:10px 18px;background:#f8faf9;border-bottom:1px solid var(--line);font-size:11px;font-weight:900;color:#667085}
+    .reg-grid.reg-list{min-width:720px;display:block!important;gap:0!important}
+    .reg-card.reg-row{min-height:0!important;padding:0 18px!important;border:0!important;border-bottom:1px solid var(--line)!important;border-radius:0!important;box-shadow:none!important;display:grid!important;grid-template-columns:minmax(320px,1fr) 100px 150px 96px;gap:18px;align-items:center;background:#fff}
+    .reg-card.reg-row:last-child{border-bottom:0!important}
+    .reg-card.reg-row:hover{background:#fbfdfc}
+    .reg-row .reg-top,.reg-row .reg-meta{display:contents}
+    .reg-row .reg-top>div{grid-column:1;min-width:0;padding:13px 0}
+    .reg-row .status{grid-column:4;justify-self:start}
+    .reg-row .reg-meta>div:nth-child(1){grid-column:2}
+    .reg-row .reg-meta>div:nth-child(2){grid-column:3}
+    .reg-row .meta-label{display:none!important}
+    .reg-row .meta-value{font-size:13px;font-weight:800;color:#344054;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .reg-title-btn{appearance:none;border:0;background:transparent;padding:0;margin:0;color:#1f2937;font:inherit;font-size:14px;font-weight:900;line-height:1.45;text-align:left;cursor:pointer}
+    .reg-title-btn:hover{color:var(--green-700);text-decoration:underline;text-underline-offset:3px}
+    .reg-title-btn:focus-visible{outline:2px solid #86b99f;outline-offset:3px;border-radius:3px}
+    .reg-detail-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px}
+    .reg-detail-item{border:1px solid var(--line);background:#fafcfb;border-radius:10px;padding:11px 12px;min-width:0}
+    .reg-detail-item.full{grid-column:1/-1}
+    .reg-detail-label{font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:800}
+    .reg-detail-value{font-size:13px;color:#344054;font-weight:800;line-height:1.5;word-break:break-word}
+    .reg-detail-actions{display:flex;gap:8px;flex-wrap:wrap;padding-top:2px}
+    @media(max-width:560px){.reg-detail-summary{grid-template-columns:1fr}.reg-detail-item.full{grid-column:auto}}
+  `;
+  document.head.appendChild(regulationsListStyle);
+
+  function renderRegulations(){
+    const cats=[...new Set(state.regulations.map(r=>r.category).filter(Boolean))].sort();
+    const q=state.regulationQuery.trim().toLowerCase();
+    const filtered=state.regulations.filter(r=>{
+      const matchQ=!q || r.title.toLowerCase().includes(q) || (r.category||'').toLowerCase().includes(q);
+      const matchCat=state.regulationCategory==='all' || r.category===state.regulationCategory;
+      return matchQ&&matchCat;
+    });
+    $('content').innerHTML=`
+      <div class="toolbar"><div class="searchbox"><input id="regSearch" placeholder="搜尋內規名稱或分類" value="${escapeHTML(state.regulationQuery)}"></div><select id="regCat"><option value="all">全部分類</option>${cats.map(c=>`<option ${state.regulationCategory===c?'selected':''} value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}</select><button id="reloadRegs" class="btn">↻ 重新整理</button>${canManage()?'<button id="addRegBtn" class="btn primary">＋ 上傳新內規</button>':''}</div>
+      <div id="regListShell" class="reg-list-shell"><div class="reg-list-head"><span>文件名稱</span><span>版本</span><span>生效日期</span><span>狀態</span></div><div id="regList" class="reg-grid reg-list"></div></div>`;
+    $('regSearch').addEventListener('input',e=>{ const pos=e.target.selectionStart; state.regulationQuery=e.target.value; renderRegulations(); const input=$('regSearch'); if(input){ input.focus(); try{input.setSelectionRange(pos,pos);}catch(_){}} });
+    $('regCat').addEventListener('change',e=>{state.regulationCategory=e.target.value; renderRegulations();});
+    $('reloadRegs').addEventListener('click',async()=>{showLoading(true);await loadRegulations();showLoading(false);renderRegulations();toast('已重新整理內規資料','success');});
+    $('addRegBtn')?.addEventListener('click',()=>openRegulationModal());
+    const list=$('regList');
+    if(!filtered.length){ const shell=$('regListShell'); shell.className=''; shell.innerHTML='<div class="empty"><div class="icon">📂</div><h3>沒有符合條件的內規</h3><p>請調整搜尋條件，或由有管理權限的人員上傳新的內規文件。</p></div>'; return; }
+    filtered.forEach(reg=>list.append(renderRegCard(reg)));
+  }
+
+  function renderRegCard(reg){
+    const {current}=getVersionArrays(reg);
+    const status=current?.status||'draft';
+    const statusText=status==='published'?'已發布':status==='draft'?'草稿':'歷史版本';
+    const card=el('article',{class:'reg-card reg-row'});
+    card.innerHTML=`
+      <div class="reg-top"><div><button type="button" class="reg-title-btn">${escapeHTML(reg.title)}</button></div><span class="status ${status}">${statusText}</span></div>
+      <div class="reg-meta"><div><div class="meta-label">目前版本</div><div class="meta-value">${current?'V'+escapeHTML(current.version_label):'—'}</div></div><div><div class="meta-label">生效日期</div><div class="meta-value">${current?.effective_date?rocDate(current.effective_date+'T00:00:00'):'—'}</div></div></div>`;
+    card.querySelector('.reg-title-btn').addEventListener('click',()=>openRegulationDetailModal(reg));
+    return card;
+  }
+
+  function openRegulationDetailModal(reg){
+    const {versions,current,drafts}=getVersionArrays(reg);
+    const status=current?.status||'draft';
+    const statusText=status==='published'?'已發布':status==='draft'?'草稿':'歷史版本';
+    const html=`
+      <div class="reg-detail-summary">
+        <div class="reg-detail-item"><div class="reg-detail-label">分類</div><div class="reg-detail-value">${escapeHTML(reg.category||'未分類')}</div></div>
+        <div class="reg-detail-item"><div class="reg-detail-label">目前版本</div><div class="reg-detail-value">${current?'V'+escapeHTML(current.version_label):'—'}</div></div>
+        <div class="reg-detail-item"><div class="reg-detail-label">生效日期</div><div class="reg-detail-value">${current?.effective_date?rocDate(current.effective_date+'T00:00:00'):'—'}</div></div>
+        <div class="reg-detail-item"><div class="reg-detail-label">狀態</div><div class="reg-detail-value"><span class="status ${status}">${statusText}</span></div></div>
+        <div class="reg-detail-item full"><div class="reg-detail-label">最新檔案</div><div class="reg-detail-value">${current?.file_name?escapeHTML(current.file_name):'尚未上傳檔案'}</div></div>
+        <div class="reg-detail-item"><div class="reg-detail-label">版本數</div><div class="reg-detail-value">${versions.length} 個版本${drafts.length?`・${drafts.length} 草稿`:''}</div></div>
+      </div>
+      <div id="regDetailActions" class="reg-detail-actions"></div>`;
+    openModal({title:reg.title,html,showConfirm:false});
+    const actions=$('regDetailActions');
+    if(current?.file_path) actions.append(el('button',{class:'btn primary',text:'下載最新版',onClick:()=>downloadVersion(current)}));
+    actions.append(el('button',{class:'btn',text:`版本紀錄 (${versions.length})`,onClick:()=>openVersionsModal(reg)}));
+    if(canManage()) actions.append(el('button',{class:'btn',text:'＋ 上傳新版本',onClick:()=>openRegulationModal(reg)}));
+    if(canManage()&&drafts[0]) actions.append(el('button',{class:'btn',text:'發布草稿',onClick:()=>{closeModal();publishVersion(reg,drafts[0]);}}));
+  }
