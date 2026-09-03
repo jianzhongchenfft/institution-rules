@@ -1,0 +1,408 @@
+  // V5.1 個案管理：家訪／電訪追蹤模組
+  const caseVisitStyle = document.createElement('style');
+  caseVisitStyle.id = 'v51-case-visits-style';
+  caseVisitStyle.textContent = `
+    .case-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .case-toolbar .searchbox{min-width:260px}
+    .case-filter-label{font-size:11px;font-weight:900;color:var(--muted);margin-right:2px}
+    .case-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .case-table-shell{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+    .case-table{width:100%;min-width:850px;border-collapse:collapse}
+    .case-table th{padding:10px 13px;text-align:left;background:#faf8f7;color:#667085;font-size:11px;font-weight:900;border-bottom:1px solid var(--line);white-space:nowrap}
+    .case-table td{padding:12px 13px;border-bottom:1px solid var(--line);font-size:12.5px;color:#344054;vertical-align:middle}
+    .case-table tr:last-child td{border-bottom:0}
+    .case-table tbody tr:hover{background:#fffaf8}
+    .case-name-btn{appearance:none;border:0;background:transparent;padding:0;color:#1f2937;font:inherit;font-weight:900;cursor:pointer;text-align:left}
+    .case-name-btn:hover{color:var(--green-700);text-decoration:underline;text-underline-offset:3px}
+    .case-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 8px;font-size:10.5px;font-weight:900;white-space:nowrap}
+    .case-status.normal{background:#eef7f1;color:#237a4b}
+    .case-status.due{background:#fffaeb;color:#b54708}
+    .case-status.overdue{background:#fef3f2;color:#b42318}
+    .case-status.followup{background:#eff8ff;color:#175cd3}
+    .case-status.unplanned{background:#f2f4f7;color:#667085}
+    .case-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:16px}
+    .case-detail-item{border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:#fafcfb;min-width:0}
+    .case-detail-label{font-size:10px;color:var(--muted);font-weight:800;margin-bottom:4px}
+    .case-detail-value{font-size:12.5px;font-weight:900;color:#344054;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .case-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:16px 0 9px}
+    .case-section-title strong{font-size:13px}
+    .visit-history{display:grid;gap:8px}
+    .visit-item{border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:#fff}
+    .visit-item-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .visit-item strong{font-size:12.5px}
+    .visit-item-sub{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.55}
+    .visit-summary{font-size:12px;line-height:1.65;color:#475467;margin-top:8px;white-space:pre-wrap}
+    .followup-box{margin-top:9px;padding:9px 10px;border-radius:9px;background:#fff8f5;border:1px solid #f0ded7;font-size:11.5px;line-height:1.55;color:#7d4b3b}
+    .prior-followup{border:1px solid #d9e9f7;background:#f7fbff;border-radius:10px;padding:11px 12px;margin-bottom:13px}
+    .prior-followup strong{display:block;font-size:12px;color:#175cd3;margin-bottom:5px}
+    .prior-followup span{font-size:11.5px;line-height:1.55;color:#475467}
+    .field-note{display:none;margin-top:6px}
+    .field-note.show{display:block}
+    .inline-check{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#475467}
+    .inline-check input{width:auto}
+    .summary-tools{display:flex;justify-content:flex-end;margin-top:7px}
+    .empty.compact{padding:30px 16px}
+    @media(max-width:1000px){.case-detail-grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:820px){.case-stats{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:560px){.case-toolbar>*{width:100%}.case-toolbar .searchbox{min-width:0}.case-stats{grid-template-columns:1fr 1fr}.case-detail-grid{grid-template-columns:1fr 1fr}}
+  `;
+  document.head.appendChild(caseVisitStyle);
+
+  const caseModule = modules.find(m=>m.id==='cases');
+  if(caseModule){
+    caseModule.ready = true;
+    caseModule.crumb = '個案家訪與電訪追蹤';
+  }
+
+  Object.assign(state, {
+    cases: [],
+    caseVisits: [],
+    caseStaff: [],
+    caseQuery: '',
+    caseSupervisorFilter: null,
+    caseStatusFilter: 'all',
+    caseDataLoaded: false
+  });
+
+  function canUseCases(){
+    return !!state.profile && ['supervisor','business_manager','organization_manager','admin'].includes(state.profile.role);
+  }
+
+  function caseStaffName(id){
+    return state.caseStaff.find(s=>s.id===id)?.display_name || '尚未指派';
+  }
+
+  function caseTypeLabel(type){
+    return ({home:'家訪',phone:'電訪',new_case:'新案家訪',other:'其他'})[type] || '其他';
+  }
+
+  function resultLabel(v){
+    return ({improved:'已改善',ongoing:'持續追蹤',worse:'情況惡化',referred:'已轉介／處理'})[v] || '—';
+  }
+
+  function dateOnly(value){
+    if(!value) return null;
+    const d = new Date(value + (String(value).length===10?'T00:00:00':''));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function visitListFor(caseId){
+    return state.caseVisits.filter(v=>v.case_id===caseId).sort((a,b)=>{
+      const da = new Date((a.visit_date||'1970-01-01')+'T00:00:00');
+      const dbb = new Date((b.visit_date||'1970-01-01')+'T00:00:00');
+      return dbb-da || new Date(b.created_at)-new Date(a.created_at);
+    });
+  }
+
+  function latestVisitFor(caseId){
+    return visitListFor(caseId)[0] || null;
+  }
+
+  function nextVisitFor(caseId){
+    const v = visitListFor(caseId).find(x=>x.next_visit_date);
+    return v?.next_visit_date || null;
+  }
+
+  function isFollowUpResolved(visitId){
+    return state.caseVisits.some(v=>v.previous_follow_up_visit_id===visitId && !!v.previous_follow_up_result);
+  }
+
+  function pendingFollowUpsFor(caseId){
+    return visitListFor(caseId)
+      .filter(v=>v.follow_up_needed && !isFollowUpResolved(v.id))
+      .sort((a,b)=>String(a.follow_up_date||'9999-12-31').localeCompare(String(b.follow_up_date||'9999-12-31')));
+  }
+
+  function caseStatusInfo(c){
+    const today = new Date(); today.setHours(0,0,0,0);
+    const pending = pendingFollowUpsFor(c.id);
+    const overdueFollow = pending.find(v=>v.follow_up_date && dateOnly(v.follow_up_date)<today);
+    if(overdueFollow) return {key:'overdue',text:'追蹤逾期'};
+    if(pending.length) return {key:'followup',text:'待追蹤'};
+    const next = dateOnly(nextVisitFor(c.id));
+    if(!next) return {key:'unplanned',text:'未排定'};
+    if(next<today) return {key:'overdue',text:'訪視逾期'};
+    const soon = new Date(today); soon.setDate(soon.getDate()+30);
+    if(next<=soon) return {key:'due',text:'即將到期'};
+    return {key:'normal',text:'正常'};
+  }
+
+  function currentCaseScope(){
+    let list = state.cases.filter(c=>c.service_status!=='closed');
+    const filter = state.caseSupervisorFilter || (state.profile?.role==='supervisor'?'mine':'all');
+    if(filter==='mine') list = list.filter(c=>c.supervisor_id===state.profile?.id);
+    else if(filter!=='all') list = list.filter(c=>c.supervisor_id===filter);
+    return list;
+  }
+
+  async function loadCaseVisitData(silent=false){
+    if(!canUseCases()) return;
+    if(!silent) showLoading(true);
+    try{
+      const [staffRes,casesRes,visitsRes] = await Promise.all([
+        db.rpc('get_case_staff_directory'),
+        db.from('care_cases').select('id,case_name,supervisor_id,care_worker_name,open_date,cms_level,service_status,notes,created_at').order('case_name'),
+        db.from('case_visits').select('*').order('visit_date',{ascending:false}).order('created_at',{ascending:false})
+      ]);
+      if(staffRes.error) throw staffRes.error;
+      if(casesRes.error) throw casesRes.error;
+      if(visitsRes.error) throw visitsRes.error;
+      state.caseStaff = staffRes.data || [];
+      state.cases = casesRes.data || [];
+      state.caseVisits = visitsRes.data || [];
+      if(!state.caseSupervisorFilter) state.caseSupervisorFilter = state.profile?.role==='supervisor' ? 'mine' : 'all';
+      state.caseDataLoaded = true;
+    }catch(err){
+      console.error(err);
+      toast('讀取個案訪視資料失敗：'+(err?.message||err),'error');
+    }finally{
+      if(!silent) showLoading(false);
+    }
+  }
+
+  const baseNavigateForCases = navigate;
+  navigate = function(id){
+    if(id!=='cases') return baseNavigateForCases(id);
+    const m = modules.find(x=>x.id==='cases') || modules[0];
+    state.page = 'cases';
+    renderNav();
+    $('topTitle').textContent = m.label;
+    $('crumb').textContent = m.crumb;
+    $('sidebar').classList.remove('open');
+    window.scrollTo({top:0,behavior:'auto'});
+    if(!canUseCases()){
+      $('content').innerHTML = `<div class="page-head"><div><h1>👤 個案管理</h1><p>個案家訪與電訪追蹤</p></div></div><div class="empty"><div class="icon">🔒</div><h3>此帳號沒有個案管理權限</h3><p>個案訪視資料僅提供督導與管理人員使用。</p></div>`;
+      return;
+    }
+    $('content').innerHTML = `<div class="empty compact"><div class="icon">👤</div><h3>正在載入個案資料</h3><p>請稍候。</p></div>`;
+    loadCaseVisitData().then(renderCaseVisitsPage);
+  };
+
+  function renderCaseVisitsPage(){
+    if(state.page!=='cases') return;
+    const supervisors = state.caseStaff.filter(s=>s.role==='supervisor');
+    const scope = currentCaseScope();
+    const q = state.caseQuery.trim().toLowerCase();
+    let rows = scope.filter(c=>!q || c.case_name.toLowerCase().includes(q) || (c.care_worker_name||'').toLowerCase().includes(q) || caseStaffName(c.supervisor_id).toLowerCase().includes(q));
+    if(state.caseStatusFilter!=='all') rows = rows.filter(c=>caseStatusInfo(c).key===state.caseStatusFilter);
+
+    const now = new Date();
+    const year = now.getFullYear(), month = now.getMonth();
+    const monthDue = scope.filter(c=>{ const d=dateOnly(nextVisitFor(c.id)); return d && d.getFullYear()===year && d.getMonth()===month; }).length;
+    const followCount = scope.filter(c=>pendingFollowUpsFor(c.id).length>0).length;
+    const overdueCount = scope.filter(c=>caseStatusInfo(c).key==='overdue').length;
+
+    $('content').innerHTML = `
+      <div class="page-head">
+        <div><h1>👤 個案家訪／電訪</h1><p>優先顯示自己的個案，也可切換查閱其他督導的個案與歷次訪視紀錄。</p></div>
+        <div class="actions"><button id="addCaseBtn" class="btn primary">＋ 新增個案</button></div>
+      </div>
+      <section class="case-stats">
+        <article class="stat-card"><div class="stat-head"><span>個案數</span><span class="stat-icon">👤</span></div><div class="stat-value">${scope.length}</div><div class="stat-foot">目前篩選督導的服務中個案</div></article>
+        <article class="stat-card"><div class="stat-head"><span>本月待訪</span><span class="stat-icon">📅</span></div><div class="stat-value">${monthDue}</div><div class="stat-foot">依紀錄設定的下次訪視日期</div></article>
+        <article class="stat-card"><div class="stat-head"><span>待追蹤</span><span class="stat-icon">🔎</span></div><div class="stat-value">${followCount}</div><div class="stat-foot">尚未完成的追蹤事項</div></article>
+        <article class="stat-card"><div class="stat-head"><span>逾期</span><span class="stat-icon">⚠️</span></div><div class="stat-value">${overdueCount}</div><div class="stat-foot">訪視或追蹤日期已超過</div></article>
+      </section>
+      <div class="case-toolbar">
+        <span class="case-filter-label">督導</span>
+        <select id="caseSupervisorFilter">
+          ${state.profile?.role==='supervisor'?`<option value="mine" ${state.caseSupervisorFilter==='mine'?'selected':''}>我的個案</option>`:''}
+          <option value="all" ${state.caseSupervisorFilter==='all'?'selected':''}>全部個案</option>
+          ${supervisors.map(s=>`<option value="${s.id}" ${state.caseSupervisorFilter===s.id?'selected':''}>${escapeHTML(s.display_name)}</option>`).join('')}
+        </select>
+        <div class="searchbox"><input id="caseSearch" placeholder="搜尋個案、居服員或督導" value="${escapeHTML(state.caseQuery)}"></div>
+        <select id="caseStatusFilter">
+          <option value="all" ${state.caseStatusFilter==='all'?'selected':''}>全部狀態</option>
+          <option value="followup" ${state.caseStatusFilter==='followup'?'selected':''}>待追蹤</option>
+          <option value="due" ${state.caseStatusFilter==='due'?'selected':''}>即將到期</option>
+          <option value="overdue" ${state.caseStatusFilter==='overdue'?'selected':''}>逾期</option>
+          <option value="normal" ${state.caseStatusFilter==='normal'?'selected':''}>正常</option>
+          <option value="unplanned" ${state.caseStatusFilter==='unplanned'?'selected':''}>未排定</option>
+        </select>
+        <button id="reloadCases" class="btn">↻ 重新整理</button>
+      </div>
+      <div id="caseList"></div>`;
+
+    $('caseSupervisorFilter').addEventListener('change',e=>{state.caseSupervisorFilter=e.target.value;renderCaseVisitsPage();});
+    $('caseSearch').addEventListener('input',e=>{const pos=e.target.selectionStart;state.caseQuery=e.target.value;renderCaseVisitsPage();const i=$('caseSearch');if(i){i.focus();try{i.setSelectionRange(pos,pos);}catch(_){}}});
+    $('caseStatusFilter').addEventListener('change',e=>{state.caseStatusFilter=e.target.value;renderCaseVisitsPage();});
+    $('reloadCases').addEventListener('click',async()=>{await loadCaseVisitData();renderCaseVisitsPage();toast('已重新整理個案資料','success');});
+    $('addCaseBtn').addEventListener('click',openCaseModal);
+
+    const list = $('caseList');
+    if(!rows.length){
+      const extra = state.cases.length ? '請調整督導、狀態或搜尋條件。' : '目前尚未建立個案資料，可先新增個案後開始記錄家訪與電訪。';
+      list.innerHTML = `<div class="empty"><div class="icon">👤</div><h3>目前沒有可顯示的個案</h3><p>${extra}</p></div>`;
+      return;
+    }
+
+    list.innerHTML = `<div class="case-table-shell"><table class="case-table"><thead><tr><th>個案姓名</th><th>負責督導</th><th>最近訪視</th><th>類型</th><th>下次追蹤／訪視</th><th>狀態</th></tr></thead><tbody>${rows.map(c=>{
+      const latest=latestVisitFor(c.id);
+      const pending=pendingFollowUpsFor(c.id)[0];
+      const next=nextVisitFor(c.id);
+      const s=caseStatusInfo(c);
+      const nextText=pending ? `${pending.follow_up_date?rocDate(pending.follow_up_date+'T00:00:00'):'未排日期'}・${escapeHTML(pending.follow_up_item||'追蹤事項')}` : (next?rocDate(next+'T00:00:00'):'—');
+      return `<tr><td><button class="case-name-btn" data-case-id="${c.id}">${escapeHTML(c.case_name)}</button></td><td>${escapeHTML(caseStaffName(c.supervisor_id))}</td><td>${latest?rocDate(latest.visit_date+'T00:00:00'):'—'}</td><td>${latest?caseTypeLabel(latest.visit_type):'—'}</td><td>${nextText}</td><td><span class="case-status ${s.key}">${s.text}</span></td></tr>`;
+    }).join('')}</tbody></table></div>`;
+    list.querySelectorAll('[data-case-id]').forEach(btn=>btn.addEventListener('click',()=>openCaseDetail(state.cases.find(c=>c.id===btn.dataset.caseId))));
+  }
+
+  function openCaseModal(){
+    const supervisors = state.caseStaff.filter(s=>s.role==='supervisor');
+    const defaultSupervisor = state.profile?.role==='supervisor' ? state.profile.id : '';
+    openModal({title:'新增個案',confirmText:'建立個案',html:`
+      <div class="form-grid">
+        <div class="field"><label>個案姓名 *</label><input id="caseName" placeholder="請輸入個案姓名"></div>
+        <div class="field"><label>負責督導</label><select id="caseSupervisor"><option value="">尚未指派</option>${supervisors.map(s=>`<option value="${s.id}" ${s.id===defaultSupervisor?'selected':''}>${escapeHTML(s.display_name)}</option>`).join('')}</select></div>
+        <div class="field"><label>居服員</label><input id="caseWorker" placeholder="可稍後補填"></div>
+        <div class="field"><label>開案日</label><input id="caseOpenDate" type="date"></div>
+        <div class="field"><label>CMS 等級</label><input id="caseCms" placeholder="例如：4"></div>
+        <div class="field full"><label>備註</label><textarea id="caseNotes" placeholder="僅填必要的基本備註"></textarea></div>
+      </div>`,onConfirm:saveCase});
+  }
+
+  async function saveCase(){
+    const caseName=$('caseName').value.trim();
+    if(!caseName){toast('請輸入個案姓名','warn');return false;}
+    showLoading(true);
+    try{
+      const {error}=await db.from('care_cases').insert({
+        case_name:caseName,
+        supervisor_id:$('caseSupervisor').value||null,
+        care_worker_name:$('caseWorker').value.trim()||null,
+        open_date:$('caseOpenDate').value||null,
+        cms_level:$('caseCms').value.trim()||null,
+        notes:$('caseNotes').value.trim()||null,
+        created_by:state.user.id
+      });
+      if(error) throw error;
+      closeModal();
+      await loadCaseVisitData(true);
+      renderCaseVisitsPage();
+      toast('個案已建立','success');
+      return true;
+    }catch(err){toast('新增個案失敗：'+(err?.message||err),'error');return false;}
+    finally{showLoading(false);}
+  }
+
+  function openCaseDetail(c){
+    if(!c) return;
+    const visits = visitListFor(c.id);
+    const pending = pendingFollowUpsFor(c.id);
+    const status = caseStatusInfo(c);
+    const html = `
+      <div class="case-detail-grid">
+        <div class="case-detail-item"><div class="case-detail-label">負責督導</div><div class="case-detail-value">${escapeHTML(caseStaffName(c.supervisor_id))}</div></div>
+        <div class="case-detail-item"><div class="case-detail-label">居服員</div><div class="case-detail-value">${escapeHTML(c.care_worker_name||'—')}</div></div>
+        <div class="case-detail-item"><div class="case-detail-label">開案日</div><div class="case-detail-value">${c.open_date?rocDate(c.open_date+'T00:00:00'):'—'}</div></div>
+        <div class="case-detail-item"><div class="case-detail-label">CMS</div><div class="case-detail-value">${escapeHTML(c.cms_level||'—')}</div></div>
+      </div>
+      <div class="case-section-title"><strong>訪視歷程</strong><button id="addVisitFromDetail" class="btn sm primary">＋ 新增訪視紀錄</button></div>
+      ${pending.length?`<div class="prior-followup"><strong>目前待追蹤 ${pending.length} 項</strong><span>${pending.map(v=>`${v.follow_up_date?rocDate(v.follow_up_date+'T00:00:00'):'未排日期'}｜${escapeHTML(v.follow_up_item||'未填內容')}`).join('<br>')}</span></div>`:''}
+      <div class="visit-history">${visits.length?visits.map(v=>{
+        const assisted = c.supervisor_id && v.visitor_staff_id!==c.supervisor_id;
+        const resolvedByLater = isFollowUpResolved(v.id);
+        return `<div class="visit-item"><div class="visit-item-top"><div><strong>${rocDate(v.visit_date+'T00:00:00')}　${caseTypeLabel(v.visit_type)}</strong><div class="visit-item-sub">訪視人員：${escapeHTML(caseStaffName(v.visitor_staff_id))}${assisted?'（協助訪視）':''}${v.contact_person?`　聯絡／在場：${escapeHTML(v.contact_person)}`:''}</div></div>${v.follow_up_needed?`<span class="case-status ${resolvedByLater?'normal':'followup'}">${resolvedByLater?'已追蹤':'待追蹤'}</span>`:''}</div>${v.summary?`<div class="visit-summary">${escapeHTML(v.summary)}</div>`:''}${v.follow_up_needed?`<div class="followup-box">追蹤事項：${escapeHTML(v.follow_up_item||'—')}<br>預計追蹤：${v.follow_up_date?rocDate(v.follow_up_date+'T00:00:00'):'未設定'}${resolvedByLater?'<br>後續已於下一筆紀錄完成追蹤。':''}</div>`:''}${v.previous_follow_up_result?`<div class="visit-item-sub" style="margin-top:8px">前次追蹤結果：${resultLabel(v.previous_follow_up_result)}</div>`:''}</div>`;
+      }).join(''):'<div class="empty compact"><h3>尚無訪視紀錄</h3><p>可新增第一筆家訪或電訪紀錄。</p></div>'}</div>`;
+    openModal({title:`${c.case_name}｜${status.text}`,html,large:true,showConfirm:false});
+    $('addVisitFromDetail')?.addEventListener('click',()=>openVisitModal(c));
+  }
+
+  function openVisitModal(c){
+    const pending = pendingFollowUpsFor(c.id);
+    const prior = pending[0] || null;
+    const today = isoDate();
+    openModal({title:`新增訪視｜${c.case_name}`,large:true,confirmText:'儲存訪視紀錄',html:`
+      ${prior?`<div class="prior-followup"><strong>前次尚有追蹤事項</strong><span>${prior.follow_up_date?rocDate(prior.follow_up_date+'T00:00:00'):'未排日期'}｜${escapeHTML(prior.follow_up_item||'未填內容')}</span><div style="margin-top:9px"><label class="inline-check"><input id="resolvePrior" type="checkbox"> 本次一併完成此追蹤</label></div><div id="priorResultWrap" class="field-note"><select id="priorResult"><option value="improved">已改善</option><option value="ongoing">持續追蹤</option><option value="worse">情況惡化</option><option value="referred">已轉介／處理</option></select></div></div>`:''}
+      <div class="form-grid">
+        <div class="field"><label>訪視類型 *</label><select id="visitType"><option value="home">家訪</option><option value="phone">電訪</option><option value="new_case">新案家訪</option><option value="other">其他</option></select></div>
+        <div class="field"><label>訪視日期 *</label><input id="visitDate" type="date" value="${today}"></div>
+        <div class="field full"><label>聯絡／在場對象</label><input id="contactPerson" placeholder="例如：個案、案女、案子、主要照顧者"></div>
+        <div class="field"><label>身體狀況</label><select id="physicalStatus"><option value="stable">穩定</option><option value="changed">有變化</option></select><input id="physicalNote" class="field-note" placeholder="請簡述變化"></div>
+        <div class="field"><label>精神／認知</label><select id="mentalStatus"><option value="stable">穩定</option><option value="changed">有變化</option></select><input id="mentalNote" class="field-note" placeholder="請簡述變化"></div>
+        <div class="field"><label>行動能力</label><select id="mobilityStatus"><option value="stable">穩定</option><option value="changed">有變化</option></select><input id="mobilityNote" class="field-note" placeholder="請簡述變化"></div>
+        <div class="field"><label>飲食／排泄／睡眠</label><select id="dailyStatus"><option value="normal">正常</option><option value="abnormal">有異常</option></select><input id="dailyNote" class="field-note" placeholder="請簡述異常"></div>
+        <div class="field"><label>目前服務是否符合需求</label><select id="serviceFit"><option value="fit">符合</option><option value="adjust">部分需調整</option><option value="reassess">建議重新評估</option></select></div>
+        <div class="field"><label>居服員服務情形</label><select id="workerStatus"><option value="stable">穩定</option><option value="improve">有需要改善事項</option></select></div>
+        <div class="field"><label>個案／家屬是否有意見</label><select id="familyFeedback"><option value="none">無</option><option value="yes">有</option></select><input id="familyFeedbackNote" class="field-note" placeholder="請簡述意見"></div>
+        <div class="field"><label>下次訪視日期</label><input id="nextVisitDate" type="date"></div>
+        <div class="field full"><label class="inline-check"><input id="followNeeded" type="checkbox"> 本次需要後續追蹤</label></div>
+        <div id="followWrap" class="field full field-note"><div class="form-grid"><div class="field"><label>追蹤事項</label><input id="followItem" placeholder="例如：確認回診結果"></div><div class="field"><label>預計追蹤日期</label><input id="followDate" type="date"></div></div></div>
+        <div class="field full"><label>訪談摘要</label><textarea id="visitSummary" style="min-height:130px" placeholder="可自行輸入，或按下方按鈕依目前選項產生初稿"></textarea><div class="summary-tools"><button id="buildVisitSummary" type="button" class="btn sm">自動整理紀錄</button></div></div>
+      </div>`,onConfirm:()=>saveVisit(c,prior)});
+
+    const toggleNote=(selectId,noteId,trigger)=>{const fn=()=>$(noteId).classList.toggle('show',$(selectId).value===trigger);$(selectId).addEventListener('change',fn);fn();};
+    toggleNote('physicalStatus','physicalNote','changed');
+    toggleNote('mentalStatus','mentalNote','changed');
+    toggleNote('mobilityStatus','mobilityNote','changed');
+    toggleNote('dailyStatus','dailyNote','abnormal');
+    toggleNote('familyFeedback','familyFeedbackNote','yes');
+    $('followNeeded').addEventListener('change',()=>$('followWrap').classList.toggle('show',$('followNeeded').checked));
+    $('resolvePrior')?.addEventListener('change',()=>$('priorResultWrap').classList.toggle('show',$('resolvePrior').checked));
+    $('buildVisitSummary').addEventListener('click',()=>{$('visitSummary').value=buildVisitSummary(c,prior);});
+  }
+
+  function buildVisitSummary(c,prior){
+    const type=$('visitType').value;
+    const date=$('visitDate').value;
+    const contact=$('contactPerson').value.trim();
+    const intro = type==='phone' ? `${date?rocDate(date+'T00:00:00'):''}電聯${contact||'個案／家屬'}了解近期生活及居家服務情形。` : `${date?rocDate(date+'T00:00:00'):''}進行${caseTypeLabel(type)}，了解個案近期狀況及居家服務情形。`;
+    const parts=[intro];
+    if($('physicalStatus').value==='stable') parts.push('個案近期身體狀況穩定。'); else parts.push(`身體狀況有變化${$('physicalNote').value.trim()?`，${$('physicalNote').value.trim()}`:''}。`);
+    if($('mentalStatus').value==='changed') parts.push(`精神或認知狀況有變化${$('mentalNote').value.trim()?`，${$('mentalNote').value.trim()}`:''}。`);
+    if($('mobilityStatus').value==='changed') parts.push(`行動能力有變化${$('mobilityNote').value.trim()?`，${$('mobilityNote').value.trim()}`:''}。`);
+    if($('dailyStatus').value==='abnormal') parts.push(`飲食、排泄或睡眠有異常${$('dailyNote').value.trim()?`，${$('dailyNote').value.trim()}`:''}。`);
+    const fit=$('serviceFit').value;
+    parts.push(fit==='fit'?'目前服務內容符合需求。':fit==='adjust'?'目前服務內容部分需調整，後續將再確認需求。':'目前狀況建議重新評估服務需求。');
+    parts.push($('workerStatus').value==='stable'?'居服員服務情形穩定。':'居服員服務有需改善事項，後續將持續追蹤。');
+    if($('familyFeedback').value==='none') parts.push('個案／家屬目前無其他意見。'); else parts.push(`個案／家屬有提出意見${$('familyFeedbackNote').value.trim()?`，${$('familyFeedbackNote').value.trim()}`:''}。`);
+    if(prior && $('resolvePrior')?.checked) parts.push(`另追蹤前次事項，本次結果為「${resultLabel($('priorResult').value)}」。`);
+    if($('followNeeded').checked){const item=$('followItem').value.trim();parts.push(`本次仍需後續追蹤${item?`「${item}」`:''}。`);} else parts.push('目前無新增追蹤事項。');
+    return parts.join('');
+  }
+
+  async function saveVisit(c,prior){
+    const visitDate=$('visitDate').value;
+    if(!visitDate){toast('請填寫訪視日期','warn');return false;}
+    const followNeeded=$('followNeeded').checked;
+    if(followNeeded && !$('followItem').value.trim()){toast('已勾選需要追蹤，請填寫追蹤事項','warn');return false;}
+    let summary=$('visitSummary').value.trim();
+    if(!summary) summary=buildVisitSummary(c,prior);
+    showLoading(true);
+    try{
+      const {error}=await db.from('case_visits').insert({
+        case_id:c.id,
+        visit_type:$('visitType').value,
+        visit_date:visitDate,
+        visitor_staff_id:state.profile.id,
+        contact_person:$('contactPerson').value.trim()||null,
+        physical_status:$('physicalStatus').value,
+        physical_note:$('physicalNote').value.trim()||null,
+        mental_status:$('mentalStatus').value,
+        mental_note:$('mentalNote').value.trim()||null,
+        mobility_status:$('mobilityStatus').value,
+        mobility_note:$('mobilityNote').value.trim()||null,
+        daily_status:$('dailyStatus').value,
+        daily_note:$('dailyNote').value.trim()||null,
+        service_fit:$('serviceFit').value,
+        worker_service_status:$('workerStatus').value,
+        family_feedback:$('familyFeedback').value,
+        family_feedback_note:$('familyFeedbackNote').value.trim()||null,
+        summary,
+        previous_follow_up_visit_id:prior && $('resolvePrior')?.checked ? prior.id : null,
+        previous_follow_up_result:prior && $('resolvePrior')?.checked ? $('priorResult').value : null,
+        follow_up_needed:followNeeded,
+        follow_up_item:followNeeded ? ($('followItem').value.trim()||null) : null,
+        follow_up_date:followNeeded ? ($('followDate').value||null) : null,
+        next_visit_date:$('nextVisitDate').value||null,
+        created_by:state.user.id
+      });
+      if(error) throw error;
+      closeModal();
+      await loadCaseVisitData(true);
+      renderCaseVisitsPage();
+      toast('訪視紀錄已儲存','success');
+      return true;
+    }catch(err){toast('儲存訪視紀錄失敗：'+(err?.message||err),'error');return false;}
+    finally{showLoading(false);}
+  }
