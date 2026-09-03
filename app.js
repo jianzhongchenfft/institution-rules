@@ -1,11 +1,16 @@
 const SUPABASE_URL = "https://rdgaxgfzhraayjjwtvag.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_TTjQ16DpC1tFmyvbNlrv2Q_jVoS810J";
 const SITE_URL = "https://jianzhongchenfft.github.io/institution-rules/";
+const FILE_BUCKET = "regulation-files";
 
 const client = window.supabase.createClient(
   SUPABASE_URL,
   SUPABASE_PUBLISHABLE_KEY
 );
+
+const MANAGER_ROLES = ["admin", "business_manager", "organization_manager"];
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = ["pdf", "doc", "docx"];
 
 let currentSession = null;
 let currentStaff = null;
@@ -17,12 +22,12 @@ let adminRecords = [];
 let selectedAdminId = null;
 
 let editorState = {
-  mode: null, // new | existing
+  mode: null,
   regulationId: null,
-  versionId: null
+  versionId: null,
+  existingFilePath: null,
+  existingFileName: null
 };
-
-const MANAGER_ROLES = ["admin", "business_manager", "organization_manager"];
 
 const authScreen = document.getElementById("authScreen");
 const unauthorizedScreen = document.getElementById("unauthorizedScreen");
@@ -65,10 +70,9 @@ const formTitle = document.getElementById("formTitle");
 const formCategory = document.getElementById("formCategory");
 const formVersion = document.getElementById("formVersion");
 const formEffectiveDate = document.getElementById("formEffectiveDate");
-const formSummary = document.getElementById("formSummary");
 const formRevisionNotes = document.getElementById("formRevisionNotes");
-const sectionsEditor = document.getElementById("sectionsEditor");
-const addSectionBtn = document.getElementById("addSectionBtn");
+const formFile = document.getElementById("formFile");
+const currentFileInfo = document.getElementById("currentFileInfo");
 const publishBtn = document.getElementById("publishBtn");
 const editorMessage = document.getElementById("editorMessage");
 
@@ -160,9 +164,7 @@ async function showAdminView() {
   await loadAdminData();
 }
 
-/* =========================
-   Reader
-========================= */
+/* Reader */
 
 async function loadReaderData() {
   const { data, error } = await client
@@ -171,15 +173,16 @@ async function loadReaderData() {
       id,
       version_label,
       effective_date,
-      summary,
-      content,
       revision_notes,
       status,
       published_at,
       regulation_id,
+      file_path,
+      file_name,
+      file_mime_type,
+      file_size,
       regulations!inner (
         id,
-        slug,
         title,
         category,
         is_active
@@ -194,14 +197,14 @@ async function loadReaderData() {
     return;
   }
 
-  const byRegulation = new Map();
+  const map = new Map();
 
   for (const row of data || []) {
     const reg = row.regulations;
     if (!reg?.is_active) continue;
 
-    if (!byRegulation.has(reg.id)) {
-      byRegulation.set(reg.id, {
+    if (!map.has(reg.id)) {
+      map.set(reg.id, {
         id: reg.id,
         title: reg.title,
         category: reg.category,
@@ -210,8 +213,8 @@ async function loadReaderData() {
       });
     }
 
-    const target = byRegulation.get(reg.id);
     const version = normalizeVersion(row);
+    const target = map.get(reg.id);
 
     if (row.status === "published" && !target.current) {
       target.current = version;
@@ -220,8 +223,8 @@ async function loadReaderData() {
     }
   }
 
-  readerRegulations = [...byRegulation.values()]
-    .filter(x => x.current)
+  readerRegulations = [...map.values()]
+    .filter(item => item.current)
     .sort((a, b) => a.title.localeCompare(b.title, "zh-Hant"));
 
   populateReaderCategories();
@@ -246,23 +249,26 @@ function normalizeVersion(row) {
     version: row.version_label,
     effectiveDate: formatDateROC(row.effective_date),
     publishedDate: formatDateROC(row.published_at),
-    summary: row.summary || "",
     revisionNotes: row.revision_notes || "",
-    content: Array.isArray(row.content) ? row.content : [],
-    status: row.status
+    status: row.status,
+    filePath: row.file_path,
+    fileName: row.file_name,
+    fileMimeType: row.file_mime_type,
+    fileSize: row.file_size
   };
 }
 
 function populateReaderCategories() {
   categoryEl.innerHTML = '<option value="">全部類別</option>';
+
   const categories = [...new Set(readerRegulations.map(x => x.category))].sort();
 
-  categories.forEach(category => {
+  for (const category of categories) {
     const option = document.createElement("option");
     option.value = category;
     option.textContent = category;
     categoryEl.appendChild(option);
-  });
+  }
 }
 
 function renderReaderList() {
@@ -270,29 +276,19 @@ function renderReaderList() {
   const category = categoryEl.value;
 
   const filtered = readerRegulations.filter(item => {
-    const current = item.current;
-
-    const searchable = [
-      item.title,
-      item.category,
-      current.summary,
-      ...current.content.map(section =>
-        `${section.heading || ""} ${section.text || ""}`
-      )
-    ].join(" ").toLowerCase();
-
+    const searchable = `${item.title} ${item.category}`.toLowerCase();
     return (!keyword || searchable.includes(keyword)) &&
            (!category || item.category === category);
   });
 
   listEl.innerHTML = "";
 
-  if (filtered.length === 0) {
+  if (!filtered.length) {
     listEl.innerHTML = '<div class="empty-state">找不到符合條件的內規。</div>';
     return;
   }
 
-  filtered.forEach(item => {
+  for (const item of filtered) {
     const button = document.createElement("button");
     button.className =
       "regulation-item" + (item.id === selectedReaderId ? " active" : "");
@@ -304,7 +300,7 @@ function renderReaderList() {
 
     button.addEventListener("click", () => selectReaderRegulation(item.id));
     listEl.appendChild(button);
-  });
+  }
 }
 
 function selectReaderRegulation(id) {
@@ -317,14 +313,38 @@ function selectReaderRegulation(id) {
   emptyEl.classList.add("hidden");
   detailEl.classList.remove("hidden");
 
+  const currentFileHtml = current.filePath
+    ? `
+      <div class="file-panel">
+        <h3>正式內規檔案</h3>
+        <p>${escapeHtml(current.fileName || "內規檔案")}</p>
+        <p>${escapeHtml(formatFileSize(current.fileSize))}</p>
+        <button class="download-button current-download-btn" type="button">下載檔案</button>
+      </div>
+    `
+    : `
+      <div class="file-panel">
+        <h3>正式內規檔案</h3>
+        <p>此版本為舊系統建立，尚未附加原始檔案。</p>
+      </div>
+    `;
+
   const historyHtml = item.history.length
     ? `
       <details class="history-block">
         <summary>歷史版本（${item.history.length}）</summary>
         ${item.history.map(v => `
           <div class="history-item">
-            <strong>版本 ${escapeHtml(v.version)}｜生效日 ${escapeHtml(v.effectiveDate)}</strong>
-            <p>${escapeHtml(v.revisionNotes || "無修訂說明")}</p>
+            <div class="history-item-head">
+              <div>
+                <strong>版本 ${escapeHtml(v.version)}｜生效日 ${escapeHtml(v.effectiveDate)}</strong>
+                <p>${escapeHtml(v.revisionNotes || "無修訂說明")}</p>
+                <p>${escapeHtml(v.fileName || "此歷史版本尚未附檔")}</p>
+              </div>
+              ${v.filePath
+                ? `<button class="download-button history-download-btn" data-version-id="${v.id}" type="button">下載</button>`
+                : ""}
+            </div>
           </div>
         `).join("")}
       </details>
@@ -339,15 +359,27 @@ function selectReaderRegulation(id) {
       <span>生效日：${escapeHtml(current.effectiveDate)}</span>
       <span>發布日：${escapeHtml(current.publishedDate)}</span>
     </div>
-    <div class="summary">${escapeHtml(current.summary)}</div>
-    ${current.content.map(section => `
-      <section class="section">
-        <h3>${escapeHtml(section.heading || "")}</h3>
-        <p>${escapeHtml(section.text || "")}</p>
-      </section>
-    `).join("")}
+    ${current.revisionNotes
+      ? `<div class="revision-note"><strong>修訂說明：</strong>${escapeHtml(current.revisionNotes)}</div>`
+      : ""}
+    ${currentFileHtml}
     ${historyHtml}
   `;
+
+  const currentBtn = detailEl.querySelector(".current-download-btn");
+  if (currentBtn) {
+    currentBtn.addEventListener("click", () =>
+      downloadRegulationFile(current.filePath, current.fileName)
+    );
+  }
+
+  detailEl.querySelectorAll(".history-download-btn").forEach(btn => {
+    const versionId = btn.dataset.versionId;
+    const version = item.history.find(v => v.id === versionId);
+    btn.addEventListener("click", () =>
+      downloadRegulationFile(version.filePath, version.fileName)
+    );
+  });
 
   renderReaderList();
 }
@@ -356,9 +388,7 @@ function updateFooter() {
   footerEl.textContent = `目前共 ${readerRegulations.length} 份已發布內規`;
 }
 
-/* =========================
-   Admin
-========================= */
+/* Admin */
 
 async function loadAdminData() {
   const { data: regs, error: regError } = await client
@@ -375,7 +405,21 @@ async function loadAdminData() {
 
   const { data: versions, error: versionError } = await client
     .from("regulation_versions")
-    .select("id,regulation_id,version_label,effective_date,summary,content,revision_notes,status,published_at,created_by,created_at")
+    .select(`
+      id,
+      regulation_id,
+      version_label,
+      effective_date,
+      revision_notes,
+      status,
+      published_at,
+      created_by,
+      created_at,
+      file_path,
+      file_name,
+      file_mime_type,
+      file_size
+    `)
     .order("created_at", { ascending: false });
 
   if (versionError) {
@@ -387,9 +431,11 @@ async function loadAdminData() {
 
   const versionMap = new Map();
 
-  for (const v of versions || []) {
-    if (!versionMap.has(v.regulation_id)) versionMap.set(v.regulation_id, []);
-    versionMap.get(v.regulation_id).push(v);
+  for (const version of versions || []) {
+    if (!versionMap.has(version.regulation_id)) {
+      versionMap.set(version.regulation_id, []);
+    }
+    versionMap.get(version.regulation_id).push(version);
   }
 
   adminRecords = (regs || []).map(reg => ({
@@ -411,20 +457,20 @@ async function loadAdminData() {
 function renderAdminList() {
   const keyword = adminSearchInput.value.trim().toLowerCase();
 
-  const filtered = adminRecords.filter(item => {
-    return !keyword ||
-      `${item.title} ${item.category}`.toLowerCase().includes(keyword);
-  });
+  const filtered = adminRecords.filter(item =>
+    !keyword ||
+    `${item.title} ${item.category}`.toLowerCase().includes(keyword)
+  );
 
   adminRegulationList.innerHTML = "";
 
-  if (filtered.length === 0) {
+  if (!filtered.length) {
     adminRegulationList.innerHTML =
       '<div class="empty-state">找不到符合條件的內規。</div>';
     return;
   }
 
-  filtered.forEach(item => {
+  for (const item of filtered) {
     const current = item.versions.find(v => v.status === "published");
     const draft = item.versions.find(v => v.status === "draft");
 
@@ -443,7 +489,7 @@ function renderAdminList() {
 
     btn.addEventListener("click", () => selectAdminRegulation(item.id));
     adminRegulationList.appendChild(btn);
-  });
+  }
 }
 
 function selectAdminRegulation(id) {
@@ -460,12 +506,11 @@ function selectAdminRegulation(id) {
   adminCategory.textContent = item.category;
 
   const draft = item.versions.find(v => v.status === "draft");
-  const published = item.versions.find(v => v.status === "published");
 
   if (draft) {
     draftNotice.classList.remove("hidden");
     draftNotice.textContent =
-      `此內規目前已有草稿版本 ${draft.version_label}。請先編輯或發布該草稿。`;
+      `目前已有草稿版本 ${draft.version_label}。請先編輯或發布該草稿。`;
     createDraftBtn.disabled = true;
   } else {
     draftNotice.classList.add("hidden");
@@ -473,22 +518,16 @@ function selectAdminRegulation(id) {
     createDraftBtn.disabled = false;
   }
 
-  if (!published && !draft) {
-    createDraftBtn.textContent = "建立第一版草稿";
-  } else {
-    createDraftBtn.textContent = "建立新版草稿";
-  }
-
   renderVersionList(item);
   renderAdminList();
 }
 
 function renderVersionList(item) {
-  const versions = [...item.versions].sort((a, b) =>
-    new Date(b.created_at) - new Date(a.created_at)
+  const versions = [...item.versions].sort(
+    (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
 
-  if (versions.length === 0) {
+  if (!versions.length) {
     versionList.innerHTML = '<p class="empty-state">尚無版本紀錄。</p>';
     return;
   }
@@ -500,19 +539,22 @@ function renderVersionList(item) {
       superseded: "歷史版本"
     }[v.status] || v.status;
 
-    const statusClass = `status-${v.status}`;
-
     return `
       <div class="version-row">
         <div>
-          <strong>版本 ${escapeHtml(v.version_label)}　
-            <span class="${statusClass}">${escapeHtml(statusText)}</span>
+          <strong>
+            版本 ${escapeHtml(v.version_label)}　
+            <span class="status-${escapeHtml(v.status)}">${escapeHtml(statusText)}</span>
           </strong>
           <p>生效日：${escapeHtml(formatDateROC(v.effective_date))}　
              建立日：${escapeHtml(formatDateROC(v.created_at))}</p>
+          <p>${escapeHtml(v.file_name || "尚未附加檔案")}</p>
           <p>${escapeHtml(v.revision_notes || "無修訂說明")}</p>
         </div>
         <div class="version-actions">
+          ${v.file_path
+            ? `<button class="secondary-button admin-download-btn" data-version-id="${v.id}" type="button">下載檔案</button>`
+            : ""}
           ${v.status === "draft"
             ? `<button class="secondary-button edit-draft-btn" data-version-id="${v.id}" type="button">編輯草稿</button>`
             : ""}
@@ -521,8 +563,17 @@ function renderVersionList(item) {
     `;
   }).join("");
 
-  document.querySelectorAll(".edit-draft-btn").forEach(btn => {
-    btn.addEventListener("click", () => openExistingDraft(btn.dataset.versionId));
+  versionList.querySelectorAll(".admin-download-btn").forEach(btn => {
+    const version = item.versions.find(v => v.id === btn.dataset.versionId);
+    btn.addEventListener("click", () =>
+      downloadRegulationFile(version.file_path, version.file_name)
+    );
+  });
+
+  versionList.querySelectorAll(".edit-draft-btn").forEach(btn => {
+    btn.addEventListener("click", () =>
+      openExistingDraft(btn.dataset.versionId)
+    );
   });
 }
 
@@ -530,14 +581,17 @@ function openNewRegulationEditor() {
   editorState = {
     mode: "new",
     regulationId: null,
-    versionId: null
+    versionId: null,
+    existingFilePath: null,
+    existingFileName: null
   };
 
   editorHeading.textContent = "新增內規";
   regulationForm.reset();
-  sectionsEditor.innerHTML = "";
-  addSection("", "");
+  formVersion.value = "1.0";
   formEffectiveDate.value = todayISO();
+  currentFileInfo.classList.add("hidden");
+  currentFileInfo.textContent = "";
   clearEditorMessage();
 
   adminDetail.classList.add("hidden");
@@ -560,28 +614,22 @@ function openNewDraftEditor() {
   editorState = {
     mode: "existing",
     regulationId: item.id,
-    versionId: null
+    versionId: null,
+    existingFilePath: null,
+    existingFileName: null
   };
 
-  editorHeading.textContent = `建立新版草稿｜${item.title}`;
+  editorHeading.textContent = `上傳新版｜${item.title}`;
   regulationForm.reset();
   formTitle.value = item.title;
   formCategory.value = item.category;
-  formEffectiveDate.value = todayISO();
-  formSummary.value = published?.summary || "";
-  formRevisionNotes.value = "";
   formVersion.value = suggestNextVersion(published?.version_label || "");
-
-  sectionsEditor.innerHTML = "";
-  const sections = Array.isArray(published?.content) ? published.content : [];
-
-  if (sections.length) {
-    sections.forEach(s => addSection(s.heading || "", s.text || ""));
-  } else {
-    addSection("", "");
-  }
-
+  formEffectiveDate.value = todayISO();
+  formRevisionNotes.value = "";
+  currentFileInfo.classList.add("hidden");
+  currentFileInfo.textContent = "";
   clearEditorMessage();
+
   adminDetail.classList.add("hidden");
   adminEmptyState.classList.add("hidden");
   editorPanel.classList.remove("hidden");
@@ -602,24 +650,26 @@ function openExistingDraft(versionId) {
   editorState = {
     mode: "existing",
     regulationId: item.id,
-    versionId: draft.id
+    versionId: draft.id,
+    existingFilePath: draft.file_path,
+    existingFileName: draft.file_name
   };
 
   editorHeading.textContent = `編輯草稿｜${item.title}`;
+  regulationForm.reset();
   formTitle.value = item.title;
   formCategory.value = item.category;
   formVersion.value = draft.version_label;
   formEffectiveDate.value = draft.effective_date || todayISO();
-  formSummary.value = draft.summary || "";
   formRevisionNotes.value = draft.revision_notes || "";
 
-  sectionsEditor.innerHTML = "";
-
-  const sections = Array.isArray(draft.content) ? draft.content : [];
-  if (sections.length) {
-    sections.forEach(s => addSection(s.heading || "", s.text || ""));
+  if (draft.file_path) {
+    currentFileInfo.classList.remove("hidden");
+    currentFileInfo.textContent =
+      `目前檔案：${draft.file_name || "內規檔案"}。如需替換，重新選擇檔案即可。`;
   } else {
-    addSection("", "");
+    currentFileInfo.classList.remove("hidden");
+    currentFileInfo.textContent = "此草稿尚未上傳檔案，發布前必須選擇檔案。";
   }
 
   clearEditorMessage();
@@ -641,51 +691,22 @@ function closeEditor() {
   }
 }
 
-function addSection(heading = "", text = "") {
-  const wrapper = document.createElement("div");
-  wrapper.className = "section-editor";
-
-  wrapper.innerHTML = `
-    <div class="section-editor-head">
-      <strong>段落</strong>
-      <button class="remove-section" type="button">移除</button>
-    </div>
-    <input class="section-heading-input" placeholder="段落標題，例如：一、目的" value="${escapeAttribute(heading)}" />
-    <textarea class="section-text-input" placeholder="段落本文">${escapeHtml(text)}</textarea>
-  `;
-
-  wrapper.querySelector(".remove-section").addEventListener("click", () => {
-    wrapper.remove();
-    renumberSections();
-  });
-
-  sectionsEditor.appendChild(wrapper);
-  renumberSections();
-}
-
-function renumberSections() {
-  [...sectionsEditor.querySelectorAll(".section-editor")].forEach((node, index) => {
-    const label = node.querySelector(".section-editor-head strong");
-    label.textContent = `段落 ${index + 1}`;
-  });
-}
-
-function collectSections() {
-  return [...sectionsEditor.querySelectorAll(".section-editor")]
-    .map(node => ({
-      heading: node.querySelector(".section-heading-input").value.trim(),
-      text: node.querySelector(".section-text-input").value.trim()
-    }))
-    .filter(s => s.heading || s.text);
-}
-
 async function saveDraft() {
   if (!regulationForm.reportValidity()) return null;
 
-  const sections = collectSections();
-  if (sections.length === 0) {
-    setEditorMessage("請至少填寫一個內規段落。", true);
+  const selectedFile = formFile.files?.[0] || null;
+
+  if (!editorState.existingFilePath && !selectedFile) {
+    setEditorMessage("請先選擇要上傳的內規檔案。", true);
     return null;
+  }
+
+  if (selectedFile) {
+    const fileError = validateFile(selectedFile);
+    if (fileError) {
+      setEditorMessage(fileError, true);
+      return null;
+    }
   }
 
   setEditorMessage("正在儲存…");
@@ -694,13 +715,12 @@ async function saveDraft() {
   const category = formCategory.value.trim();
   const versionLabel = formVersion.value.trim();
   const effectiveDate = formEffectiveDate.value;
-  const summary = formSummary.value.trim();
   const revisionNotes = formRevisionNotes.value.trim();
 
   let regulationId = editorState.regulationId;
 
   if (editorState.mode === "new" && !regulationId) {
-    const { data: newReg, error: regInsertError } = await client
+    const { data: newReg, error } = await client
       .from("regulations")
       .insert({
         slug: `rule-${Date.now()}`,
@@ -711,9 +731,9 @@ async function saveDraft() {
       .select("id")
       .single();
 
-    if (regInsertError) {
-      console.error(regInsertError);
-      setEditorMessage(explainSaveError(regInsertError), true);
+    if (error) {
+      console.error(error);
+      setEditorMessage(explainSaveError(error), true);
       return null;
     }
 
@@ -722,7 +742,7 @@ async function saveDraft() {
     editorState.mode = "existing";
     selectedAdminId = regulationId;
   } else {
-    const { error: regUpdateError } = await client
+    const { error } = await client
       .from("regulations")
       .update({
         title,
@@ -731,50 +751,73 @@ async function saveDraft() {
       })
       .eq("id", regulationId);
 
-    if (regUpdateError) {
-      console.error(regUpdateError);
-      setEditorMessage(explainSaveError(regUpdateError), true);
+    if (error) {
+      console.error(error);
+      setEditorMessage(explainSaveError(error), true);
       return null;
     }
   }
 
-  const versionPayload = {
+  let uploaded = null;
+
+  if (selectedFile) {
+    try {
+      uploaded = await uploadFile(regulationId, selectedFile);
+    } catch (error) {
+      console.error(error);
+      setEditorMessage(`檔案上傳失敗：${error.message}`, true);
+      return null;
+    }
+  }
+
+  const payload = {
     regulation_id: regulationId,
     version_label: versionLabel,
     effective_date: effectiveDate,
-    summary,
-    content: sections,
     revision_notes: revisionNotes,
     status: "draft",
     created_by: currentSession.user.id
   };
 
+  if (uploaded) {
+    payload.file_path = uploaded.path;
+    payload.file_name = selectedFile.name;
+    payload.file_mime_type = selectedFile.type || null;
+    payload.file_size = selectedFile.size;
+  }
+
+  const oldFilePath = editorState.existingFilePath;
+
   if (editorState.versionId) {
     const { error } = await client
       .from("regulation_versions")
-      .update({
-        version_label: versionLabel,
-        effective_date: effectiveDate,
-        summary,
-        content: sections,
-        revision_notes: revisionNotes
-      })
+      .update(payload)
       .eq("id", editorState.versionId);
 
     if (error) {
       console.error(error);
+
+      if (uploaded?.path) {
+        await safeDeleteFile(uploaded.path);
+      }
+
       setEditorMessage(explainSaveError(error), true);
       return null;
     }
   } else {
     const { data: newVersion, error } = await client
       .from("regulation_versions")
-      .insert(versionPayload)
+      .insert(payload)
       .select("id")
       .single();
 
     if (error) {
       console.error(error);
+
+      if (uploaded?.path) {
+        await safeDeleteFile(uploaded.path);
+      }
+
       setEditorMessage(explainSaveError(error), true);
       return null;
     }
@@ -782,10 +825,19 @@ async function saveDraft() {
     editorState.versionId = newVersion.id;
   }
 
-  setEditorMessage("草稿已儲存。", false);
-  await loadAdminData();
+  if (uploaded?.path && oldFilePath && oldFilePath !== uploaded.path) {
+    await safeDeleteFile(oldFilePath);
+  }
 
-  // Keep editor open after reload.
+  if (uploaded?.path) {
+    editorState.existingFilePath = uploaded.path;
+    editorState.existingFileName = selectedFile.name;
+  }
+
+  formFile.value = "";
+  setEditorMessage("草稿已儲存。", false);
+
+  await loadAdminData();
   openExistingDraft(editorState.versionId);
   setEditorMessage("草稿已儲存。", false);
 
@@ -799,7 +851,7 @@ async function publishCurrentDraft() {
   const versionLabel = formVersion.value.trim();
 
   const confirmed = window.confirm(
-    `確定要發布版本 ${versionLabel} 嗎？\n\n發布後，員工會立即看到這個版本；原本的正式版本會保留為歷史版本。`
+    `確定要發布版本 ${versionLabel} 嗎？\n\n發布後員工會立即可以下載此檔案；原本正式版本會保留為歷史版本。`
   );
 
   if (!confirmed) return;
@@ -816,8 +868,6 @@ async function publishCurrentDraft() {
     return;
   }
 
-  setEditorMessage("發布成功。", false);
-
   await Promise.all([
     loadAdminData(),
     loadReaderData()
@@ -832,35 +882,70 @@ async function publishCurrentDraft() {
   window.alert(`版本 ${versionLabel} 已正式發布。`);
 }
 
-function setEditorMessage(message, isError = false) {
-  editorMessage.textContent = message;
-  editorMessage.className =
-    "editor-message " + (isError ? "error" : "success");
-}
+/* File */
 
-function clearEditorMessage() {
-  editorMessage.textContent = "";
-  editorMessage.className = "editor-message";
-}
+function validateFile(file) {
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
 
-function explainSaveError(error) {
-  const msg = error?.message || "未知錯誤";
-
-  if (msg.includes("regulation_versions_regulation_id_version_label_key") ||
-      msg.includes("duplicate key")) {
-    return "這個版本號已經使用過，請改用新的版本號。";
+  if (!ALLOWED_EXTENSIONS.includes(extension)) {
+    return "目前僅支援 PDF、DOC、DOCX 檔案。";
   }
 
-  if (msg.includes("row-level security")) {
-    return "你的帳號沒有這項修改權限。";
+  if (file.size > MAX_FILE_SIZE) {
+    return "檔案超過 25MB，請縮小後再上傳。";
   }
 
-  return `儲存失敗：${msg}`;
+  return "";
 }
 
-/* =========================
-   Helpers / Events
-========================= */
+async function uploadFile(regulationId, file) {
+  const extension = file.name.split(".").pop()?.toLowerCase() || "bin";
+  const unique = crypto.randomUUID();
+  const path = `${regulationId}/${unique}.${extension}`;
+
+  const { data, error } = await client.storage
+    .from(FILE_BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || undefined
+    });
+
+  if (error) throw error;
+  return data;
+}
+
+async function downloadRegulationFile(path, fileName) {
+  if (!path) return;
+
+  const { data, error } = await client.storage
+    .from(FILE_BUCKET)
+    .download(path);
+
+  if (error) {
+    console.error(error);
+    window.alert("檔案下載失敗，請稍後再試。");
+    return;
+  }
+
+  const objectUrl = URL.createObjectURL(data);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName || "內規檔案";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+async function safeDeleteFile(path) {
+  if (!path) return;
+  const { error } = await client.storage.from(FILE_BUCKET).remove([path]);
+  if (error) console.warn("舊檔案清理失敗：", error);
+}
+
+/* Helpers */
 
 function roleLabel(role) {
   return {
@@ -879,7 +964,15 @@ function formatDateROC(value) {
   if (Number.isNaN(d.getTime())) return String(value);
 
   const rocYear = d.getFullYear() - 1911;
+
   return `${rocYear}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return "檔案大小未記錄";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function todayISO() {
@@ -894,7 +987,33 @@ function suggestNextVersion(current) {
 
   const major = Number(match[1]);
   const minor = Number(match[2] || 0);
+
   return `${major}.${minor + 1}`;
+}
+
+function setEditorMessage(message, isError = false) {
+  editorMessage.textContent = message;
+  editorMessage.className =
+    "editor-message " + (isError ? "error" : "success");
+}
+
+function clearEditorMessage() {
+  editorMessage.textContent = "";
+  editorMessage.className = "editor-message";
+}
+
+function explainSaveError(error) {
+  const msg = error?.message || "未知錯誤";
+
+  if (msg.includes("duplicate key")) {
+    return "這個版本號已經使用過，請改用新的版本號。";
+  }
+
+  if (msg.includes("row-level security")) {
+    return "你的帳號沒有這項修改權限。";
+  }
+
+  return `儲存失敗：${msg}`;
 }
 
 function escapeHtml(value) {
@@ -906,9 +1025,7 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function escapeAttribute(value) {
-  return escapeHtml(value).replaceAll("`", "&#096;");
-}
+/* Events */
 
 loginBtn.addEventListener("click", signInWithGoogle);
 logoutBtn.addEventListener("click", signOut);
@@ -924,7 +1041,6 @@ adminSearchInput.addEventListener("input", renderAdminList);
 newRegulationBtn.addEventListener("click", openNewRegulationEditor);
 createDraftBtn.addEventListener("click", openNewDraftEditor);
 closeEditorBtn.addEventListener("click", closeEditor);
-addSectionBtn.addEventListener("click", () => addSection("", ""));
 
 regulationForm.addEventListener("submit", async event => {
   event.preventDefault();

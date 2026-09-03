@@ -44,7 +44,7 @@
     <section id="readerView">
       <main class="layout">
         <aside class="sidebar">
-          <input id="searchInput" type="search" placeholder="搜尋辦法、關鍵字…" />
+          <input id="searchInput" type="search" placeholder="搜尋內規…" />
           <select id="categoryFilter">
             <option value="">全部類別</option>
           </select>
@@ -68,10 +68,11 @@
           <div class="admin-sidebar-header">
             <div>
               <h2>內規管理</h2>
-              <p>草稿只有管理人員看得到。</p>
+              <p>草稿與上傳檔案只有管理人員可修改。</p>
             </div>
             <button id="newRegulationBtn" class="primary-button" type="button">＋ 新增內規</button>
           </div>
+
           <input id="adminSearchInput" type="search" placeholder="搜尋內規…" />
           <div id="adminRegulationList" class="admin-regulation-list"></div>
         </aside>
@@ -79,7 +80,7 @@
         <main class="admin-content">
           <section id="adminEmptyState" class="admin-empty-state">
             <h2>請選擇一份內規</h2>
-            <p>你可以查看版本歷程、建立新版草稿，或新增一份內規。</p>
+            <p>可查看目前版本、歷史版本，或上傳新版檔案。</p>
           </section>
 
           <section id="adminDetail" class="hidden">
@@ -88,7 +89,7 @@
                 <h2 id="adminTitle"></h2>
                 <p id="adminCategory"></p>
               </div>
-              <button id="createDraftBtn" class="primary-button" type="button">建立新版草稿</button>
+              <button id="createDraftBtn" class="primary-button" type="button">上傳新版</button>
             </div>
 
             <div id="draftNotice" class="notice hidden"></div>
@@ -102,7 +103,7 @@
           <section id="editorPanel" class="editor-panel hidden">
             <div class="editor-head">
               <div>
-                <h2 id="editorHeading">編輯草稿</h2>
+                <h2 id="editorHeading">上傳內規檔案</h2>
                 <p>儲存草稿不會影響員工目前看到的正式版本。</p>
               </div>
               <button id="closeEditorBtn" class="secondary-button" type="button">關閉</button>
@@ -114,14 +115,17 @@
                   <span>內規名稱 *</span>
                   <input id="formTitle" required />
                 </label>
+
                 <label>
                   <span>類別 *</span>
                   <input id="formCategory" required placeholder="例如：個案服務、服務管理" />
                 </label>
+
                 <label>
                   <span>版本 *</span>
-                  <input id="formVersion" required placeholder="例如：1.1" />
+                  <input id="formVersion" required placeholder="例如：1.0、1.1" />
                 </label>
+
                 <label>
                   <span>生效日期 *</span>
                   <input id="formEffectiveDate" type="date" required />
@@ -129,24 +133,24 @@
               </div>
 
               <label class="full-field">
-                <span>摘要</span>
-                <textarea id="formSummary" rows="3" placeholder="簡短說明本辦法的目的或範圍"></textarea>
-              </label>
-
-              <label class="full-field">
                 <span>本次修訂說明</span>
-                <textarea id="formRevisionNotes" rows="3" placeholder="例如：新增跌倒事件通報流程"></textarea>
+                <textarea id="formRevisionNotes" rows="3" placeholder="例如：修正異常事件通報時限"></textarea>
               </label>
 
-              <div class="sections-head">
+              <div class="file-box">
                 <div>
-                  <h3>內規內容</h3>
-                  <p>每一段可設定一個標題及本文。</p>
+                  <h3>內規檔案 *</h3>
+                  <p>支援 PDF、DOC、DOCX；單檔上限 25MB。</p>
                 </div>
-                <button id="addSectionBtn" class="secondary-button" type="button">＋ 新增段落</button>
-              </div>
 
-              <div id="sectionsEditor" class="sections-editor"></div>
+                <label class="file-picker">
+                  <span>選擇檔案</span>
+                  <input id="formFile" type="file"
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                </label>
+
+                <div id="currentFileInfo" class="current-file hidden"></div>
+              </div>
 
               <div id="editorMessage" class="editor-message"></div>
 
