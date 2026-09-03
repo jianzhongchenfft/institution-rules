@@ -18,8 +18,12 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
     try{
       const res=await fetch('v51/case-visits-patch.txt',{cache:'no-store'});
       if(!res.ok) throw new Error(`v51/case-visits-patch.txt 載入失敗（${res.status}）`);
-      const source=await res.text();
-      eval(source);
+      eval(await res.text());
+
+      const importRes=await fetch('v51/case-pdf-import-patch.txt',{cache:'no-store'});
+      if(!importRes.ok) throw new Error(`v51/case-pdf-import-patch.txt 載入失敗（${importRes.status}）`);
+      eval(await importRes.text());
+
       if(state.profile && state.page==='dashboard') renderDashboard();
       else if(state.profile && state.page==='cases') navigate('cases');
     }catch(err){
