@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#1f6b4f" />
-  <meta name="app-version" content="5.1-compact" />
+  <meta name="app-version" content="5.1-reg-list" />
   <title>桃園市私立劉信子居家長照機構｜內部管理系統</title>
   <style>
     html,body{margin:0;min-height:100%;font-family:"Microsoft JhengHei",system-ui,sans-serif;background:#f4f6f5;color:#1f2937}
@@ -29,6 +29,10 @@
           if(!res.ok) throw new Error(`${file} 載入失敗（${res.status}）`);
           parts.push(await res.text());
         }
+        const patchRes=await fetch('v51/regulations-list-patch.txt',{cache:'no-store'});
+        if(!patchRes.ok) throw new Error(`v51/regulations-list-patch.txt 載入失敗（${patchRes.status}）`);
+        const regulationsPatch=await patchRes.text();
+
         const compactCSS=`<style id="v51-compact-density">
           .sidebar{padding:14px 12px!important}
           .side-brand{gap:10px!important;padding:3px 7px 14px!important}
@@ -85,7 +89,10 @@
           @media(max-width:820px){.content{padding:16px 14px 28px!important}.topbar{padding:0 10px!important}}
           @media(max-width:560px){.stat-card{padding:11px 12px!important}.nav-btn{min-height:40px!important}}
         </style>`;
-        const html=parts.join('').replace('</head>',compactCSS+'</head>');
+        let html=parts.join('').replace('</head>',compactCSS+'</head>');
+        const initMarker='\n  init();\n})();\n</script>';
+        if(!html.includes(initMarker)) throw new Error('V5.1 內規模組插入點不存在');
+        html=html.replace(initMarker,'\n'+regulationsPatch+'\n  init();\n})();\n</script>');
         document.open();
         document.write(html);
         document.close();
