@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>機構內規查詢系統</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>桃園市私立劉信子居家長照機構</h1>
+      <p>內規查詢系統</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <input id="searchInput" type="search" placeholder="搜尋辦法、關鍵字…" />
+      <select id="categoryFilter">
+        <option value="">全部類別</option>
+      </select>
+      <div id="regulationList" class="regulation-list"></div>
+    </aside>
+
+    <section class="content">
+      <div id="emptyState" class="empty-state">
+        請從左側選擇一份內規。
+      </div>
+      <article id="regulationDetail" class="detail hidden"></article>
+    </section>
+  </main>
+
+  <footer>
+    <span id="footerVersion">內規資料載入中…</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
