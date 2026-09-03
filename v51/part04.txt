@@ -1,0 +1,133 @@
+les = new Set(['business_manager','organization_manager','admin']);
+
+  const modules = [
+    {section:'每天工作', id:'dashboard', icon:'🏠', label:'首頁', crumb:'工作儀表板', ready:true},
+    {section:'每天工作', id:'cases', icon:'👤', label:'個案管理', crumb:'個案資料與服務管理', features:['個案基本資料','服務狀態與照顧計畫','家訪／電訪紀錄','異動與暫停服務','個案相關文件']},
+    {section:'每天工作', id:'staff', icon:'👥', label:'人員管理', crumb:'員工與資格資料', features:['居服員／督導基本資料','到職與離職管理','證照與健檢效期','排班能力與服務區域','人事文件']},
+    {section:'每天工作', id:'schedule', icon:'📅', label:'排班管理', crumb:'服務排班與異動', features:['週／月班表','代班與請假','服務異動','轉場檢查','人力空缺提醒']},
+    {section:'每天工作', id:'events', icon:'⚠️', label:'事件追蹤', crumb:'異常事件與申訴追蹤', features:['初報','續報','結報','意見申訴','追蹤期限提醒']},
+    {section:'行政管理', id:'reviews', icon:'📄', label:'文件審核', crumb:'送審、列印與歸檔', features:['電子送審','退件修正','待列印','紙本核章','歷史送審紀錄']},
+    {section:'行政管理', id:'regulations', icon:'📚', label:'內規文件', crumb:'內規發布與版本管理', ready:true},
+    {section:'行政管理', id:'training', icon:'🎓', label:'教育訓練', crumb:'年度訓練與積分追蹤', features:['年度課程規劃','員工完訓紀錄','積分與時數','CPR／必修課程效期','未完成提醒']},
+    {section:'行政管理', id:'quality', icon:'✅', label:'品質管理', crumb:'服務品質與改善追蹤', features:['家訪／電訪追蹤','服務品質抽查','滿意度','改善事項','品質統計']},
+    {section:'行政管理', id:'evaluation', icon:'📊', label:'評鑑管理', crumb:'評鑑指標與佐證資料', features:['A／B 指標','年度完成度','佐證文件','缺漏提醒','評鑑前檢核']},
+    {section:'行政管理', id:'forms', icon:'📁', label:'表單中心', crumb:'常用空白表單與文件', features:['常用表單下載','表單分類','最新版標示','權限下載','範本管理']},
+    {section:'系統管理', id:'settings', icon:'⚙️', label:'系統設定', crumb:'帳號、權限與系統參數', features:['員工帳號','角色權限','分類設定','操作紀錄','系統參數']}
+  ];
+
+  const state = {
+    session:null, user:null, profile:null, page:'dashboard', regulations:[], loadingRegs:false,
+    regulationQuery:'', regulationCategory:'all'
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, attrs={}, children=[]) => {
+    const node = document.createElement(tag);
+    Object.entries(attrs).forEach(([k,v]) => {
+      if(k === 'class') node.className = v;
+      else if(k === 'text') node.textContent = v;
+      else if(k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
+      else if(v !== null && v !== undefined) node.setAttribute(k,v);
+    });
+    (Array.isArray(children)?children:[children]).forEach(c => node.append(c?.nodeType ? c : document.createTextNode(String(c ?? ''))));
+    return node;
+  };
+
+  function showLoading(on){ $('loading').classList.toggle('hidden', !on); }
+  function toast(message, type=''){ const t=el('div',{class:`toast ${type}`,text:message}); $('toastWrap').appendChild(t); setTimeout(()=>t.remove(),3600); }
+  function escapeHTML(s=''){ return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+  function formatBytes(bytes){ if(!bytes&&bytes!==0)return '—'; const n=Number(bytes); if(n<1024)return n+' B'; if(n<1024*1024)return (n/1024).toFixed(1)+' KB'; return (n/1024/1024).toFixed(1)+' MB'; }
+  function rocDate(date=new Date()){
+    const d = new Date(date); if(Number.isNaN(d.getTime())) return '—';
+    return `${d.getFullYear()-1911}年${d.getMonth()+1}月${d.getDate()}日`;
+  }
+  function isoDate(date=new Date()){ const d=new Date(date); const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
+  function canManage(){ return !!state.profile && manageRoles.has(state.profile.role); }
+  function greeting(){ const h=new Date().getHours(); return h<11?'早安':h<14?'午安':h<18?'下午好':'晚安'; }
+
+  async function init(){
+    wireStaticEvents();
+    const { data, error } = await db.auth.getSession();
+    if(error) console.error(error);
+    await applySession(data?.session || null);
+    db.auth.onAuthStateChange((event, session) => {
+      if(event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED'){
+        setTimeout(()=>applySession(session),0);
+      }
+    });
+  }
+
+  function wireStaticEvents(){
+    $('googleLoginBtn').addEventListener('click', loginGoogle);
+    $('mobileMenu').addEventListener('click', () => $('sidebar').classList.toggle('open'));
+    $('userChip').addEventListener('click', async () => { if(confirm('要登出內部管理系統嗎？')) await db.auth.signOut(); });
+    $('notifyBtn').addEventListener('click', () => toast('目前沒有新通知。','success'));
+    document.addEventListener('click', (e) => {
+      if(window.innerWidth <= 820 && $('sidebar').classList.contains('open') && !e.target.closest('#sidebar') && !e.target.closest('#mobileMenu')) $('sidebar').classList.remove('open');
+    });
+  }
+
+  async function loginGoogle(){
+    $('loginError').classList.add('hidden');
+    try{
+      const redirectTo = window.location.origin + window.location.pathname;
+      const { error } = await db.auth.signInWithOAuth({ provider:'google', options:{ redirectTo } });
+      if(error) throw error;
+    }catch(err){
+      $('loginError').textContent = '登入失敗：' + (err?.message || err);
+      $('loginError').classList.remove('hidden');
+    }
+  }
+
+  async function applySession(session){
+    state.session = session;
+    state.user = session?.user || null;
+    if(!session){
+      state.profile = null;
+      $('appView').classList.add('hidden');
+      $('loginView').classList.remove('hidden');
+      return;
+    }
+    showLoading(true);
+    try{
+      const email = session.user.email || '';
+      const { data:profile, error } = await db.from('staff_users').select('id,email,display_name,role,is_active').ilike('email', email).maybeSingle();
+      if(error) throw error;
+      if(!profile || !profile.is_active){
+        await db.auth.signOut();
+        $('loginError').textContent = '此 Google 帳號尚未被加入機構授權名單。';
+        $('loginError').classList.remove('hidden');
+        return;
+      }
+      state.profile = profile;
+      $('loginView').classList.add('hidden');
+      $('appView').classList.remove('hidden');
+      $('userName').textContent = profile.display_name || email;
+      $('userRole').textContent = roleLabels[profile.role] || profile.role;
+      $('avatar').textContent = (profile.display_name || email || '使').slice(0,1);
+      renderNav();
+      await loadRegulations();
+      navigate(state.page || 'dashboard');
+    }catch(err){
+      console.error(err);
+      toast('讀取使用者資料失敗：' + (err?.message || err),'error');
+    }finally{ showLoading(false); }
+  }
+
+  function renderNav(){
+    const nav = $('nav'); nav.innerHTML='';
+    let section='';
+    modules.forEach(m => {
+      if(m.section !== section){ section=m.section; nav.append(el('div',{class:'nav-section',text:section})); }
+      const btn = el('button',{class:`nav-btn ${state.page===m.id?'active':''}`,onClick:()=>navigate(m.id)},[
+        el('span',{class:'nav-icon',text:m.icon}), el('span',{text:m.label})
+      ]);
+      if(m.badge) btn.append(el('span',{class:'nav-badge',text:m.badge}));
+      nav.append(btn);
+    });
+  }
+
+  function navigate(id){
+    const m = modules.find(x=>x.id===id) || modules[0];
+    state.page = m.id; renderNav();
+    $('topTitle')
