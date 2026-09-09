@@ -1,0 +1,1199 @@
+// V5.2 排班管理：週班表＋新增／編輯
+(() => {
+  const scheduleStyle = document.createElement('style');
+  scheduleStyle.id = 'v52-schedule-style';
+  scheduleStyle.textContent = `
+    .schedule-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .schedule-toolbar .spacer{flex:1}
+    .schedule-week-title{font-size:14px;font-weight:900;color:#344054;min-width:220px;text-align:center}
+    .schedule-filter-label{font-size:11px;font-weight:900;color:var(--muted)}
+    .schedule-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .schedule-stats .stat-card{padding:9px 12px!important}
+    .schedule-stats .stat-head{font-size:11.5px!important}
+    .schedule-stats .stat-icon{width:26px!important;height:26px!important;font-size:12px!important}
+    .schedule-stats .stat-value{font-size:22px!important;margin-top:3px!important;line-height:1!important}
+    .schedule-stats .stat-foot{font-size:10.5px!important;margin-top:2px!important}
+    .schedule-board-shell{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+    .schedule-board{display:grid;width:100%;min-width:0;grid-template-columns:repeat(7,minmax(0,1fr))}
+    .schedule-day{min-width:0;min-height:520px;border-right:1px solid var(--line);background:#fff}
+    .schedule-day:last-child{border-right:0}
+    .schedule-day-head{position:sticky;top:0;z-index:2;background:#fffaf8;border-bottom:1px solid var(--line);padding:10px 11px}
+    .schedule-day-name{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:900;color:#667085}
+    .schedule-day-date{font-size:16px;font-weight:900;color:#344054;margin-top:3px}
+    .schedule-today-badge{display:inline-flex;align-items:center;padding:2px 5px;border-radius:999px;background:#dc9479;color:#fff;font-size:9px;font-weight:900;line-height:1.2}
+    .schedule-day.weekend .schedule-day-head{background:#fff6f2}
+    .schedule-day.weekend .schedule-day-name,.schedule-day.weekend .schedule-day-date{color:#a96f5c}
+    .schedule-day.today .schedule-day-head{background:#fff0e9}
+    .schedule-day.today .schedule-day-name,.schedule-day.today .schedule-day-date{color:var(--green-800)}
+    .schedule-day-body{padding:9px;display:grid;gap:8px;align-content:start}
+    .schedule-empty{padding:18px 6px;text-align:center;color:#98a2b3;font-size:11px}
+    .schedule-card{border:1px solid #ead9d3;border-left:4px solid var(--green-700);border-radius:10px;padding:8px 7px 7px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.03);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}.schedule-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(16,24,40,.08)}
+    .schedule-card.cancelled{opacity:.58;border-left-color:#98a2b3;background:#fafafa}
+    .schedule-card.conflict{border-color:#f04438;border-left-color:#d92d20;background:#fff5f5;box-shadow:0 0 0 2px rgba(217,45,32,.08)}
+    .schedule-card.pending-substitute{border-color:#f79009;border-left-color:#f79009;background:#fffaeb;box-shadow:0 0 0 2px rgba(247,144,9,.08)}
+    .schedule-staffing-badge{display:inline-flex;align-items:center;width:max-content;padding:3px 6px;border-radius:999px;font-size:9.5px;font-weight:900;white-space:nowrap}
+    .schedule-staffing-badge.pending{background:#fef0c7;color:#b54708}
+    .schedule-staffing-badge.substituted{background:#f4ebff;color:#6941c6}
+    .schedule-original-worker{font-size:10px;color:#7f56d9;margin-top:2px}
+    .schedule-conflict-badge{display:inline-flex;align-items:center;width:max-content;margin-top:2px;padding:3px 6px;border-radius:999px;background:#fee4e2;color:#b42318;font-size:9.5px;font-weight:900;white-space:nowrap}
+    .schedule-card-time{font-size:12.5px;font-weight:900;color:#1f2937;display:flex;flex-direction:column;align-items:flex-start;gap:3px}.schedule-card-time>span:first-child{white-space:nowrap}
+    .schedule-card-case{font-size:13px;font-weight:900;margin-top:5px;line-height:1.3;color:#344054}
+    .schedule-card-worker{font-size:10.8px;color:#667085;margin-top:3px}
+    .schedule-items{display:grid;justify-items:start;gap:3px;margin-top:6px}
+    .schedule-item{display:inline-flex;width:max-content;font-size:10.5px;font-weight:900;padding:2px 6px;border-radius:999px;background:#fff3ed;color:#a45d49;border:1px solid #f0d4ca;line-height:1.25}
+    .schedule-card-note{font-size:10.5px;color:#7a6b65;margin-top:5px;line-height:1.4;white-space:pre-wrap}
+    .schedule-status{font-size:9.5px;padding:3px 6px;border-radius:999px;font-weight:900;white-space:nowrap}
+    .schedule-status.unnotified{background:#fffaeb;color:#b54708}
+    .schedule-status.planned{background:#f2f4f7;color:#667085}
+    .schedule-status.confirmed{background:#eef7f1;color:#237a4b}
+    .schedule-status.completed{background:#eff8ff;color:#175cd3}
+    .schedule-status.cancelled{background:#fef3f2;color:#b42318}
+    .schedule-service-editor{display:grid;gap:7px}
+    .schedule-service-head{display:grid;grid-template-columns:minmax(0,1fr) 20px 78px 34px;gap:6px;padding:0 2px;font-size:10.5px;font-weight:900;color:#667085;align-items:center}
+    .schedule-service-row{display:grid;grid-template-columns:minmax(0,1fr) 20px 78px 34px;gap:6px;align-items:center}
+    .schedule-service-times{text-align:center;font-weight:900;color:#667085}
+    .schedule-service-code,.schedule-service-qty{width:100%;min-width:0}
+    .schedule-auto-time{background:#f8fafc!important;color:#475467!important;font-weight:900}
+    .schedule-remove-item{width:34px;height:34px;padding:0!important;display:grid;place-items:center}
+    .schedule-form-note{padding:9px 10px;border:1px solid #f0ded7;background:#fff8f5;border-radius:9px;font-size:11px;line-height:1.5;color:#7d4b3b}
+    .schedule-delete-wrap{display:flex;justify-content:flex-start;margin-top:2px}
+    .schedule-delete-btn{border-color:#fda29b!important;background:#fff!important;color:#b42318!important}
+    .schedule-delete-btn:hover{background:#fef3f2!important}
+    .schedule-pending-btn{border-color:#fdb022!important;background:#fffaeb!important;color:#b54708!important;font-weight:900!important}
+    .schedule-pending-btn.zero{border-color:var(--line)!important;background:#fff!important;color:#667085!important}
+    @media(max-width:700px){.schedule-service-head,.schedule-service-row{grid-template-columns:minmax(0,1fr) 18px 68px 34px;gap:4px}}
+    @media(max-width:1180px){.schedule-board{min-width:1120px;grid-template-columns:repeat(7,minmax(160px,1fr))}}
+    @media(max-width:820px){.schedule-stats{grid-template-columns:repeat(2,1fr)}.schedule-toolbar .spacer{display:none}.schedule-week-title{order:-1;width:100%;text-align:left}.schedule-toolbar select{flex:1}}
+  `;
+  document.head.appendChild(scheduleStyle);
+
+  const scheduleModule = modules.find(m => m.id === 'schedule');
+  if(scheduleModule){
+    scheduleModule.ready = true;
+    scheduleModule.crumb = '每週服務班表';
+  }
+
+  function scheduleMonday(date){
+    const d = new Date(date);
+    d.setHours(0,0,0,0);
+    const offset = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - offset);
+    return d;
+  }
+
+  function scheduleAddDays(date, days){
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  function scheduleDateISO(date){
+    return isoDate(date);
+  }
+
+  function scheduleDateLabel(date){
+    return `${date.getMonth()+1}/${date.getDate()}`;
+  }
+
+  function scheduleWeekLabel(start){
+    const end = scheduleAddDays(start, 6);
+    return `${start.getFullYear()}年${start.getMonth()+1}月${start.getDate()}日－${end.getFullYear()}年${end.getMonth()+1}月${end.getDate()}日`;
+  }
+
+  function scheduleTimeLabel(value){
+    return String(value || '').slice(0,5);
+  }
+
+  function scheduleMinutes(value){
+    const [h,m] = String(value || '00:00').split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  function scheduleQty(value){
+    const n = Number(value);
+    if(!Number.isFinite(n)) return value || '1';
+    return Number.isInteger(n) ? String(n) : String(n).replace(/0+$/,'').replace(/\.$/,'');
+  }
+
+  function scheduleStatusLabel(value){
+    return ({unnotified:'尚未照會',planned:'已排定',confirmed:'已確認',completed:'已完成',cancelled:'已取消'})[value] || value || '—';
+  }
+
+  function canUseScheduleAdmin(){
+    return !!state.profile && ['supervisor','business_manager','organization_manager','admin'].includes(state.profile.role);
+  }
+
+  Object.assign(state, {
+    scheduleWeekStart: scheduleDateISO(scheduleMonday(new Date())),
+    scheduleWorkerFilter: 'all',
+    scheduleRows: [],
+    scheduleWorkers: [],
+    scheduleCases: [],
+    scheduleItems: [],
+    pendingSubstituteCount: 0,
+    scheduleLoading: false
+  });
+
+  function scheduleWorkerName(id){
+    return state.scheduleWorkers.find(x=>x.id===id)?.worker_name || '未指定居服員';
+  }
+
+  function scheduleCaseName(id){
+    return state.scheduleCases.find(x=>x.id===id)?.case_name || '未找到個案';
+  }
+
+  function scheduleItemsFor(scheduleId){
+    return state.scheduleItems.filter(x=>x.schedule_id===scheduleId);
+  }
+
+  function scheduleConflictIds(rows=state.scheduleRows){
+    const ids = new Set();
+    const active = rows.filter(x=>x.schedule_status!=='cancelled' && x.staffing_status!=='pending_substitute');
+    for(let i=0;i<active.length;i++){
+      for(let j=i+1;j<active.length;j++){
+        const a = active[i], b = active[j];
+        if(a.service_date!==b.service_date || a.care_worker_id!==b.care_worker_id) continue;
+        if(a.start_time < b.end_time && b.start_time < a.end_time){
+          ids.add(a.id);
+          ids.add(b.id);
+        }
+      }
+    }
+    return ids;
+  }
+
+  function scheduleGroupFromCode(code){
+    const match = String(code || '').trim().toUpperCase().match(/^[A-Z]+/);
+    return match?.[0] || 'OTHER';
+  }
+
+  const scheduleServiceCodes = [
+    {code:'BA01',name:'基本身體清潔',minutes:30},
+    {code:'BA02',name:'基本日常照顧',minutes:30},
+    {code:'BA03',name:'測量生命徵象',minutes:10},
+    {code:'BA04',name:'協助進食或管灌餵食',minutes:30},
+    {code:'BA05',name:'餐食照顧',minutes:40},
+    {code:'BA07',name:'協助沐浴及洗頭',minutes:30},
+    {code:'BA08',name:'足部照護',minutes:40},
+    {code:'BA10',name:'翻身拍背',minutes:20},
+    {code:'BA11',name:'肢體關節活動',minutes:20},
+    {code:'BA12',name:'協助上/下樓梯',minutes:20},
+    {code:'BA13',name:'陪同外出',minutes:30},
+    {code:'BA14',name:'陪同就醫',minutes:90},
+    {code:'BA15',name:'家務協助',minutes:30},
+    {code:'BA16',name:'代購/代領/代送服務',minutes:20},
+    {code:'BA17',name:'協助執行輔助性醫療',minutes:0},
+    {code:'BA18',name:'安全看視',minutes:30},
+    {code:'BA20',name:'陪伴服務',minutes:30},
+    {code:'BA22',name:'巡視服務',minutes:20},
+    {code:'BA23',name:'協助洗頭',minutes:30},
+    {code:'BA24',name:'協助排泄',minutes:30},
+    {code:'GA09',name:'居家喘息服務',minutes:120},
+    {code:'SC09',name:'居家短照服務',minutes:120}
+  ];
+
+  function scheduleServiceInfo(code){
+    return scheduleServiceCodes.find(x=>x.code===code) || null;
+  }
+
+  function scheduleServiceOptions(selected=''){
+    return '<option value="">請選擇服務碼別</option>' + scheduleServiceCodes.map(item => {
+      const timeText = item.minutes>0 ? `（${item.minutes}分）` : '';
+      return `<option value="${item.code}" ${selected===item.code?'selected':''}>${item.code}｜${escapeHTML(item.name)}${timeText}</option>`;
+    }).join('');
+  }
+
+  function updateScheduleEndTime(){
+    const startInput = $('scheduleAddStart');
+    const endInput = $('scheduleAddEnd');
+    if(!startInput || !endInput) return;
+
+    const start = startInput.value;
+    if(!start){
+      endInput.value = '';
+      return;
+    }
+
+    let totalMinutes = 0;
+    document.querySelectorAll('#scheduleServiceRows .schedule-service-row').forEach(row=>{
+      const code = row.querySelector('.schedule-service-code')?.value || '';
+      const qty = Number(row.querySelector('.schedule-service-qty')?.value || 0);
+      const info = scheduleServiceInfo(code);
+      if(info && info.minutes>0 && qty>0) totalMinutes += info.minutes * qty;
+    });
+
+    if(totalMinutes<=0){
+      endInput.value = '';
+      return;
+    }
+
+    const [h,m] = start.split(':').map(Number);
+    const total = h*60 + m + totalMinutes;
+    const endH = Math.floor((total % (24*60))/60);
+    const endM = total % 60;
+    endInput.value = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`;
+  }
+
+  function addScheduleServiceRow(code='', quantity=1){
+    const wrap = $('scheduleServiceRows');
+    if(!wrap) return;
+    const row = document.createElement('div');
+    row.className = 'schedule-service-row';
+    const safeQty = Math.min(8,Math.max(1,Number(quantity)||1));
+    row.innerHTML = `
+      <select class="schedule-service-code">${scheduleServiceOptions(code)}</select>
+      <span class="schedule-service-times">×</span>
+      <select class="schedule-service-qty">${Array.from({length:8},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===safeQty?'selected':''}>${n}</option>`).join('')}</select>
+      <button type="button" class="btn schedule-remove-item" title="移除">×</button>
+    `;
+
+    row.querySelector('.schedule-service-code').addEventListener('change',updateScheduleEndTime);
+    row.querySelector('.schedule-service-qty').addEventListener('change',updateScheduleEndTime);
+    row.querySelector('.schedule-remove-item').addEventListener('click',()=>{
+      if(wrap.querySelectorAll('.schedule-service-row').length<=1){
+        row.querySelector('.schedule-service-code').value='';
+        row.querySelector('.schedule-service-qty').value='1';
+        updateScheduleEndTime();
+        return;
+      }
+      row.remove();
+      updateScheduleEndTime();
+    });
+    wrap.appendChild(row);
+    updateScheduleEndTime();
+  }
+
+  async function openAddScheduleModal(){
+    if(!canUseScheduleAdmin()) return;
+    showLoading(true);
+    try{
+      const [workersRes,casesRes] = await Promise.all([
+        db.from('care_workers')
+          .select('id,worker_name,employment_status')
+          .eq('employment_status','active')
+          .order('worker_name'),
+        db.from('care_cases')
+          .select('id,case_name,service_status')
+          .eq('service_status','active')
+          .order('case_name')
+      ]);
+      if(workersRes.error) throw workersRes.error;
+      if(casesRes.error) throw casesRes.error;
+
+      const workers = workersRes.data || [];
+      const cases = casesRes.data || [];
+      if(!workers.length){
+        toast('目前沒有可排班的在職居服員。','error');
+        return;
+      }
+      if(!cases.length){
+        toast('目前沒有可排班的服務中個案。','error');
+        return;
+      }
+
+      const defaultDate = scheduleDateISO(new Date());
+      openModal({
+        title:'新增班表',
+        confirmText:'建立班表',
+        large:true,
+        html:`
+          <div class="form-grid">
+            <div class="field"><label>服務日期 *</label><input id="scheduleAddDate" type="date" value="${defaultDate}"></div>
+            <div class="field"><label>班表狀態 *</label><select id="scheduleAddStatus"><option value="confirmed">已確認</option><option value="unnotified">尚未照會</option><option value="planned">已排定</option></select></div>
+
+            <div class="field"><label>開始時間 *</label><input id="scheduleAddStart" type="time" value="09:00"></div>
+            <div class="field"><label>結束時間（自動計算） *</label><input id="scheduleAddEnd" class="schedule-auto-time" type="time" readonly></div>
+
+            <div class="field"><label>個案 *</label><select id="scheduleAddCase"><option value="">請選擇個案</option>${cases.map(c=>`<option value="${c.id}">${escapeHTML(c.case_name)}</option>`).join('')}</select></div>
+            <div class="field"><label>居服員 *</label><select id="scheduleAddWorker"><option value="">請選擇居服員</option>${workers.map(w=>`<option value="${w.id}">${escapeHTML(w.worker_name)}</option>`).join('')}</select></div>
+
+            <div class="field full">
+              <label>服務項目 *</label>
+              <div class="schedule-service-editor">
+                <div class="schedule-service-head"><span>服務碼別</span><span class="schedule-service-times">×</span><span>支數</span><span></span></div>
+                <div id="scheduleServiceRows"></div>
+                <div><button id="scheduleAddServiceItem" type="button" class="btn sm">＋ 新增服務項目</button></div>
+              </div>
+            </div>
+
+            <div class="field full"><label>備註</label><textarea id="scheduleAddNotes" placeholder="例如：家屬特別交代、當日服務注意事項"></textarea></div>
+            <div class="field full"><div class="schedule-form-note">目前先建立「單次班表」。固定每週排班、代班與轉場時間檢查會在後續階段加入。</div></div>
+          </div>
+        `,
+        onConfirm: saveNewSchedule
+      });
+
+      addScheduleServiceRow();
+      $('scheduleAddStart').addEventListener('change',updateScheduleEndTime);
+      $('scheduleAddStart').addEventListener('input',updateScheduleEndTime);
+      $('scheduleAddServiceItem').addEventListener('click',()=>addScheduleServiceRow());
+      updateScheduleEndTime();
+    }catch(err){
+      console.error(err);
+      toast('載入新增班表資料失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  function scheduleScopeLabel(scope){
+    return ({single:'只處理這一班',future:'這一班及之後',all:'整組固定班表'})[scope] || '只處理這一班';
+  }
+
+  async function scheduleScopeRows(row,scope){
+    if(!row?.recurrence_group_id || scope==='single') return [row];
+    let query=db.from('service_schedules')
+      .select('id,service_date,start_time,end_time,case_id,care_worker_id,original_care_worker_id,staffing_status,leave_request_id,schedule_status,recurrence_group_id,notes')
+      .eq('recurrence_group_id',row.recurrence_group_id)
+      .order('service_date')
+      .order('start_time');
+    if(scope==='future') query=query.gte('service_date',row.service_date);
+    const res=await query;
+    if(res.error) throw res.error;
+    return res.data || [];
+  }
+
+  function updateScheduleEditScopeUI(){
+    const scope=$('scheduleEditScope')?.value || 'single';
+    const dateInput=$('scheduleAddDate');
+    if(!dateInput) return;
+    const grouped=scope!=='single';
+    dateInput.disabled=grouped;
+    dateInput.title=grouped?'整組或後續修改會保留每一班原本的服務日期。':'';
+  }
+
+  function updateScheduleStaffingActionUI(row){
+    const actionSelect=$('scheduleStaffingAction');
+    if(!actionSelect || !row) return;
+
+    const action=actionSelect.value || 'pending';
+    const workerSelect=$('scheduleAddWorker');
+    const statusSelect=$('scheduleAddStatus');
+    const scopeSelect=$('scheduleEditScope');
+    const hint=$('scheduleStaffingHint');
+    const originalWorkerId=row.original_care_worker_id || row.care_worker_id;
+
+    // 請假／代班是單次班表異動，不連動整組固定排班。
+    if(scopeSelect){
+      scopeSelect.value='single';
+      scopeSelect.disabled=true;
+    }
+
+    if(statusSelect){
+      statusSelect.disabled=false;
+      if(statusSelect.value==='cancelled' && action!=='cancel'){
+        statusSelect.value=row.schedule_status==='cancelled'?'confirmed':row.schedule_status;
+      }
+    }
+
+    if(action==='pending'){
+      if(workerSelect){
+        workerSelect.value=originalWorkerId;
+        workerSelect.disabled=true;
+      }
+      if(hint) hint.textContent='此班維持「待代班」，之後仍可再次開啟班表指定代班或恢復原排班。';
+    }else if(action==='substitute'){
+      if(workerSelect){
+        workerSelect.disabled=false;
+        if(workerSelect.value===originalWorkerId) workerSelect.value='';
+      }
+      if(hint) hint.textContent='請在下方「居服員」選擇實際代班人員；若時間重疊，系統仍會先警告。';
+    }else if(action==='restore'){
+      if(workerSelect){
+        workerSelect.value=originalWorkerId;
+        workerSelect.disabled=true;
+      }
+      if(hint) hint.textContent='儲存後會解除「待代班」，恢復原居服員排班；請假紀錄仍會保留。';
+    }else if(action==='cancel'){
+      if(workerSelect){
+        workerSelect.value=originalWorkerId;
+        workerSelect.disabled=true;
+      }
+      if(statusSelect){
+        statusSelect.value='cancelled';
+        statusSelect.disabled=true;
+      }
+      if(hint) hint.textContent='此班會保留紀錄，但班表狀態改為「已取消」。';
+    }
+
+    updateScheduleEditScopeUI();
+  }
+
+  async function openEditScheduleModal(scheduleId){
+    if(!canUseScheduleAdmin()) return;
+    const row = state.scheduleRows.find(x=>x.id===scheduleId);
+    if(!row){
+      toast('找不到這筆班表，請重新整理後再試。','error');
+      return;
+    }
+
+    showLoading(true);
+    try{
+      const [workersRes,casesRes] = await Promise.all([
+        db.from('care_workers')
+          .select('id,worker_name,employment_status')
+          .order('worker_name'),
+        db.from('care_cases')
+          .select('id,case_name,service_status')
+          .order('case_name')
+      ]);
+      if(workersRes.error) throw workersRes.error;
+      if(casesRes.error) throw casesRes.error;
+
+      const workers = workersRes.data || [];
+      const cases = casesRes.data || [];
+      const items = scheduleItemsFor(scheduleId);
+
+      openModal({
+        title:'編輯班表',
+        confirmText:'儲存修改',
+        large:true,
+        html:`
+          <div class="form-grid">
+            ${row.recurrence_group_id?`
+              <div class="field full">
+                <label>修改／刪除範圍 *</label>
+                <select id="scheduleEditScope">
+                  <option value="single">只處理這一班</option>
+                  <option value="future">這一班及之後</option>
+                  <option value="all">整組固定班表</option>
+                </select>
+                <div class="schedule-recurrence-preview">選擇「這一班及之後」或「整組」時，各班原本的服務日期會保留，只同步修改時間、個案、居服員、服務項目、狀態與備註。</div>
+              </div>`:''
+            }
+            ${row.staffing_status==='pending_substitute'?`
+              <div class="field full">
+                <label>代班處理 *</label>
+                <select id="scheduleStaffingAction">
+                  <option value="pending" selected>維持待代班</option>
+                  <option value="substitute">指定代班居服員</option>
+                  <option value="restore">解除待代班，恢復原排班</option>
+                  <option value="cancel">取消服務</option>
+                </select>
+                <div id="scheduleStaffingHint" class="schedule-recurrence-preview"></div>
+              </div>`:''
+            }
+            <div class="field"><label>服務日期 *</label><input id="scheduleAddDate" type="date" value="${row.service_date}"></div>
+            <div class="field"><label>班表狀態 *</label><select id="scheduleAddStatus">
+              <option value="confirmed" ${row.schedule_status==='confirmed'?'selected':''}>已確認</option>
+              <option value="unnotified" ${row.schedule_status==='unnotified'?'selected':''}>尚未照會</option>
+              <option value="planned" ${row.schedule_status==='planned'?'selected':''}>已排定</option>
+              <option value="completed" ${row.schedule_status==='completed'?'selected':''}>已完成</option>
+              <option value="cancelled" ${row.schedule_status==='cancelled'?'selected':''}>已取消</option>
+            </select></div>
+
+            <div class="field"><label>開始時間 *</label><input id="scheduleAddStart" type="time" value="${scheduleTimeLabel(row.start_time)}"></div>
+            <div class="field"><label>結束時間（自動計算） *</label><input id="scheduleAddEnd" class="schedule-auto-time" type="time" readonly value="${scheduleTimeLabel(row.end_time)}"></div>
+
+            <div class="field"><label>個案 *</label><select id="scheduleAddCase">
+              <option value="">請選擇個案</option>
+              ${cases.map(c=>`<option value="${c.id}" ${c.id===row.case_id?'selected':''}>${escapeHTML(c.case_name)}${c.service_status!=='active'?'（非服務中）':''}</option>`).join('')}
+            </select></div>
+
+            <div class="field"><label>居服員 *</label><select id="scheduleAddWorker">
+              <option value="">請選擇居服員</option>
+              ${workers.map(w=>`<option value="${w.id}" ${w.id===row.care_worker_id?'selected':''}>${escapeHTML(w.worker_name)}${w.employment_status!=='active'?'（非在職）':''}</option>`).join('')}
+            </select></div>
+
+            <div class="field full">
+              <label>服務項目 *</label>
+              <div class="schedule-service-editor">
+                <div class="schedule-service-head"><span>服務碼別</span><span class="schedule-service-times">×</span><span>支數</span><span></span></div>
+                <div id="scheduleServiceRows"></div>
+                <div><button id="scheduleAddServiceItem" type="button" class="btn sm">＋ 新增服務項目</button></div>
+              </div>
+            </div>
+
+            <div class="field full"><label>備註</label><textarea id="scheduleAddNotes" placeholder="例如：家屬特別交代、當日服務注意事項">${escapeHTML(row.notes||'')}</textarea></div>
+            <div class="field full"><div class="schedule-form-note">修改服務碼別、支數或開始時間後，結束時間會自動重新計算。若修改後與其他班表重疊，系統會再次跳出警告。</div></div>
+            <div class="field full"><div class="schedule-delete-wrap"><button id="scheduleDeleteBtn" type="button" class="btn schedule-delete-btn">刪除班表</button></div></div>
+          </div>
+        `,
+        onConfirm:()=>saveScheduleEdit(scheduleId)
+      });
+
+      if(items.length){
+        items.forEach(item=>addScheduleServiceRow(item.service_code,Number(item.quantity)||1));
+      }else{
+        addScheduleServiceRow();
+      }
+
+      $('scheduleAddStart').addEventListener('change',updateScheduleEndTime);
+      $('scheduleAddStart').addEventListener('input',updateScheduleEndTime);
+      $('scheduleAddServiceItem').addEventListener('click',()=>addScheduleServiceRow());
+      $('scheduleDeleteBtn').addEventListener('click',()=>deleteSchedule(scheduleId));
+      $('scheduleEditScope')?.addEventListener('change',updateScheduleEditScopeUI);
+      $('scheduleStaffingAction')?.addEventListener('change',()=>updateScheduleStaffingActionUI(row));
+      updateScheduleEditScopeUI();
+      updateScheduleStaffingActionUI(row);
+      updateScheduleEndTime();
+    }catch(err){
+      console.error(err);
+      toast('載入班表資料失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function deleteSchedule(scheduleId){
+    const row=state.scheduleRows.find(x=>x.id===scheduleId);
+    if(!row){
+      toast('找不到這筆班表，請重新整理後再試。','error');
+      return;
+    }
+
+    const scope=row.recurrence_group_id ? ($('scheduleEditScope')?.value||'single') : 'single';
+    const deleteBtn=$('scheduleDeleteBtn');
+    if(deleteBtn) deleteBtn.disabled=true;
+    showLoading(true);
+
+    try{
+      const targets=await scheduleScopeRows(row,scope);
+      if(!targets.length) throw new Error('找不到要刪除的班表。');
+
+      const rangeText=scheduleScopeLabel(scope);
+      const ok=confirm(
+        '確定要刪除班表嗎？\n\n' +
+        '範圍：'+rangeText+'\n' +
+        '共 '+targets.length+' 筆班表\n\n' +
+        '刪除後無法復原。'
+      );
+      if(!ok) return;
+
+      const ids=targets.map(x=>x.id);
+      const res=await db.from('service_schedules')
+        .delete()
+        .in('id',ids)
+        .select('id');
+
+      if(res.error) throw res.error;
+      if((res.data||[]).length!==ids.length){
+        throw new Error('部分班表未能刪除，請重新整理後確認。');
+      }
+
+      closeModal();
+      await loadScheduleWeek();
+      renderSchedulePage();
+      toast(scope==='single'?'班表已刪除。':`已刪除 ${ids.length} 筆班表。`,'success');
+    }catch(err){
+      console.error(err);
+      toast('刪除班表失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+      if(deleteBtn && document.body.contains(deleteBtn)) deleteBtn.disabled=false;
+    }
+  }
+
+  async function saveScheduleEdit(scheduleId){
+    const row=state.scheduleRows.find(x=>x.id===scheduleId);
+    if(!row){
+      toast('找不到這筆班表，請重新整理後再試。','error');
+      return;
+    }
+
+    const scope=row.recurrence_group_id ? ($('scheduleEditScope')?.value||'single') : 'single';
+    const staffingAction=row.staffing_status==='pending_substitute'
+      ? ($('scheduleStaffingAction')?.value||'pending')
+      : null;
+    const date=$('scheduleAddDate')?.value;
+    const start=$('scheduleAddStart')?.value;
+    const end=$('scheduleAddEnd')?.value;
+    const caseId=$('scheduleAddCase')?.value;
+    const workerId=$('scheduleAddWorker')?.value;
+    const status=$('scheduleAddStatus')?.value||'confirmed';
+    const notes=$('scheduleAddNotes')?.value?.trim()||null;
+
+    const items=[...document.querySelectorAll('#scheduleServiceRows .schedule-service-row')]
+      .map(itemRow=>({
+        code:itemRow.querySelector('.schedule-service-code')?.value?.trim().toUpperCase()||'',
+        quantity:Number(itemRow.querySelector('.schedule-service-qty')?.value||0)
+      }))
+      .filter(x=>x.code);
+
+    if(!date||!start||!caseId||!workerId){
+      toast('請完整填寫日期、開始時間、個案與居服員。','error');
+      return;
+    }
+    if(staffingAction==='substitute'){
+      const originalWorkerId=row.original_care_worker_id || row.care_worker_id;
+      if(workerId===originalWorkerId){
+        toast('請選擇不同於原排班的代班居服員。','error');
+        return;
+      }
+    }
+    if(!end){
+      toast('目前選擇的服務項目沒有可計算的服務時間，請確認服務碼別與支數。','error');
+      return;
+    }
+    if(end<=start){
+      toast('自動計算的結束時間異常，請確認服務項目。','error');
+      return;
+    }
+    if(!items.length){
+      toast('請至少填寫 1 項服務碼。','error');
+      return;
+    }
+    if(items.some(x=>!Number.isInteger(x.quantity)||x.quantity<1||x.quantity>8)){
+      toast('服務項目的支數必須介於 1～8。','error');
+      return;
+    }
+
+    const confirmBtn=$('modalConfirm');
+    if(confirmBtn) confirmBtn.disabled=true;
+    showLoading(true);
+
+    try{
+      const targets=await scheduleScopeRows(row,scope);
+      if(!targets.length) throw new Error('找不到要修改的班表。');
+
+      // 單班可修改日期；整組／後續則保留每一班原日期。
+      const proposed=targets.map(target=>({
+        id:target.id,
+        service_date:scope==='single'?date:target.service_date
+      }));
+
+      // 檢查修改後與其他班表是否重疊；維持「待代班」時不視為已安排人力。
+      if(status!=='cancelled' && staffingAction!=='pending'){
+        const targetIds=new Set(targets.map(x=>x.id));
+        const dates=proposed.map(x=>x.service_date).sort();
+        const existingRes=await db.from('service_schedules')
+          .select('id,service_date,start_time,end_time,schedule_status,staffing_status')
+          .eq('care_worker_id',workerId)
+          .neq('schedule_status','cancelled')
+          .neq('staffing_status','pending_substitute')
+          .gte('service_date',dates[0])
+          .lte('service_date',dates[dates.length-1]);
+        if(existingRes.error) throw existingRes.error;
+
+        const proposedDates=new Set(dates);
+        const conflicts=(existingRes.data||[]).filter(x=>
+          !targetIds.has(x.id) &&
+          proposedDates.has(x.service_date) &&
+          x.start_time<end &&
+          x.end_time>start
+        );
+        if(conflicts.length){
+          const conflictDays=new Set(conflicts.map(x=>x.service_date)).size;
+          const proceed=confirm(
+            '⚠️ 排班時間重疊\n\n' +
+            '修改範圍：'+scheduleScopeLabel(scope)+'\n' +
+            '其中 '+conflictDays+' 個服務日會與此居服員其他班表時間重疊。\n\n' +
+            '仍要儲存修改嗎？'
+          );
+          if(!proceed) return;
+        }
+      }
+
+      let recurrenceValue=row.recurrence_group_id;
+      if(row.recurrence_group_id && scope==='single'){
+        // 單獨修改固定班表後，脫離原固定群組，避免日後整組修改覆蓋這個例外。
+        recurrenceValue=null;
+      }else if(row.recurrence_group_id && scope==='future'){
+        // 從本班起切成新的固定群組，讓過去紀錄與新規則分開管理。
+        recurrenceValue=crypto.randomUUID();
+      }
+
+      const updatePayload={
+        start_time:start,
+        end_time:end,
+        case_id:caseId,
+        care_worker_id:workerId,
+        schedule_status:status,
+        notes,
+        updated_by:state.user.id,
+        updated_at:new Date().toISOString()
+      };
+
+      if(scope==='single' && row.staffing_status==='pending_substitute'){
+        const originalWorkerId=row.original_care_worker_id || row.care_worker_id;
+        updatePayload.original_care_worker_id=originalWorkerId;
+
+        if(staffingAction==='pending'){
+          updatePayload.care_worker_id=originalWorkerId;
+          updatePayload.staffing_status='pending_substitute';
+        }else if(staffingAction==='substitute'){
+          updatePayload.care_worker_id=workerId;
+          updatePayload.staffing_status='substituted';
+        }else if(staffingAction==='restore'){
+          updatePayload.care_worker_id=originalWorkerId;
+          updatePayload.staffing_status='normal';
+        }else if(staffingAction==='cancel'){
+          updatePayload.care_worker_id=originalWorkerId;
+          updatePayload.staffing_status='normal';
+          updatePayload.schedule_status='cancelled';
+        }
+      }
+
+      if(scope==='single'){
+        updatePayload.service_date=date;
+        updatePayload.recurrence_group_id=recurrenceValue;
+      }else if(scope==='future'){
+        updatePayload.recurrence_group_id=recurrenceValue;
+      }
+
+      const ids=targets.map(x=>x.id);
+      const scheduleRes=await db.from('service_schedules')
+        .update(updatePayload)
+        .in('id',ids)
+        .select('id');
+
+      if(scheduleRes.error) throw scheduleRes.error;
+      if((scheduleRes.data||[]).length!==ids.length){
+        throw new Error('部分班表未能更新，請重新整理後確認。');
+      }
+
+      const deleteItemsRes=await db.from('schedule_service_items')
+        .delete()
+        .in('schedule_id',ids);
+      if(deleteItemsRes.error) throw deleteItemsRes.error;
+
+      const itemRows=[];
+      ids.forEach(id=>{
+        items.forEach(x=>{
+          const info=scheduleServiceInfo(x.code);
+          itemRows.push({
+            schedule_id:id,
+            service_group:scheduleGroupFromCode(x.code),
+            service_code:x.code,
+            service_name:info?.name||null,
+            quantity:x.quantity
+          });
+        });
+      });
+
+      const insertItemsRes=await db.from('schedule_service_items').insert(itemRows);
+      if(insertItemsRes.error) throw insertItemsRes.error;
+
+      const focusDate=scope==='single'?date:row.service_date;
+      state.scheduleWeekStart=scheduleDateISO(scheduleMonday(new Date(focusDate+'T00:00:00')));
+      closeModal();
+      await loadScheduleWeek();
+      renderSchedulePage();
+      toast(scope==='single'?'班表已更新。':`已更新 ${ids.length} 筆班表。`,'success');
+    }catch(err){
+      console.error(err);
+      toast('更新班表失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+      if(confirmBtn && document.body.contains(confirmBtn)) confirmBtn.disabled=false;
+    }
+  }
+
+  async function saveNewSchedule(){
+    const date = $('scheduleAddDate')?.value;
+    const start = $('scheduleAddStart')?.value;
+    const end = $('scheduleAddEnd')?.value;
+    const caseId = $('scheduleAddCase')?.value;
+    const workerId = $('scheduleAddWorker')?.value;
+    const status = $('scheduleAddStatus')?.value || 'confirmed';
+    const notes = $('scheduleAddNotes')?.value?.trim() || null;
+
+    const items = [...document.querySelectorAll('#scheduleServiceRows .schedule-service-row')]
+      .map(row=>({
+        code: row.querySelector('.schedule-service-code')?.value?.trim().toUpperCase() || '',
+        quantity: Number(row.querySelector('.schedule-service-qty')?.value || 0)
+      }))
+      .filter(x=>x.code);
+
+    if(!date || !start || !caseId || !workerId){
+      toast('請完整填寫日期、開始時間、個案與居服員。','error');
+      return;
+    }
+    if(!end){
+      toast('目前選擇的服務項目沒有可計算的服務時間，請確認服務碼別與支數。','error');
+      return;
+    }
+    if(end<=start){
+      toast('自動計算的結束時間異常，請確認服務項目。','error');
+      return;
+    }
+    if(!items.length){
+      toast('請至少填寫 1 項服務碼。','error');
+      return;
+    }
+    if(items.some(x=>!Number.isInteger(x.quantity) || x.quantity<1 || x.quantity>8)){
+      toast('服務項目的支數必須介於 1～8。','error');
+      return;
+    }
+
+    const confirmBtn = $('modalConfirm');
+    if(confirmBtn) confirmBtn.disabled = true;
+    showLoading(true);
+
+    try{
+      const conflictRes = await db.from('service_schedules')
+        .select('id,start_time,end_time,schedule_status,staffing_status')
+        .eq('service_date',date)
+        .eq('care_worker_id',workerId)
+        .neq('schedule_status','cancelled')
+        .neq('staffing_status','pending_substitute')
+        .lt('start_time',end)
+        .gt('end_time',start)
+        .limit(1);
+
+      if(conflictRes.error) throw conflictRes.error;
+      if((conflictRes.data || []).length){
+        const proceed = confirm('⚠️ 排班時間重疊\n\n此居服員在同一天的這個時段已有其他班表。\n\n仍要建立這筆班表嗎？');
+        if(!proceed) return;
+      }
+
+      const scheduleRes = await db.from('service_schedules')
+        .insert({
+          service_date:date,
+          start_time:start,
+          end_time:end,
+          case_id:caseId,
+          care_worker_id:workerId,
+          schedule_status:status,
+          notes,
+          created_by:state.user.id,
+          updated_by:state.user.id
+        })
+        .select('id')
+        .single();
+
+      if(scheduleRes.error) throw scheduleRes.error;
+
+      const itemRows = items.map(x=>{
+        const info = scheduleServiceInfo(x.code);
+        return {
+          schedule_id:scheduleRes.data.id,
+          service_group:scheduleGroupFromCode(x.code),
+          service_code:x.code,
+          service_name:info?.name || null,
+          quantity:x.quantity
+        };
+      });
+
+      const itemsRes = await db.from('schedule_service_items').insert(itemRows);
+      if(itemsRes.error) throw itemsRes.error;
+
+      state.scheduleWeekStart = scheduleDateISO(scheduleMonday(new Date(date+'T00:00:00')));
+      closeModal();
+      await loadScheduleWeek();
+      renderSchedulePage();
+      toast('班表已建立。','success');
+    }catch(err){
+      console.error(err);
+      toast('建立班表失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+      if(confirmBtn && document.body.contains(confirmBtn)) confirmBtn.disabled = false;
+    }
+  }
+
+  async function loadScheduleWeek(){
+    if(!canUseScheduleAdmin()) return;
+    state.scheduleLoading = true;
+    showLoading(true);
+
+    try{
+      const start = new Date(state.scheduleWeekStart + 'T00:00:00');
+      const end = scheduleAddDays(start, 6);
+
+      const [workersRes, schedulesRes, pendingRes] = await Promise.all([
+        db.from('care_workers')
+          .select('id,worker_name,employment_status')
+          .eq('employment_status','active')
+          .order('worker_name'),
+
+        db.from('service_schedules')
+          .select('id,service_date,start_time,end_time,case_id,care_worker_id,original_care_worker_id,staffing_status,leave_request_id,schedule_status,recurrence_group_id,notes')
+          .gte('service_date', scheduleDateISO(start))
+          .lte('service_date', scheduleDateISO(end))
+          .order('service_date')
+          .order('start_time'),
+
+        db.from('service_schedules')
+          .select('id')
+          .eq('staffing_status','pending_substitute')
+          .neq('schedule_status','cancelled')
+      ]);
+
+      if(workersRes.error) throw workersRes.error;
+      if(schedulesRes.error) throw schedulesRes.error;
+      if(pendingRes.error) throw pendingRes.error;
+
+      state.scheduleWorkers = workersRes.data || [];
+      state.scheduleRows = schedulesRes.data || [];
+      state.pendingSubstituteCount = (pendingRes.data || []).length;
+
+      const scheduleIds = [...new Set(state.scheduleRows.map(x=>x.id))];
+      const caseIds = [...new Set(state.scheduleRows.map(x=>x.case_id).filter(Boolean))];
+
+      const [casesRes, itemsRes] = await Promise.all([
+        caseIds.length
+          ? db.from('care_cases').select('id,case_name').in('id',caseIds)
+          : Promise.resolve({data:[],error:null}),
+
+        scheduleIds.length
+          ? db.from('schedule_service_items')
+              .select('id,schedule_id,service_group,service_code,service_name,quantity')
+              .in('schedule_id',scheduleIds)
+              .order('service_code')
+          : Promise.resolve({data:[],error:null})
+      ]);
+
+      if(casesRes.error) throw casesRes.error;
+      if(itemsRes.error) throw itemsRes.error;
+
+      state.scheduleCases = casesRes.data || [];
+      state.scheduleItems = itemsRes.data || [];
+
+    }catch(err){
+      console.error(err);
+      toast('讀取班表失敗：' + (err?.message || err), 'error');
+    }finally{
+      state.scheduleLoading = false;
+      showLoading(false);
+    }
+  }
+
+  function renderSchedulePage(){
+    if(state.page !== 'schedule') return;
+
+    if(!canUseScheduleAdmin()){
+      $('content').innerHTML = `
+        <div class="page-head"><div><h1>📅 排班管理</h1><p>每週服務班表</p></div></div>
+        <div class="empty"><div class="icon">🔒</div><h3>目前沒有管理端排班權限</h3><p>居服員手機版班表會在下一階段另外製作。</p></div>`;
+      return;
+    }
+
+    const start = new Date(state.scheduleWeekStart + 'T00:00:00');
+    const todayISO = scheduleDateISO(new Date());
+    const dayNames = ['週一','週二','週三','週四','週五','週六','週日'];
+
+    let visible = state.scheduleRows;
+
+    if(state.scheduleWorkerFilter !== 'all'){
+      visible = visible.filter(x=>x.care_worker_id === state.scheduleWorkerFilter);
+    }
+
+    const activeRows = visible.filter(x=>x.schedule_status !== 'cancelled');
+    const conflictIds = scheduleConflictIds(state.scheduleRows);
+    const workerCount = new Set(activeRows.map(x=>x.care_worker_id)).size;
+    const caseCount = new Set(activeRows.map(x=>x.case_id)).size;
+
+    const totalHours =
+      activeRows.reduce((sum,x)=>{
+        return sum + Math.max(
+          0,
+          scheduleMinutes(x.end_time) - scheduleMinutes(x.start_time)
+        );
+      },0) / 60;
+
+    $('content').innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>📅 排班管理</h1>
+          <p>查看每週服務班表，並建立單次服務班次。</p>
+        </div>
+        <div class="actions"><button id="scheduleMobilePreviewBtn" class="btn">📱 手機版預覽</button><button id="schedulePendingBtn" class="btn schedule-pending-btn ${state.pendingSubstituteCount?'':'zero'}">⚠ 待代班 ${state.pendingSubstituteCount} 筆</button><button id="scheduleLeaveBtn" class="btn">請假／代班</button><button id="scheduleAddBtn" class="btn primary">＋ 新增班表</button></div>
+      </div>
+
+      <section class="schedule-stats">
+        <article class="stat-card">
+          <div class="stat-head"><span>本週班次</span><span class="stat-icon">📅</span></div>
+          <div class="stat-value">${activeRows.length}</div>
+          <div class="stat-foot">不含已取消班次</div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-head"><span>居服員</span><span class="stat-icon">👥</span></div>
+          <div class="stat-value">${workerCount}</div>
+          <div class="stat-foot">本週有排班的人員</div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-head"><span>服務個案</span><span class="stat-icon">👤</span></div>
+          <div class="stat-value">${caseCount}</div>
+          <div class="stat-foot">本週有服務的個案</div>
+        </article>
+
+        <article class="stat-card">
+          <div class="stat-head"><span>服務時數</span><span class="stat-icon">⏱</span></div>
+          <div class="stat-value">${totalHours.toFixed(totalHours % 1 ? 1 : 0)}</div>
+          <div class="stat-foot">依排班時間加總</div>
+        </article>
+      </section>
+
+      <div class="schedule-toolbar">
+        <button id="schedulePrev" class="btn">← 上一週</button>
+        <button id="scheduleToday" class="btn">本週</button>
+        <button id="scheduleNext" class="btn">下一週 →</button>
+
+        <div class="schedule-week-title">${scheduleWeekLabel(start)}</div>
+
+        <span class="spacer"></span>
+
+        <span class="schedule-filter-label">居服員</span>
+
+        <select id="scheduleWorkerFilter">
+          <option value="all">全部居服員</option>
+          ${state.scheduleWorkers.map(w=>`
+            <option value="${w.id}" ${state.scheduleWorkerFilter===w.id?'selected':''}>
+              ${escapeHTML(w.worker_name)}
+            </option>
+          `).join('')}
+        </select>
+
+        <button id="scheduleReload" class="btn">↻ 重新整理</button>
+      </div>
+
+      <div class="schedule-board-shell">
+        <div class="schedule-board">
+          ${dayNames.map((name,index)=>{
+            const date = scheduleAddDays(start,index);
+            const dateISO = scheduleDateISO(date);
+
+            const rows = visible
+              .filter(x=>x.service_date===dateISO)
+              .sort((a,b)=>String(a.start_time).localeCompare(String(b.start_time)));
+
+            return `
+              <section class="schedule-day ${index>=5?'weekend':''} ${dateISO===todayISO?'today':''}">
+                <div class="schedule-day-head">
+                  <div class="schedule-day-name"><span>${name}</span>${dateISO===todayISO?'<span class="schedule-today-badge">今天</span>':''}</div>
+                  <div class="schedule-day-date">${scheduleDateLabel(date)}</div>
+                </div>
+
+                <div class="schedule-day-body">
+                  ${
+                    rows.length
+                    ? rows.map(row=>{
+                        const items = scheduleItemsFor(row.id);
+
+                        return `
+                          <article class="schedule-card ${row.schedule_status==='cancelled'?'cancelled':''} ${row.staffing_status==='pending_substitute'?'pending-substitute':''} ${conflictIds.has(row.id)?'conflict':''}" data-schedule-id="${row.id}" title="點一下編輯班表">
+                            <div class="schedule-card-time">
+                              <span>${scheduleTimeLabel(row.start_time)}–${scheduleTimeLabel(row.end_time)}</span>
+                              <span class="schedule-status ${row.schedule_status}">
+                                ${scheduleStatusLabel(row.schedule_status)}
+                              </span>
+                              ${row.staffing_status==='pending_substitute'?'<span class="schedule-staffing-badge pending">⚠ 待代班</span>':''}
+                              ${row.staffing_status==='substituted'?'<span class="schedule-staffing-badge substituted">代班</span>':''}
+                              ${conflictIds.has(row.id)?'<span class="schedule-conflict-badge">⚠ 排班衝突</span>':''}
+                            </div>
+
+                            <div class="schedule-card-case">
+                              ${escapeHTML(scheduleCaseName(row.case_id))}
+                            </div>
+
+                            <div class="schedule-card-worker">
+                              ${row.staffing_status==='pending_substitute'?'原居服員：':'👤 '}${escapeHTML(scheduleWorkerName(row.care_worker_id))}
+                            </div>
+                            ${row.staffing_status==='substituted' && row.original_care_worker_id?'<div class="schedule-original-worker">原排班：'+escapeHTML(scheduleWorkerName(row.original_care_worker_id))+'</div>':''}
+
+                            ${
+                              items.length
+                              ? `<div class="schedule-items">
+                                  ${items.map(item=>`
+                                    <span class="schedule-item">
+                                      ${escapeHTML(item.service_code)} ×${scheduleQty(item.quantity)}
+                                    </span>
+                                  `).join('')}
+                                </div>`
+                              : ''
+                            }
+
+                            ${
+                              row.notes
+                              ? `<div class="schedule-card-note">${escapeHTML(row.notes)}</div>`
+                              : ''
+                            }
+                          </article>
+                        `;
+                      }).join('')
+                    : '<div class="schedule-empty">本日無班表</div>'
+                  }
+                </div>
+              </section>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    $('scheduleAddBtn').addEventListener('click',openAddScheduleModal);
+
+    document.querySelectorAll('[data-schedule-id]').forEach(card=>{
+      card.addEventListener('click',()=>openEditScheduleModal(card.dataset.scheduleId));
+    });
+
+    $('schedulePrev').addEventListener('click', async()=>{
+      state.scheduleWeekStart =
+        scheduleDateISO(scheduleAddDays(start,-7));
+      await loadScheduleWeek();
+      renderSchedulePage();
+    });
+
+    $('scheduleToday').addEventListener('click', async()=>{
+      state.scheduleWeekStart =
+        scheduleDateISO(scheduleMonday(new Date()));
+      await loadScheduleWeek();
+      renderSchedulePage();
+    });
+
+    $('scheduleNext').addEventListener('click', async()=>{
+      state.scheduleWeekStart =
+        scheduleDateISO(scheduleAddDays(start,7));
+      await loadScheduleWeek();
+      renderSchedulePage();
+    });
+
+    $('scheduleWorkerFilter').addEventListener('change',e=>{
+      state.scheduleWorkerFilter = e.target.value;
+      renderSchedulePage();
+    });
+
+    $('scheduleReload').addEventListener('click', async()=>{
+      await loadScheduleWeek();
+      renderSchedulePage();
+      toast('已重新整理班表','success');
+    });
+  }
+
+  window.v52ScheduleRefresh = async function(){
+    await loadScheduleWeek();
+    renderSchedulePage();
+  };
+
+  const baseNavigateForSchedule = navigate;
+
+  navigate = function(id){
+    if(id !== 'schedule'){
+      return baseNavigateForSchedule(id);
+    }
+
+    const m = modules.find(x=>x.id==='schedule') || modules[0];
+
+    state.page = 'schedule';
+
+    renderNav();
+
+    $('topTitle').textContent = m.label;
+    $('crumb').textContent = m.crumb;
+
+    $('sidebar').classList.remove('open');
+
+    window.scrollTo({
+      top:0,
+      behavior:'auto'
+    });
+
+    if(!canUseScheduleAdmin()){
+      renderSchedulePage();
+      return;
+    }
+
+    $('content').innerHTML = `
+      <div class="empty compact">
+        <div class="icon">📅</div>
+        <h3>正在載入班表</h3>
+        <p>請稍候。</p>
+      </div>
+    `;
+
+    loadScheduleWeek().then(renderSchedulePage);
+  };
+})();
