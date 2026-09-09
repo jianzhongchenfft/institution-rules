@@ -1,0 +1,419 @@
+// V5.2 居服員手機版：我的班表
+(() => {
+  const mobileStyle=document.createElement('style');
+  mobileStyle.id='v52-my-schedule-style';
+  mobileStyle.textContent=`
+    .my-schedule-shell{max-width:720px;margin:0 auto}
+    .my-schedule-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .my-schedule-hero h1{margin:0;font-size:22px;color:#344054}
+    .my-schedule-hero p{margin:5px 0 0;font-size:12px;color:#667085}
+    .my-schedule-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px}
+    .my-schedule-tab{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 8px;font-size:12px;font-weight:900;color:#667085;cursor:pointer}
+    .my-schedule-tab.active{border-color:#e5a087;background:#fff3ed;color:#a45d49}
+    .my-schedule-day{margin-bottom:14px}
+    .my-schedule-day-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 7px}
+    .my-schedule-day-title{font-size:12px;font-weight:900;color:#475467}
+    .my-schedule-day-count{font-size:10.5px;color:#98a2b3}
+    .my-schedule-list{display:grid;gap:8px}
+    .my-schedule-card{width:100%;text-align:left;border:1px solid #ead9d3;border-left:4px solid var(--green-700);border-radius:12px;background:#fff;padding:11px 12px;cursor:pointer;box-shadow:0 1px 2px rgba(16,24,40,.03)}
+    .my-schedule-card.cancelled{opacity:.62;border-left-color:#98a2b3;background:#fafafa}
+    .my-schedule-card.substituted{border-left-color:#7f56d9}
+    .my-schedule-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+    .my-schedule-time{font-size:16px;font-weight:900;color:#1f2937}
+    .my-schedule-case{font-size:15px;font-weight:900;color:#344054;margin-top:5px}
+    .my-schedule-badges{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+    .my-schedule-badge{display:inline-flex;align-items:center;padding:3px 6px;border-radius:999px;font-size:9.5px;font-weight:900;white-space:nowrap}
+    .my-schedule-badge.status{background:#eef7f1;color:#237a4b}
+    .my-schedule-badge.cancelled{background:#fef3f2;color:#b42318}
+    .my-schedule-badge.substitute{background:#f4ebff;color:#6941c6}
+    .my-schedule-items{display:grid;gap:3px;margin-top:7px}
+    .my-schedule-item{font-size:11px;font-weight:900;color:#a45d49}
+    .my-schedule-expand{font-size:10.5px;color:#98a2b3;margin-top:7px}
+    .my-schedule-detail{display:none;border-top:1px dashed #ead9d3;margin-top:9px;padding-top:9px;font-size:11px;line-height:1.65;color:#667085}
+    .my-schedule-card.expanded .my-schedule-detail{display:block}
+    .my-schedule-empty{padding:34px 14px;text-align:center;border:1px dashed var(--line);border-radius:12px;background:#fff;color:#667085}
+    .my-schedule-empty .icon{font-size:28px;margin-bottom:6px}
+    .my-schedule-preview-note{padding:9px 10px;border:1px solid #d6bbfb;background:#f9f5ff;border-radius:10px;color:#6941c6;font-size:11px;font-weight:900;margin-bottom:10px}
+    .my-schedule-account-warning{padding:24px 14px;text-align:center;border:1px solid #f0ded7;background:#fff8f5;border-radius:12px;color:#7d4b3b;line-height:1.6}
+    @media(max-width:650px){
+      .my-schedule-shell{max-width:none}
+      .my-schedule-hero{align-items:center}
+      .my-schedule-hero h1{font-size:20px}
+      .my-schedule-card{padding:11px 10px}
+      .my-schedule-time{font-size:15px}
+      .my-schedule-case{font-size:14px}
+    }
+  `;
+  document.head.appendChild(mobileStyle);
+
+  Object.assign(state,{
+    myScheduleRange:'today',
+    myScheduleRows:[],
+    myScheduleCases:[],
+    myScheduleItems:[],
+    myScheduleWorker:null,
+    mySchedulePreviewWorkerId:null,
+    mySchedulePreviewWorkerName:''
+  });
+
+  function isCareWorkerUser(){
+    return state.profile?.role==='care_worker';
+  }
+
+  function myISO(date){
+    const d=new Date(date);
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,'0');
+    const day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function myAddDays(date,days){
+    const d=new Date(date);
+    d.setDate(d.getDate()+days);
+    return d;
+  }
+
+  function myMonday(date){
+    const d=new Date(date);
+    d.setHours(0,0,0,0);
+    const offset=(d.getDay()+6)%7;
+    d.setDate(d.getDate()-offset);
+    return d;
+  }
+
+  function myRangeDates(range){
+    const today=new Date();
+    today.setHours(0,0,0,0);
+    if(range==='today') return {start:today,end:today};
+    const monday=myMonday(today);
+    if(range==='next'){
+      const start=myAddDays(monday,7);
+      return {start,end:myAddDays(start,6)};
+    }
+    return {start:monday,end:myAddDays(monday,6)};
+  }
+
+  function myDateLabel(value){
+    const d=new Date(value+'T00:00:00');
+    const names=['日','一','二','三','四','五','六'];
+    return `${d.getMonth()+1}/${d.getDate()}（${names[d.getDay()]}）`;
+  }
+
+  function myTime(value){
+    return String(value||'').slice(0,5);
+  }
+
+  function myStatusLabel(value){
+    return ({unnotified:'尚未照會',planned:'已排定',confirmed:'已確認',completed:'已完成',cancelled:'已取消'})[value]||value||'—';
+  }
+
+  function myCaseName(id){
+    return state.myScheduleCases.find(x=>x.id===id)?.case_name || '未找到個案';
+  }
+
+  function myItems(scheduleId){
+    return state.myScheduleItems.filter(x=>x.schedule_id===scheduleId);
+  }
+
+  async function resolveMyWorker(previewWorkerId=null){
+    if(previewWorkerId){
+      const res=await db.from('care_workers')
+        .select('id,worker_name,staff_user_id,employment_status')
+        .eq('id',previewWorkerId)
+        .maybeSingle();
+      if(res.error) throw res.error;
+      return res.data||null;
+    }
+
+    const res=await db.from('care_workers')
+      .select('id,worker_name,staff_user_id,employment_status')
+      .eq('staff_user_id',state.profile.id)
+      .maybeSingle();
+    if(res.error) throw res.error;
+    return res.data||null;
+  }
+
+  async function loadMySchedule(previewWorkerId=null){
+    showLoading(true);
+    try{
+      const worker=await resolveMyWorker(previewWorkerId);
+      state.myScheduleWorker=worker;
+      state.myScheduleRows=[];
+      state.myScheduleCases=[];
+      state.myScheduleItems=[];
+
+      if(!worker) return;
+
+      const range=myRangeDates(state.myScheduleRange);
+      const startISO=myISO(range.start);
+      const endISO=myISO(range.end);
+
+      const schedulesRes=await db.from('service_schedules')
+        .select('id,service_date,start_time,end_time,case_id,care_worker_id,original_care_worker_id,staffing_status,schedule_status,notes')
+        .eq('care_worker_id',worker.id)
+        .neq('staffing_status','pending_substitute')
+        .gte('service_date',startISO)
+        .lte('service_date',endISO)
+        .order('service_date')
+        .order('start_time');
+      if(schedulesRes.error) throw schedulesRes.error;
+
+      state.myScheduleRows=schedulesRes.data||[];
+      const caseIds=[...new Set(state.myScheduleRows.map(x=>x.case_id).filter(Boolean))];
+      const scheduleIds=state.myScheduleRows.map(x=>x.id);
+
+      const [casesRes,itemsRes]=await Promise.all([
+        caseIds.length
+          ? db.from('care_cases').select('id,case_name').in('id',caseIds)
+          : Promise.resolve({data:[],error:null}),
+        scheduleIds.length
+          ? db.from('schedule_service_items')
+              .select('schedule_id,service_code,service_name,quantity')
+              .in('schedule_id',scheduleIds)
+              .order('service_code')
+          : Promise.resolve({data:[],error:null})
+      ]);
+
+      if(casesRes.error) throw casesRes.error;
+      if(itemsRes.error) throw itemsRes.error;
+      state.myScheduleCases=casesRes.data||[];
+      state.myScheduleItems=itemsRes.data||[];
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  function renderMySchedule(preview=false){
+    state.page='schedule';
+    if(isCareWorkerUser()) renderNav();
+
+    const worker=state.myScheduleWorker;
+    const range=state.myScheduleRange;
+    const rows=state.myScheduleRows||[];
+    const rangeDates=myRangeDates(range);
+    const startISO=myISO(rangeDates.start);
+    const endISO=myISO(rangeDates.end);
+
+    if(!worker){
+      $('content').innerHTML=`
+        <div class="my-schedule-shell">
+          <div class="my-schedule-hero">
+            <div><h1>📅 我的班表</h1><p>查看自己的服務班次</p></div>
+            ${preview?'<button id="myScheduleBackAdmin" class="btn">← 返回管理端</button>':''}
+          </div>
+          <div class="my-schedule-account-warning">
+            <b>目前帳號尚未連結居服員資料。</b><br>
+            請由機構管理端將此登入帳號與對應的居服員資料連結後，再查看個人班表。
+          </div>
+        </div>`;
+      $('myScheduleBackAdmin')?.addEventListener('click',()=>{
+        state.mySchedulePreviewWorkerId=null;
+        navigate('schedule');
+      });
+      return;
+    }
+
+    const dates=[];
+    for(let d=new Date(rangeDates.start);d<=rangeDates.end;d.setDate(d.getDate()+1)){
+      dates.push(myISO(d));
+    }
+
+    const visibleDates=range==='today'
+      ? dates
+      : dates.filter(date=>rows.some(x=>x.service_date===date));
+
+    $('content').innerHTML=`
+      <div class="my-schedule-shell">
+        <div class="my-schedule-hero">
+          <div>
+            <h1>📅 我的班表</h1>
+            <p>${escapeHTML(worker.worker_name)}｜${range==='today'?'今天':range==='week'?'本週':'下週'}服務安排</p>
+          </div>
+          ${preview?'<button id="myScheduleBackAdmin" class="btn">← 返回管理端</button>':''}
+        </div>
+
+        ${preview?'<div class="my-schedule-preview-note">📱 目前為管理端預覽模式，實際居服員登入後只會看到自己的班表。</div>':''}
+
+        <div class="my-schedule-tabs">
+          <button class="my-schedule-tab ${range==='today'?'active':''}" data-my-range="today">今天</button>
+          <button class="my-schedule-tab ${range==='week'?'active':''}" data-my-range="week">本週</button>
+          <button class="my-schedule-tab ${range==='next'?'active':''}" data-my-range="next">下週</button>
+        </div>
+
+        ${rows.length
+          ? (visibleDates.length?visibleDates.map(date=>{
+              const dayRows=rows.filter(x=>x.service_date===date);
+              if(!dayRows.length) return '';
+              return `
+                <section class="my-schedule-day">
+                  <div class="my-schedule-day-head">
+                    <div class="my-schedule-day-title">${myDateLabel(date)}</div>
+                    <div class="my-schedule-day-count">${dayRows.length} 筆服務</div>
+                  </div>
+                  <div class="my-schedule-list">
+                    ${dayRows.map(row=>{
+                      const items=myItems(row.id);
+                      return `
+                        <button type="button" class="my-schedule-card ${row.schedule_status==='cancelled'?'cancelled':''} ${row.staffing_status==='substituted'?'substituted':''}" data-my-schedule-card="${row.id}">
+                          <div class="my-schedule-card-top">
+                            <div>
+                              <div class="my-schedule-time">${myTime(row.start_time)}–${myTime(row.end_time)}</div>
+                              <div class="my-schedule-case">${escapeHTML(myCaseName(row.case_id))}</div>
+                            </div>
+                            <div class="my-schedule-badges">
+                              <span class="my-schedule-badge ${row.schedule_status==='cancelled'?'cancelled':'status'}">${myStatusLabel(row.schedule_status)}</span>
+                              ${row.staffing_status==='substituted'?'<span class="my-schedule-badge substitute">代班服務</span>':''}
+                            </div>
+                          </div>
+
+                          ${items.length?'<div class="my-schedule-items">'+items.map(item=>'<div class="my-schedule-item">'+escapeHTML(item.service_code)+' ×'+Number(item.quantity)+'</div>').join('')+'</div>':''}
+                          <div class="my-schedule-expand">點一下查看完整資訊 ▾</div>
+
+                          <div class="my-schedule-detail">
+                            <div><b>服務日期：</b>${myDateLabel(row.service_date)}</div>
+                            <div><b>服務時間：</b>${myTime(row.start_time)}–${myTime(row.end_time)}</div>
+                            <div><b>班表狀態：</b>${myStatusLabel(row.schedule_status)}</div>
+                            ${row.staffing_status==='substituted'?'<div><b>人力狀態：</b>本次為代班服務</div>':''}
+                            ${items.length?'<div><b>服務項目：</b><br>'+items.map(item=>escapeHTML(item.service_code)+'｜'+escapeHTML(item.service_name||'')+' ×'+Number(item.quantity)).join('<br>')+'</div>':''}
+                            <div><b>備註：</b>${row.notes?escapeHTML(row.notes):'無'}</div>
+                          </div>
+                        </button>`;
+                    }).join('')}
+                  </div>
+                </section>`;
+            }).join(''):'')
+          : `<div class="my-schedule-empty"><div class="icon">📭</div><b>${startISO===endISO?'今天':'這個期間'}沒有服務班表</b></div>`
+        }
+      </div>`;
+
+    document.querySelectorAll('[data-my-schedule-card]').forEach(card=>{
+      card.addEventListener('click',()=>{
+        card.classList.toggle('expanded');
+        const hint=card.querySelector('.my-schedule-expand');
+        if(hint) hint.textContent=card.classList.contains('expanded')?'收合完整資訊 ▴':'點一下查看完整資訊 ▾';
+      });
+    });
+
+    document.querySelectorAll('[data-my-range]').forEach(btn=>{
+      btn.addEventListener('click',async()=>{
+        state.myScheduleRange=btn.dataset.myRange;
+        await loadMySchedule(preview?state.mySchedulePreviewWorkerId:null);
+        renderMySchedule(preview);
+      });
+    });
+
+    $('myScheduleBackAdmin')?.addEventListener('click',()=>{
+      state.mySchedulePreviewWorkerId=null;
+      state.mySchedulePreviewWorkerName='';
+      state.myScheduleRange='today';
+      navigate('schedule');
+    });
+  }
+
+  async function openMobilePreviewChooser(){
+    showLoading(true);
+    try{
+      const res=await db.from('care_workers')
+        .select('id,worker_name,employment_status')
+        .eq('employment_status','active')
+        .order('worker_name');
+      if(res.error) throw res.error;
+      const workers=res.data||[];
+      if(!workers.length){
+        toast('目前沒有可預覽的在職居服員。','error');
+        return;
+      }
+
+      openModal({
+        title:'手機版「我的班表」預覽',
+        confirmText:'開始預覽',
+        html:`
+          <div class="form-grid">
+            <div class="field full"><label>預覽哪位居服員 *</label>
+              <select id="mySchedulePreviewWorker">
+                <option value="">請選擇居服員</option>
+                ${workers.map(w=>`<option value="${w.id}">${escapeHTML(w.worker_name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field full"><div class="schedule-form-note">這只是管理端測試預覽。正式居服員登入時，系統會依帳號自動限制只能查看自己的班表。</div></div>
+          </div>
+        `,
+        onConfirm:async()=>{
+          const id=$('mySchedulePreviewWorker')?.value;
+          if(!id){
+            toast('請選擇要預覽的居服員。','error');
+            return;
+          }
+          const selected=workers.find(x=>x.id===id);
+          state.mySchedulePreviewWorkerId=id;
+          state.mySchedulePreviewWorkerName=selected?.worker_name||'';
+          state.myScheduleRange='today';
+          closeModal();
+          $('topTitle').textContent='我的班表－手機版預覽';
+          $('crumb').textContent='居服員個人班表';
+          await loadMySchedule(id);
+          renderMySchedule(true);
+        }
+      });
+    }catch(err){
+      console.error(err);
+      toast('載入手機版預覽失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function navigateCareWorkerSchedule(){
+    state.page='schedule';
+    state.mySchedulePreviewWorkerId=null;
+    state.myScheduleRange=state.myScheduleRange||'today';
+    renderNav();
+    $('topTitle').textContent='我的班表';
+    $('crumb').textContent='我的服務安排';
+    $('sidebar').classList.remove('open');
+    window.scrollTo({top:0,behavior:'auto'});
+    $('content').innerHTML='<div class="my-schedule-shell"><div class="my-schedule-empty"><div class="icon">📅</div>正在載入我的班表…</div></div>';
+    try{
+      await loadMySchedule();
+      renderMySchedule(false);
+    }catch(err){
+      console.error(err);
+      toast('讀取我的班表失敗：'+(err?.message||err),'error');
+      $('content').innerHTML='<div class="my-schedule-shell"><div class="my-schedule-account-warning">讀取班表失敗，請重新整理後再試。</div></div>';
+    }
+  }
+
+  const baseRenderNavForMySchedule=renderNav;
+  renderNav=function(){
+    if(!isCareWorkerUser()) return baseRenderNavForMySchedule();
+
+    const nav=$('nav');
+    nav.innerHTML='';
+    nav.append(el('div',{class:'nav-section',text:'每天工作'}));
+    nav.append(el('button',{
+      class:`nav-btn ${state.page==='schedule'?'active':''}`,
+      onClick:()=>navigate('schedule')
+    },[
+      el('span',{class:'nav-icon',text:'📅'}),
+      el('span',{text:'我的班表'})
+    ]));
+  };
+
+  const baseNavigateForMySchedule=navigate;
+  navigate=function(id){
+    if(isCareWorkerUser() && (id==='dashboard' || id==='schedule')){
+      navigateCareWorkerSchedule();
+      return;
+    }
+    return baseNavigateForMySchedule(id);
+  };
+
+  document.addEventListener('click',event=>{
+    const btn=event.target.closest?.('#scheduleMobilePreviewBtn');
+    if(!btn) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    openMobilePreviewChooser();
+  },true);
+})();
