@@ -1,0 +1,359 @@
+// V5.2 排班管理：固定每週排班建立
+(() => {
+  const recurrenceStyle = document.createElement('style');
+  recurrenceStyle.id = 'v52-schedule-recurrence-style';
+  recurrenceStyle.textContent = `
+    .schedule-mode-switch{display:flex;gap:8px;flex-wrap:wrap}
+    .schedule-mode-option{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:#fff;font-size:12px;font-weight:900;color:#475467;cursor:pointer}
+    .schedule-mode-option:has(input:checked){border-color:#e5a087;background:#fff7f3;color:#a45d49}
+    .schedule-mode-option input{width:auto;margin:0}
+    .schedule-recurrence-box{display:none;border:1px solid #f0ded7;background:#fffaf8;border-radius:11px;padding:11px 12px}
+    .schedule-recurrence-box.show{display:block}
+    .schedule-weekdays{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+    .schedule-weekday{display:flex;align-items:center;gap:5px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 9px;font-size:11px;font-weight:900;color:#667085;cursor:pointer}
+    .schedule-weekday:has(input:checked){border-color:#e5a087;background:#fff3ed;color:#a45d49}
+    .schedule-weekday input{width:auto;margin:0}
+    .schedule-recurrence-preview{margin-top:8px;font-size:11px;color:#667085;line-height:1.5}
+  `;
+  document.head.appendChild(recurrenceStyle);
+
+  const recurringServiceCodes = [
+    {code:'BA01',name:'基本身體清潔',minutes:30},
+    {code:'BA02',name:'基本日常照顧',minutes:30},
+    {code:'BA03',name:'測量生命徵象',minutes:10},
+    {code:'BA04',name:'協助進食或管灌餵食',minutes:30},
+    {code:'BA05',name:'餐食照顧',minutes:40},
+    {code:'BA07',name:'協助沐浴及洗頭',minutes:30},
+    {code:'BA08',name:'足部照護',minutes:40},
+    {code:'BA10',name:'翻身拍背',minutes:20},
+    {code:'BA11',name:'肢體關節活動',minutes:20},
+    {code:'BA12',name:'協助上/下樓梯',minutes:20},
+    {code:'BA13',name:'陪同外出',minutes:30},
+    {code:'BA14',name:'陪同就醫',minutes:90},
+    {code:'BA15',name:'家務協助',minutes:30},
+    {code:'BA16',name:'代購/代領/代送服務',minutes:20},
+    {code:'BA17',name:'協助執行輔助性醫療',minutes:0},
+    {code:'BA18',name:'安全看視',minutes:30},
+    {code:'BA20',name:'陪伴服務',minutes:30},
+    {code:'BA22',name:'巡視服務',minutes:20},
+    {code:'BA23',name:'協助洗頭',minutes:30},
+    {code:'BA24',name:'協助排泄',minutes:30},
+    {code:'GA09',name:'居家喘息服務',minutes:120},
+    {code:'SC09',name:'居家短照服務',minutes:120}
+  ];
+
+  function recurringServiceInfo(code){
+    return recurringServiceCodes.find(x=>x.code===code) || null;
+  }
+
+  function recurringServiceOptions(selected=''){
+    return '<option value="">請選擇服務碼別</option>' + recurringServiceCodes.map(item=>{
+      const timeText = item.minutes>0 ? `（${item.minutes}分）` : '';
+      return `<option value="${item.code}" ${selected===item.code?'selected':''}>${item.code}｜${escapeHTML(item.name)}${timeText}</option>`;
+    }).join('');
+  }
+
+  function recurringGroupFromCode(code){
+    const match=String(code||'').trim().toUpperCase().match(/^[A-Z]+/);
+    return match?.[0] || 'OTHER';
+  }
+
+  function recurringISO(date){
+    const d=new Date(date);
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,'0');
+    const day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function recurringMonday(date){
+    const d=new Date(date);
+    d.setHours(0,0,0,0);
+    const offset=(d.getDay()+6)%7;
+    d.setDate(d.getDate()-offset);
+    return d;
+  }
+
+  function recurringAddServiceRow(code='',quantity=1){
+    const wrap=$('recurringServiceRows');
+    if(!wrap) return;
+    const row=document.createElement('div');
+    row.className='schedule-service-row';
+    const safeQty=Math.min(8,Math.max(1,Number(quantity)||1));
+    row.innerHTML=`
+      <select class="recurring-service-code">${recurringServiceOptions(code)}</select>
+      <span class="schedule-service-times">×</span>
+      <select class="recurring-service-qty">${Array.from({length:8},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===safeQty?'selected':''}>${n}</option>`).join('')}</select>
+      <button type="button" class="btn schedule-remove-item" title="移除">×</button>`;
+    row.querySelector('.recurring-service-code').addEventListener('change',recurringUpdateEndTime);
+    row.querySelector('.recurring-service-qty').addEventListener('change',recurringUpdateEndTime);
+    row.querySelector('.schedule-remove-item').addEventListener('click',()=>{
+      if(wrap.querySelectorAll('.schedule-service-row').length<=1){
+        row.querySelector('.recurring-service-code').value='';
+        row.querySelector('.recurring-service-qty').value='1';
+      }else row.remove();
+      recurringUpdateEndTime();
+    });
+    wrap.appendChild(row);
+    recurringUpdateEndTime();
+  }
+
+  function recurringItems(){
+    return [...document.querySelectorAll('#recurringServiceRows .schedule-service-row')]
+      .map(row=>({
+        code:row.querySelector('.recurring-service-code')?.value?.trim().toUpperCase()||'',
+        quantity:Number(row.querySelector('.recurring-service-qty')?.value||0)
+      }))
+      .filter(x=>x.code);
+  }
+
+  function recurringUpdateEndTime(){
+    const start=$('recurringStart')?.value;
+    const end=$('recurringEnd');
+    if(!end) return;
+    if(!start){end.value='';return;}
+    let minutes=0;
+    recurringItems().forEach(item=>{
+      const info=recurringServiceInfo(item.code);
+      if(info && info.minutes>0) minutes += info.minutes*item.quantity;
+    });
+    if(minutes<=0){end.value='';return;}
+    const [h,m]=start.split(':').map(Number);
+    const total=h*60+m+minutes;
+    end.value=`${String(Math.floor((total%(24*60))/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
+  }
+
+  function recurringSelectedWeekdays(){
+    return [...document.querySelectorAll('[data-recurring-weekday]:checked')].map(x=>Number(x.value));
+  }
+
+  function recurringDates(startDate,endDate,weekdays){
+    const out=[];
+    const start=new Date(startDate+'T00:00:00');
+    const end=new Date(endDate+'T00:00:00');
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+      if(weekdays.includes(d.getDay())) out.push(recurringISO(d));
+    }
+    return out;
+  }
+
+  function recurringToggleMode(){
+    const mode=document.querySelector('input[name="scheduleCreateMode"]:checked')?.value||'single';
+    const recurring=mode==='weekly';
+    $('recurrenceBox')?.classList.toggle('show',recurring);
+    const singleDate=$('singleDateField');
+    if(singleDate) singleDate.style.display=recurring?'none':'';
+    recurringUpdatePreview();
+  }
+
+  function recurringUpdatePreview(){
+    const preview=$('recurrencePreview');
+    if(!preview) return;
+    const mode=document.querySelector('input[name="scheduleCreateMode"]:checked')?.value||'single';
+    if(mode!=='weekly'){preview.textContent='';return;}
+    const start=$('recurrenceStart')?.value;
+    const end=$('recurrenceEndDate')?.value;
+    const weekdays=recurringSelectedWeekdays();
+    if(!start || !end || !weekdays.length){preview.textContent='請設定期間與每週服務日。';return;}
+    if(end<start){preview.textContent='結束日期不可早於起始日期。';return;}
+    const dates=recurringDates(start,end,weekdays);
+    preview.textContent=`預計建立 ${dates.length} 筆班表。`;
+  }
+
+  async function openRecurringScheduleModal(){
+    if(!state.profile || !['supervisor','business_manager','organization_manager','admin'].includes(state.profile.role)) return;
+    showLoading(true);
+    try{
+      const [workersRes,casesRes]=await Promise.all([
+        db.from('care_workers').select('id,worker_name,employment_status').eq('employment_status','active').order('worker_name'),
+        db.from('care_cases').select('id,case_name,service_status').eq('service_status','active').order('case_name')
+      ]);
+      if(workersRes.error) throw workersRes.error;
+      if(casesRes.error) throw casesRes.error;
+      const workers=workersRes.data||[];
+      const cases=casesRes.data||[];
+      if(!workers.length){toast('目前沒有可排班的在職居服員。','error');return;}
+      if(!cases.length){toast('目前沒有可排班的服務中個案。','error');return;}
+
+      const today=recurringISO(new Date());
+      const endDefault=new Date(); endDefault.setMonth(endDefault.getMonth()+1);
+      const endDefaultISO=recurringISO(endDefault);
+
+      openModal({
+        title:'新增班表',
+        confirmText:'建立班表',
+        large:true,
+        html:`
+          <div class="form-grid">
+            <div class="field full">
+              <label>排班方式 *</label>
+              <div class="schedule-mode-switch">
+                <label class="schedule-mode-option"><input type="radio" name="scheduleCreateMode" value="single" checked> 單次班表</label>
+                <label class="schedule-mode-option"><input type="radio" name="scheduleCreateMode" value="weekly"> 固定每週</label>
+              </div>
+            </div>
+
+            <div class="field" id="singleDateField"><label>服務日期 *</label><input id="recurringSingleDate" type="date" value="${today}"></div>
+            <div class="field"><label>班表狀態 *</label><select id="recurringStatus"><option value="confirmed">已確認</option><option value="unnotified">尚未照會</option><option value="planned">已排定</option></select></div>
+
+            <div class="field full">
+              <div id="recurrenceBox" class="schedule-recurrence-box">
+                <div class="form-grid">
+                  <div class="field"><label>起始日期 *</label><input id="recurrenceStart" type="date" value="${today}"></div>
+                  <div class="field"><label>結束日期 *</label><input id="recurrenceEndDate" type="date" value="${endDefaultISO}"></div>
+                  <div class="field full"><label>每週服務日 *</label>
+                    <div class="schedule-weekdays">
+                      ${[['一',1],['二',2],['三',3],['四',4],['五',5],['六',6],['日',0]].map(([label,value])=>`<label class="schedule-weekday"><input type="checkbox" data-recurring-weekday value="${value}"> 週${label}</label>`).join('')}
+                    </div>
+                    <div id="recurrencePreview" class="schedule-recurrence-preview">請設定期間與每週服務日。</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field"><label>開始時間 *</label><input id="recurringStart" type="time" value="09:00"></div>
+            <div class="field"><label>結束時間（自動計算） *</label><input id="recurringEnd" class="schedule-auto-time" type="time" readonly></div>
+            <div class="field"><label>個案 *</label><select id="recurringCase"><option value="">請選擇個案</option>${cases.map(c=>`<option value="${c.id}">${escapeHTML(c.case_name)}</option>`).join('')}</select></div>
+            <div class="field"><label>居服員 *</label><select id="recurringWorker"><option value="">請選擇居服員</option>${workers.map(w=>`<option value="${w.id}">${escapeHTML(w.worker_name)}</option>`).join('')}</select></div>
+
+            <div class="field full"><label>服務項目 *</label>
+              <div class="schedule-service-editor">
+                <div class="schedule-service-head"><span>服務碼別</span><span class="schedule-service-times">×</span><span>支數</span><span></span></div>
+                <div id="recurringServiceRows"></div>
+                <div><button id="recurringAddServiceItem" type="button" class="btn sm">＋ 新增服務項目</button></div>
+              </div>
+            </div>
+            <div class="field full"><label>備註</label><textarea id="recurringNotes" placeholder="例如：家屬特別交代、當日服務注意事項"></textarea></div>
+            <div class="field full"><div class="schedule-form-note">固定每週會一次建立指定期間內的所有班次；如有時間重疊，系統會先統計衝突筆數，再由你決定是否仍要建立。</div></div>
+          </div>`,
+        onConfirm:saveRecurringSchedule
+      });
+
+      recurringAddServiceRow();
+      document.querySelectorAll('input[name="scheduleCreateMode"]').forEach(x=>x.addEventListener('change',recurringToggleMode));
+      $('recurringStart').addEventListener('input',recurringUpdateEndTime);
+      $('recurringStart').addEventListener('change',recurringUpdateEndTime);
+      $('recurringAddServiceItem').addEventListener('click',()=>recurringAddServiceRow());
+      $('recurrenceStart').addEventListener('change',recurringUpdatePreview);
+      $('recurrenceEndDate').addEventListener('change',recurringUpdatePreview);
+      document.querySelectorAll('[data-recurring-weekday]').forEach(x=>x.addEventListener('change',recurringUpdatePreview));
+      recurringToggleMode();
+      recurringUpdateEndTime();
+    }catch(err){
+      console.error(err);
+      toast('載入新增班表資料失敗：'+(err?.message||err),'error');
+    }finally{showLoading(false);}
+  }
+
+  async function saveRecurringSchedule(){
+    const mode=document.querySelector('input[name="scheduleCreateMode"]:checked')?.value||'single';
+    const startTime=$('recurringStart')?.value;
+    const endTime=$('recurringEnd')?.value;
+    const caseId=$('recurringCase')?.value;
+    const workerId=$('recurringWorker')?.value;
+    const status=$('recurringStatus')?.value||'confirmed';
+    const notes=$('recurringNotes')?.value?.trim()||null;
+    const items=recurringItems();
+
+    if(!startTime || !endTime || !caseId || !workerId){toast('請完整填寫時間、個案與居服員。','error');return;}
+    if(!items.length){toast('請至少填寫 1 項服務碼。','error');return;}
+    if(items.some(x=>!Number.isInteger(x.quantity)||x.quantity<1||x.quantity>8)){toast('服務項目的支數必須介於 1～8。','error');return;}
+
+    let dates=[];
+    let recurrenceGroupId=null;
+    if(mode==='single'){
+      const date=$('recurringSingleDate')?.value;
+      if(!date){toast('請選擇服務日期。','error');return;}
+      dates=[date];
+    }else{
+      const startDate=$('recurrenceStart')?.value;
+      const endDate=$('recurrenceEndDate')?.value;
+      const weekdays=recurringSelectedWeekdays();
+      if(!startDate||!endDate){toast('請設定固定排班的起始與結束日期。','error');return;}
+      if(endDate<startDate){toast('結束日期不可早於起始日期。','error');return;}
+      if(!weekdays.length){toast('請至少選擇 1 個每週服務日。','error');return;}
+      dates=recurringDates(startDate,endDate,weekdays);
+      if(!dates.length){toast('指定期間內沒有符合的服務日期。','error');return;}
+      if(dates.length>180){toast('一次固定排班最多建立 180 筆，請縮短期間。','error');return;}
+      recurrenceGroupId=crypto.randomUUID();
+    }
+
+    const confirmBtn=$('modalConfirm');
+    if(confirmBtn) confirmBtn.disabled=true;
+    showLoading(true);
+    try{
+      const minDate=dates[0];
+      const maxDate=dates[dates.length-1];
+      const existingRes=await db.from('service_schedules')
+        .select('id,service_date,start_time,end_time,schedule_status,staffing_status')
+        .eq('care_worker_id',workerId)
+        .neq('schedule_status','cancelled')
+        .neq('staffing_status','pending_substitute')
+        .gte('service_date',minDate)
+        .lte('service_date',maxDate);
+      if(existingRes.error) throw existingRes.error;
+
+      const dateSet=new Set(dates);
+      const conflicts=(existingRes.data||[]).filter(x=>dateSet.has(x.service_date) && x.start_time<endTime && x.end_time>startTime);
+      if(conflicts.length){
+        const message=mode==='weekly'
+          ? `⚠️ 固定排班衝突\n\n預計建立 ${dates.length} 筆班表，其中 ${new Set(conflicts.map(x=>x.service_date)).size} 個服務日與此居服員既有班表時間重疊。\n\n仍要建立全部班表嗎？`
+          : '⚠️ 排班時間重疊\n\n此居服員在同一天的這個時段已有其他班表。\n\n仍要建立這筆班表嗎？';
+        if(!confirm(message)) return;
+      }
+
+      const scheduleRows=dates.map(date=>({
+        service_date:date,
+        start_time:startTime,
+        end_time:endTime,
+        case_id:caseId,
+        care_worker_id:workerId,
+        schedule_status:status,
+        recurrence_group_id:recurrenceGroupId,
+        notes,
+        created_by:state.user.id,
+        updated_by:state.user.id
+      }));
+
+      const scheduleRes=await db.from('service_schedules').insert(scheduleRows).select('id,service_date');
+      if(scheduleRes.error) throw scheduleRes.error;
+
+      const itemRows=[];
+      (scheduleRes.data||[]).forEach(schedule=>{
+        items.forEach(item=>{
+          const info=recurringServiceInfo(item.code);
+          itemRows.push({
+            schedule_id:schedule.id,
+            service_group:recurringGroupFromCode(item.code),
+            service_code:item.code,
+            service_name:info?.name||null,
+            quantity:item.quantity
+          });
+        });
+      });
+      const itemsRes=await db.from('schedule_service_items').insert(itemRows);
+      if(itemsRes.error) throw itemsRes.error;
+
+      const firstDate=new Date(dates[0]+'T00:00:00');
+      state.scheduleWeekStart=recurringISO(recurringMonday(firstDate));
+      closeModal();
+      navigate('schedule');
+      toast(mode==='weekly'?`已建立 ${dates.length} 筆固定每週班表。`:'班表已建立。','success');
+    }catch(err){
+      console.error(err);
+      toast('建立班表失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+      if(confirmBtn && document.body.contains(confirmBtn)) confirmBtn.disabled=false;
+    }
+  }
+
+  // 使用 capture 攔截原本「＋新增班表」按鈕，其他排班功能維持原樣。
+  document.addEventListener('click',event=>{
+    const btn=event.target.closest?.('#scheduleAddBtn');
+    if(!btn) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    openRecurringScheduleModal();
+  },true);
+})();
