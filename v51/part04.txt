@@ -1,4 +1,4 @@
-les = new Set(['business_manager','organization_manager','admin']);
+les = new Set(['organization_manager','admin']);
 
   const modules = [
     {section:'每天工作', id:'dashboard', icon:'🏠', label:'首頁', crumb:'工作儀表板', ready:true},
