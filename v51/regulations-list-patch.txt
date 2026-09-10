@@ -140,5 +140,6 @@
     if(current?.file_path) actions.append(el('button',{class:'btn primary',text:'下載最新版',onClick:()=>downloadVersion(current)}));
     actions.append(el('button',{class:'btn',text:`版本紀錄 (${versions.length})`,onClick:()=>openVersionsModal(reg)}));
     if(canManage()) actions.append(el('button',{class:'btn',text:'＋ 上傳新版本',onClick:()=>openRegulationModal(reg)}));
-    if(canManage()&&drafts[0]) actions.append(el('button',{class:'btn',text:'發布草稿',onClick:()=>{closeModal();publishVersion(reg,drafts[0]);}}));\n    if(canDeleteRegulations()) actions.append(el('button',{class:'btn reg-delete-btn',text:'🗑 刪除文件',onClick:()=>deleteRegulation(reg)}));
+    if(canManage()&&drafts[0]) actions.append(el('button',{class:'btn',text:'發布草稿',onClick:()=>{closeModal();publishVersion(reg,drafts[0]);}}));
+    if(canDeleteRegulations()) actions.append(el('button',{class:'btn reg-delete-btn',text:'🗑 刪除文件',onClick:()=>deleteRegulation(reg)}));
   }
