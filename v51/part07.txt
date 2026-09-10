@@ -1,8 +1,9 @@
-class="version-row"><div class="version-info"><div class="version-title">V${escapeHTML(v.version_label)} <span class="status ${v.status}">${v.status==='published'?'已發布':v.status==='draft'?'草稿':'歷史版本'}</span></div><div class="version-sub">生效：${v.effective_date?rocDate(v.effective_date+'T00:00:00'):'未設定'}${v.file_name?`<br>檔案：${escapeHTML(v.file_name)}（${formatBytes(v.file_size)}）`:''}${v.revision_notes?`<br>說明：${escapeHTML(v.revision_notes)}`:''}</div></div><div class="version-actions"><button class="btn sm" data-download="${v.id}" ${!v.file_path?'disabled':''}>下載</button>${canManage()&&v.status==='draft'?`<button class="btn sm primary" data-publish="${v.id}">發布</button>`:''}</div></div>`).join(''):'<div class="empty">尚無版本紀錄</div>'}</div>`;
+class="version-row"><div class="version-info"><div class="version-title">V${escapeHTML(v.version_label)} <span class="status ${v.status}">${v.status==='published'?'已發布':v.status==='draft'?'草稿':'歷史版本'}</span></div><div class="version-sub">生效：${v.effective_date?rocDate(v.effective_date+'T00:00:00'):'未設定'}${v.file_name?`<br>檔案：${escapeHTML(v.file_name)}（${formatBytes(v.file_size)}）`:''}${v.revision_notes?`<br>說明：${escapeHTML(v.revision_notes)}`:''}</div></div><div class="version-actions"><button class="btn sm" data-download="${v.id}" ${!v.file_path?'disabled':''}>下載</button>${canManage()&&v.status==='draft'?`<button class="btn sm primary" data-publish="${v.id}">發布</button>`:''}${canDeleteRegulations()?`<button class="btn sm reg-delete-btn" data-delete-version="${v.id}">刪除版本</button>`:''}</div></div>`).join(''):'<div class="empty">尚無版本紀錄</div>'}</div>`;
     openModal({title:`版本紀錄｜${reg.title}`,html,large:true,showConfirm:false});
     versions.forEach(v=>{
       document.querySelector(`[data-download="${v.id}"]`)?.addEventListener('click',()=>downloadVersion(v));
       document.querySelector(`[data-publish="${v.id}"]`)?.addEventListener('click',()=>{closeModal();publishVersion(reg,v);});
+      document.querySelector(`[data-delete-version="${v.id}"]`)?.addEventListener('click',()=>deleteRegulationVersion(reg,v));
     });
   }
 
