@@ -20,10 +20,72 @@
     .reg-detail-item.full{grid-column:1/-1}
     .reg-detail-label{font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:800}
     .reg-detail-value{font-size:13px;color:#344054;font-weight:800;line-height:1.5;word-break:break-word}
-    .reg-detail-actions{display:flex;gap:8px;flex-wrap:wrap;padding-top:2px}
+    .reg-detail-actions{display:flex;gap:8px;flex-wrap:wrap;padding-top:2px}\n    .btn.reg-delete-btn{background:var(--danger-bg);border-color:#f7c7c3;color:var(--danger)}\n    .btn.reg-delete-btn:hover{background:#fee4e2;border-color:#fda29b;color:#912018}
     @media(max-width:560px){.reg-detail-summary{grid-template-columns:1fr}.reg-detail-item.full{grid-column:auto}}
   `;
   document.head.appendChild(regulationsListStyle);
+
+  function canDeleteRegulations(){
+    return !!state.profile && (state.profile.role === 'admin' || state.profile.role === 'organization_manager');
+  }
+
+  async function deleteRegulation(reg){
+    if(!canDeleteRegulations()){
+      toast('你沒有刪除內規的權限','error');
+      return;
+    }
+
+    const {versions}=getVersionArrays(reg);
+    const filePaths=[...new Set(versions.map(v=>v.file_path).filter(Boolean))];
+
+    const firstConfirm=confirm(
+      `確定要刪除「${reg.title}」嗎？\n\n此動作會刪除整份內規及全部 ${versions.length} 個版本紀錄，且無法復原。`
+    );
+    if(!firstConfirm) return;
+
+    const secondConfirm=confirm(
+      `再次確認：真的要永久刪除「${reg.title}」嗎？\n刪除後無法復原。`
+    );
+    if(!secondConfirm) return;
+
+    showLoading(true);
+    try{
+      const {data:deleted,error:deleteErr}=await db
+        .from('regulations')
+        .delete()
+        .eq('id',reg.id)
+        .select('id');
+
+      if(deleteErr) throw deleteErr;
+      if(!deleted?.length) throw new Error('刪除未完成，可能是帳號沒有刪除權限。');
+
+      let storageWarning=null;
+      for(let i=0;i<filePaths.length;i+=1000){
+        const chunk=filePaths.slice(i,i+1000);
+        const {error:storageErr}=await db.storage.from(STORAGE_BUCKET).remove(chunk);
+        if(storageErr){
+          storageWarning=storageErr;
+          console.error('附件清理失敗',storageErr);
+          break;
+        }
+      }
+
+      closeModal();
+      await loadRegulations();
+      renderRegulations();
+
+      if(storageWarning){
+        toast('內規資料已刪除，但部分附件未能清理，請由系統管理員檢查 Storage。','warn');
+      }else{
+        toast('內規及全部版本已刪除','success');
+      }
+    }catch(err){
+      console.error(err);
+      toast('刪除失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
 
   function renderRegulations(){
     const cats=[...new Set(state.regulations.map(r=>r.category).filter(Boolean))].sort();
@@ -78,5 +140,5 @@
     if(current?.file_path) actions.append(el('button',{class:'btn primary',text:'下載最新版',onClick:()=>downloadVersion(current)}));
     actions.append(el('button',{class:'btn',text:`版本紀錄 (${versions.length})`,onClick:()=>openVersionsModal(reg)}));
     if(canManage()) actions.append(el('button',{class:'btn',text:'＋ 上傳新版本',onClick:()=>openRegulationModal(reg)}));
-    if(canManage()&&drafts[0]) actions.append(el('button',{class:'btn',text:'發布草稿',onClick:()=>{closeModal();publishVersion(reg,drafts[0]);}}));
+    if(canManage()&&drafts[0]) actions.append(el('button',{class:'btn',text:'發布草稿',onClick:()=>{closeModal();publishVersion(reg,drafts[0]);}}));\n    if(canDeleteRegulations()) actions.append(el('button',{class:'btn reg-delete-btn',text:'🗑 刪除文件',onClick:()=>deleteRegulation(reg)}));
   }
