@@ -54,22 +54,17 @@ jobs:
               with urlopen(base + path, timeout=30) as r:
                   return r.read()
 
-          # Existing case/schedule modules must already be identical to TEST.
-          # This prevents accidentally overwriting production-only V5.1 behavior.
           for path in unchanged:
               local = Path(path).read_bytes()
               expected = remote(path)
               if local != expected:
                   raise SystemExit(f'Preflight mismatch: {path}')
 
-          # Promote only the runtime patches that were actually loaded and tested in TEST.
           for path in runtime:
               p = Path(path)
               p.parent.mkdir(parents=True, exist_ok=True)
               p.write_bytes(remote(path))
 
-          # Keep production-only regulation/version controls, but replace the module-loader tail
-          # with the TEST loader that has the complete V5.2 overtime/payroll stack.
           prod_path = Path('v51/part07.txt')
           prod = prod_path.read_text(encoding='utf-8')
           test = remote('v51/part07.txt').decode('utf-8')
@@ -104,7 +99,7 @@ jobs:
             v52/overtime-withdraw-patch.txt
           )
           for f in "${files[@]}"; do
-            node --check "$f"
+            node --check < "$f"
           done
           grep -q 'const initAfterModules=init;' v51/part07.txt
           grep -q 'data-delete-version' v51/part07.txt
