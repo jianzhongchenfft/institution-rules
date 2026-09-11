@@ -1,0 +1,204 @@
+// V5.2 加班／換休資料完整性：月結鎖定、核准紀錄作廢／更正
+(() => {
+  const style=document.createElement('style');
+  style.id='v52-overtime-integrity-style';
+  style.textContent=`
+    .ot-status.voided{background:#f2f4f7;color:#667085;text-decoration:line-through}
+    .ot-lock-note{margin-top:6px;padding:7px 9px;border-radius:8px;background:#fff8f5;border:1px solid #f0ded7;color:#9a5d49;font-size:11px;line-height:1.5}
+    .ot-correction-table{width:100%;border-collapse:collapse}
+    .ot-correction-table th,.ot-correction-table td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:12px;vertical-align:top}
+    .ot-correction-table th{font-size:11px;color:#667085;background:#faf8f7;white-space:nowrap}
+    .ot-correction-table tr:last-child td{border-bottom:0}
+  `;
+  document.head.appendChild(style);
+
+  function canReviewIntegrity(){
+    return !!state.profile && ['organization_manager','admin'].includes(state.profile.role);
+  }
+
+  function monthRange(month){
+    const safe=/^\d{4}-\d{2}$/.test(month||'')?month:isoDate(new Date()).slice(0,7);
+    const [y,m]=safe.split('-').map(Number);
+    const start=`${y}-${String(m).padStart(2,'0')}-01`;
+    const end=isoDate(new Date(y,m,0));
+    return {start,end};
+  }
+
+  function monthLabel(month){
+    const [y,m]=String(month||'').split('-').map(Number);
+    return Number.isFinite(y)&&Number.isFinite(m)?`民國 ${y-1911} 年 ${m} 月`:String(month||'');
+  }
+
+  function dateText(value){
+    return value?rocDate(String(value).slice(0,10)+'T00:00:00'):'—';
+  }
+
+  function typeText(row,kind){
+    if(kind==='leave') return '換休使用';
+    return ({overtime:'平日加班',holiday_overtime:'假日加班',holiday_visit_comp:'假日家訪換休'})[row.request_type]||row.request_type||'—';
+  }
+
+  function amountText(row,kind){
+    if(kind==='leave') return `${Number(row.minutes)||0} 分鐘`;
+    const mins=row.request_type==='holiday_visit_comp'?(Number(row.comp_minutes)||0):(Number(row.overtime_minutes)||0);
+    return `${mins} 分鐘`;
+  }
+
+  function selectedMonthSettledFromState(){
+    const start=monthRange(state.overtimeMonth).start;
+    return (state.payrollSettlements||[]).some(r=>r.settlement_month===start);
+  }
+
+  function currentApprovedRows(){
+    const {start,end}=monthRange(state.overtimeMonth);
+    const overtime=(state.overtimeRows||[])
+      .filter(r=>r.status==='approved'&&r.work_date>=start&&r.work_date<=end)
+      .map(r=>({kind:'overtime',id:r.id,date:r.work_date,name:r.applicant_name||'—',row:r}));
+    const leave=(state.compLeaveRows||[])
+      .filter(r=>r.status==='approved'&&r.leave_date>=start&&r.leave_date<=end)
+      .map(r=>({kind:'leave',id:r.id,date:r.leave_date,name:r.applicant_name||'—',row:r}));
+    return [...overtime,...leave].sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(a.name).localeCompare(String(b.name),'zh-Hant'));
+  }
+
+  function renderCorrectionRows(items,settled){
+    if(!items.length) return '<div class="ot-empty"><div class="icon">✓</div><h3>本月沒有可更正的已核准紀錄</h3><p>只有已核准且尚未作廢的紀錄會列在這裡。</p></div>';
+    return `<div class="ot-table-shell"><table class="ot-correction-table"><thead><tr><th>日期</th><th>申請人</th><th>類型</th><th>認列</th><th>事由</th><th>操作</th></tr></thead><tbody>${items.map(item=>{
+      const r=item.row;
+      return `<tr><td>${dateText(item.date)}</td><td><strong>${escapeHTML(item.name)}</strong></td><td>${escapeHTML(typeText(r,item.kind))}</td><td>${escapeHTML(amountText(r,item.kind))}</td><td>${escapeHTML(r.reason||'—')}</td><td>${settled?'<span class="ot-status approved">已月結鎖定</span>':`<button class="btn sm" data-integrity-void="${item.kind}:${item.id}">作廢／更正</button>`}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+
+  function openCorrectionCenter(){
+    if(!canReviewIntegrity()){toast('目前帳號沒有更正核准紀錄的權限','warn');return;}
+    const settled=selectedMonthSettledFromState();
+    const items=currentApprovedRows();
+    openModal({
+      title:`核准紀錄更正｜${monthLabel(state.overtimeMonth)}`,
+      html:`
+        <div class="ot-rule-highlight" style="margin-top:0">${settled
+          ?'此月份已完成薪資結算，所有原始資料均已鎖定，不能直接作廢；若需調整，後續請使用「月結更正」流程。'
+          :'此功能不會刪除原紀錄。作廢後原紀錄仍會保留並標示「已作廢」；如需更正內容，請再建立一筆正確申請重新送審。'}</div>
+        <div style="margin-top:12px">${renderCorrectionRows(items,settled)}</div>`,
+      large:true,
+      showConfirm:false
+    });
+    document.querySelectorAll('[data-integrity-void]').forEach(btn=>btn.addEventListener('click',()=>{
+      const [kind,id]=String(btn.dataset.integrityVoid||'').split(':');
+      openVoidReason(kind,id);
+    }));
+  }
+
+  function findItem(kind,id){
+    return kind==='leave'
+      ? (state.compLeaveRows||[]).find(r=>r.id===id)
+      : (state.overtimeRows||[]).find(r=>r.id===id);
+  }
+
+  function openVoidReason(kind,id){
+    const row=findItem(kind,id);
+    if(!row) return;
+    const d=kind==='leave'?row.leave_date:row.work_date;
+    openModal({
+      title:'作廢已核准紀錄',
+      html:`
+        <div class="ot-rule-highlight" style="margin-top:0">將保留原紀錄，不會刪除。若本次是資料填錯，完成作廢後請重新新增正確資料送審。</div>
+        <div class="field" style="margin-top:12px"><label>紀錄</label><input class="ot-readonly" disabled value="${escapeHTML(`${dateText(d)}｜${row.applicant_name||'—'}｜${typeText(row,kind)}`)}"></div>
+        <div class="field"><label>作廢原因 *</label><textarea id="integrityVoidReason" placeholder="例如：核准後發現申請時間填寫錯誤，需重新申請"></textarea></div>`,
+      confirmText:'確認作廢',
+      onConfirm:()=>submitVoid(kind,id),
+      large:true
+    });
+  }
+
+  async function submitVoid(kind,id){
+    const reason=String(document.getElementById('integrityVoidReason')?.value||'').trim();
+    if(!reason){toast('請填寫作廢原因','warn');return false;}
+    if(!confirm('確定要將這筆已核准紀錄標記為「已作廢」嗎？\n\n原紀錄會保留，不會刪除。')) return false;
+    showLoading(true);
+    try{
+      const fn=kind==='leave'?'void_comp_leave_usage':'void_overtime_request';
+      const args=kind==='leave'?{p_id:id,p_reason:reason}:{p_id:id,p_reason:reason};
+      const {error}=await db.rpc(fn,args);
+      if(error) throw error;
+      const row=findItem(kind,id);
+      if(row){
+        row.status='voided';
+        row.review_note=(row.review_note?row.review_note+'\n':'')+'作廢原因：'+reason;
+      }
+      closeModal();
+      navigate('overtime');
+      toast('紀錄已作廢；如需更正，請重新新增正確申請','success');
+      return true;
+    }catch(err){
+      console.error(err);
+      toast('作廢失敗：'+(err?.message||err),'error');
+      return false;
+    }finally{showLoading(false);}
+  }
+
+  async function checkDateLock(input){
+    if(!input?.value) return;
+    const field=input.closest('.field')||input.parentElement;
+    let note=field?.querySelector?.('[data-payroll-lock-note]');
+    if(!note&&field){
+      note=document.createElement('div');
+      note.dataset.payrollLockNote='1';
+      note.className='ot-lock-note hidden';
+      field.appendChild(note);
+    }
+    try{
+      const {data,error}=await db.rpc('is_payroll_month_settled',{p_date:input.value});
+      if(error) throw error;
+      const locked=!!data;
+      if(note){
+        note.classList.toggle('hidden',!locked);
+        note.textContent=locked?'此日期所屬月份已完成薪資結算，資料已鎖定，不能新增、修改或重新送審。':'';
+      }
+      const modal=input.closest('.modal');
+      const confirmBtn=modal?.querySelector('#modalConfirm');
+      const draftBtn=[...(modal?.querySelectorAll('.modal-foot .btn')||[])].find(b=>b.textContent.trim()==='儲存草稿');
+      if(confirmBtn){confirmBtn.disabled=locked;confirmBtn.style.opacity=locked?'0.55':'';}
+      if(draftBtn){draftBtn.disabled=locked;draftBtn.style.opacity=locked?'0.55':'';}
+    }catch(err){
+      console.error('檢查月結鎖定失敗',err);
+    }
+  }
+
+  function attachDateGuard(input){
+    if(!input||input.dataset.payrollDateGuard==='1') return;
+    input.dataset.payrollDateGuard='1';
+    input.addEventListener('change',()=>checkDateLock(input));
+    checkDateLock(input);
+  }
+
+  function normalizeVoidedLabels(){
+    document.querySelectorAll('.ot-status.voided').forEach(el=>{if(el.textContent.trim()!=='已作廢') el.textContent='已作廢';});
+  }
+
+  function ensureCorrectionButton(){
+    if(state.page!=='overtime'||!canReviewIntegrity()) return;
+    const reload=document.getElementById('otReload');
+    if(!reload||document.getElementById('otCorrectionBtn')) return;
+    const btn=document.createElement('button');
+    btn.id='otCorrectionBtn';
+    btn.className='btn';
+    btn.textContent='↺ 更正／作廢';
+    btn.title='處理尚未月結月份中的已核准錯誤紀錄';
+    btn.addEventListener('click',openCorrectionCenter);
+    reload.insertAdjacentElement('afterend',btn);
+  }
+
+  function enhance(){
+    ensureCorrectionButton();
+    normalizeVoidedLabels();
+    attachDateGuard(document.getElementById('otWorkDate'));
+    attachDateGuard(document.getElementById('clDate'));
+  }
+
+  const observer=new MutationObserver(mutations=>{
+    const relevant=mutations.some(m=>m.addedNodes&&m.addedNodes.length);
+    if(relevant) setTimeout(enhance,0);
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+  setTimeout(enhance,0);
+})();

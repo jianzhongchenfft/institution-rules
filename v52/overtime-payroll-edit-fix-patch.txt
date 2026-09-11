@@ -1,0 +1,73 @@
+// V5.2 新假別編輯補強＋新申請預設換休
+(() => {
+  const newTypes=new Set(['rest_day_overtime','national_holiday_overtime']);
+
+  function restore(){
+    const sel=document.getElementById('otType');
+    const id=state.workflowEditingOvertimeId;
+    if(!sel||!id)return;
+    const row=(state.overtimeRows||[]).find(r=>String(r.id)===String(id));
+    if(!row||!newTypes.has(row.request_type)||sel.value===row.request_type)return;
+    if([...sel.options].some(o=>o.value===row.request_type)){
+      sel.value=row.request_type;
+      sel.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+  }
+
+  function defaultCompLeave(){
+    const comp=document.getElementById('otCompensation');
+    const type=document.getElementById('otType');
+    const modal=comp?.closest('.modal');
+    if(!comp||!type||!modal||!modal.querySelector('#otWorkDate'))return;
+    if(state.workflowEditingOvertimeId)return;
+    if(![...comp.options].some(o=>o.value==='comp_leave'))return;
+
+    // 新增申請一律預設「換休」。
+    // 其他模組可能在自動判斷申請類型時觸發 change 並把處理方式清空，
+    // 因此除了開啟視窗時設定外，也監聽申請類型變更後重新套用預設值。
+    if(comp.value!=='comp_leave'){
+      comp.value='comp_leave';
+      comp.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+
+    if(type.dataset.defaultCompLeaveBound!=='1'){
+      type.dataset.defaultCompLeaveBound='1';
+      type.addEventListener('change',()=>{
+        if(state.workflowEditingOvertimeId)return;
+        setTimeout(()=>{
+          const current=document.getElementById('otCompensation');
+          if(!current||![...current.options].some(o=>o.value==='comp_leave'))return;
+          if(current.value!=='comp_leave'){
+            current.value='comp_leave';
+            current.dispatchEvent(new Event('change',{bubbles:true}));
+          }
+        },0);
+      });
+    }
+  }
+
+  function apply(){
+    restore();
+    defaultCompLeave();
+  }
+
+  let q=false;
+  const obs=new MutationObserver(ms=>{
+    if(q||!ms.some(m=>m.addedNodes?.length))return;
+    q=true;
+    setTimeout(()=>{q=false;apply();},80);
+  });
+  obs.observe(document.body,{childList:true,subtree:true});
+  setTimeout(apply,250);
+})();
+
+// 載入全站介面文字精簡規則。
+(async()=>{
+  try{
+    const res=await fetch('v52/ui-concise-copy-patch.txt',{cache:'no-store'});
+    if(!res.ok)throw new Error(`v52/ui-concise-copy-patch.txt 載入失敗（${res.status}）`);
+    eval(await res.text());
+  }catch(err){
+    console.error('介面文字精簡模組載入失敗',err);
+  }
+})();

@@ -1,0 +1,203 @@
+// V5.2 加班／換休：月份篩選與顯示輔助
+// 本檔只處理畫面篩選與固定提示，不載入其他模組、不包裝 navigate、不重寫資料。
+(() => {
+  const style=document.createElement('style');
+  style.id='v52-overtime-month-filter-style';
+  style.textContent=`
+    .ot-month-filter-hidden{display:none!important}
+    .ot-month-filter-empty{padding:34px 18px;text-align:center;color:#667085;background:#fff;border:1px solid var(--line);border-radius:14px}
+    .ot-month-filter-empty .icon{font-size:28px;margin-bottom:7px}
+    .ot-month-filter-empty h3{margin:0 0 6px;color:#344054;font-size:15px}
+    .ot-month-filter-empty p{margin:0;font-size:12px;line-height:1.6}
+    #phApplicantHoursHint,#prAmountPreview{display:none!important}
+    .ot-stable-status-stack{grid-column:1 / -1;width:100%;display:grid;gap:10px;margin-top:0}
+    .ot-stable-status-row{width:100%;box-sizing:border-box;border:1px solid #eaded9;background:#fffaf8;color:#667085;border-radius:12px;padding:12px 14px;font-size:12px;line-height:1.55}
+    .ot-stable-status-row strong{color:#344054}
+    .ot-summary.ot-summary-three{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+    @media(max-width:820px){.ot-summary.ot-summary-three{grid-template-columns:1fr 1fr!important}}
+    @media(max-width:560px){.ot-summary.ot-summary-three{grid-template-columns:1fr!important}}
+  `;
+  document.head.appendChild(style);
+
+  function selectedMonth(){
+    return /^\d{4}-\d{2}$/.test(String(state.overtimeMonth||''))
+      ? String(state.overtimeMonth)
+      : isoDate(new Date()).slice(0,7);
+  }
+
+  function isInSelectedMonth(date){
+    return String(date||'').slice(0,7)===selectedMonth();
+  }
+
+  function ownOvertimeRows(){
+    return (state.overtimeRows||[]).filter(r=>r.applicant_staff_id===state.profile?.id);
+  }
+
+  function ownLeaveRows(){
+    return (state.compLeaveRows||[]).filter(r=>r.applicant_staff_id===state.profile?.id);
+  }
+
+  function toggleMonthControl(){
+    const show=['mine','usage','payroll'].includes(state.overtimeView);
+    document.getElementById('otMonth')?.classList.toggle('ot-month-filter-hidden',!show);
+    document.querySelector('label[for="otMonth"]')?.classList.toggle('ot-month-filter-hidden',!show);
+  }
+
+  function clearEmptyNotice(){
+    document.getElementById('otMonthFilterEmpty')?.remove();
+  }
+
+  function showEmptyNotice(tableShell,view){
+    clearEmptyNotice();
+    if(!tableShell)return;
+    tableShell.classList.add('ot-month-filter-hidden');
+    const month=selectedMonth();
+    const [year,mon]=month.split('-').map(Number);
+    const label=`民國 ${year-1911} 年 ${mon} 月`;
+    const box=document.createElement('div');
+    box.id='otMonthFilterEmpty';
+    box.className='ot-month-filter-empty';
+    box.innerHTML=`<div class="icon">✓</div><h3>${label}目前沒有資料</h3><p>${view==='usage'?'本月份沒有換休使用紀錄。':'本月份沒有加班／換休申請紀錄。'}</p>`;
+    tableShell.insertAdjacentElement('afterend',box);
+  }
+
+  function applyTableMonthFilter(){
+    if(state.page!=='overtime')return;
+    const view=state.overtimeView;
+    if(!['mine','usage'].includes(view)){
+      clearEmptyNotice();
+      document.querySelector('#otMain .ot-table-shell')?.classList.remove('ot-month-filter-hidden');
+      return;
+    }
+
+    const items=view==='mine'?ownOvertimeRows():ownLeaveRows();
+    const dateKey=view==='mine'?'work_date':'leave_date';
+    const tableShell=document.querySelector('#otMain .ot-table-shell');
+    const domRows=[...document.querySelectorAll('#otMain .ot-table tbody tr')];
+    if(!tableShell||!domRows.length){
+      clearEmptyNotice();
+      return;
+    }
+    if(domRows.length!==items.length)return;
+
+    let visible=0;
+    domRows.forEach((tr,index)=>{
+      const match=isInSelectedMonth(items[index]?.[dateKey]);
+      tr.classList.toggle('ot-month-filter-hidden',!match);
+      if(match)visible++;
+    });
+
+    if(visible===0)showEmptyNotice(tableShell,view);
+    else{
+      tableShell.classList.remove('ot-month-filter-hidden');
+      clearEmptyNotice();
+    }
+  }
+
+  function reviewerCanSeeWageBase(){
+    return !!state.profile&&['organization_manager','admin'].includes(state.profile.role);
+  }
+
+  function currentDailyHours(){
+    const staff=(state.personalHoursStaff||[]).find(s=>String(s.id)===String(state.profile?.id));
+    const h=Number(staff?.agreed_daily_hours ?? state.profile?.agreed_daily_hours);
+    return Number.isFinite(h)&&h>0?h:null;
+  }
+
+  function currentWageRate(){
+    if(!reviewerCanSeeWageBase())return null;
+    const date=document.getElementById('otWorkDate')?.value||isoDate(new Date());
+    const staffId=String(state.profile?.id||'');
+    const rows=[...(state.personalHoursRates||[]),...(state.payrollRateRows||[])]
+      .filter(r=>String(r.staff_id)===staffId&&String(r.effective_from||'')<=String(date))
+      .sort((a,b)=>String(b.effective_from||'').localeCompare(String(a.effective_from||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
+    return rows[0]||null;
+  }
+
+  function formatMoney(v){
+    const n=Number(v);
+    if(!Number.isFinite(n)||n<=0)return null;
+    return `NT$ ${n.toLocaleString('zh-TW',{maximumFractionDigits:0})}`;
+  }
+
+  function ensureStableStatusRows(){
+    const modal=document.getElementById('otWorkDate')?.closest('.modal');
+    if(!modal)return;
+    const type=document.getElementById('otType')?.value;
+    if(type==='holiday_visit_comp'){
+      modal.querySelector('#otStableStatusStack')?.remove();
+      return;
+    }
+
+    const anchor=document.getElementById('otMinuteCalc')?.closest('.field');
+    if(!anchor)return;
+    let stack=modal.querySelector('#otStableStatusStack');
+    if(!stack){
+      stack=document.createElement('div');
+      stack.id='otStableStatusStack';
+      stack.className='ot-stable-status-stack';
+      stack.innerHTML='<div id="otDailyHoursStable" class="ot-stable-status-row"></div><div id="otWageBaseStable" class="ot-stable-status-row"></div>';
+      anchor.insertAdjacentElement('afterend',stack);
+    }
+
+    const h=currentDailyHours();
+    const hoursText=h
+      ? `約定每日工時：<strong>${escapeHTML(String(h))} 小時</strong>`
+      : '約定每日工時：<strong>尚未設定</strong>';
+
+    let wageText='薪資計算基數：<strong>由機構負責人於薪資作業中管理</strong>';
+    if(reviewerCanSeeWageBase()){
+      const rate=currentWageRate();
+      const amount=formatMoney(rate?.monthly_wage_base);
+      wageText=amount
+        ? `薪資計算基數：<strong>${escapeHTML(amount)}</strong>${rate?.effective_from?`（${escapeHTML(String(rate.effective_from))} 起生效）`:''}`
+        : '薪資計算基數：<strong>尚未設定有效薪資基數</strong>';
+    }
+
+    const hoursRow=stack.querySelector('#otDailyHoursStable');
+    const wageRow=stack.querySelector('#otWageBaseStable');
+    if(hoursRow&&hoursRow.innerHTML!==hoursText)hoursRow.innerHTML=hoursText;
+    if(wageRow&&wageRow.innerHTML!==wageText)wageRow.innerHTML=wageText;
+  }
+
+  function removeRequestableCard(){
+    if(state.page!=='overtime')return;
+    document.querySelectorAll('#content .ot-summary').forEach(summary=>{
+      const cards=[...summary.children].filter(el=>el.classList?.contains('stat-card'));
+      const redundant=cards.find(card=>card.querySelector('.stat-head span')?.textContent?.trim()==='可再申請換休');
+      redundant?.remove();
+      const count=[...summary.children].filter(el=>el.classList?.contains('stat-card')).length;
+      summary.classList.toggle('ot-summary-three',count===3);
+    });
+  }
+
+  function enhance(){
+    if(state.page!=='overtime')return;
+    removeRequestableCard();
+    ensureStableStatusRows();
+    toggleMonthControl();
+    applyTableMonthFilter();
+  }
+
+  let queued=false;
+  function scheduleEnhance(){
+    if(queued)return;
+    queued=true;
+    queueMicrotask(()=>{
+      queued=false;
+      enhance();
+    });
+  }
+
+  const observer=new MutationObserver(mutations=>{
+    if(mutations.some(m=>m.addedNodes?.length||m.removedNodes?.length))scheduleEnhance();
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+
+  document.addEventListener('click',e=>{
+    if(e.target.closest?.('[data-ot-view],#otReload,#otAddBtn'))scheduleEnhance();
+  });
+  document.addEventListener('change',e=>{
+    if(['otMonth','otWorkDate','otType','otStartHour','otStartMinute','otEndHour','otEndMinute','otCompensation'].includes(e.target?.id))scheduleEnhance();
+  });
+})();

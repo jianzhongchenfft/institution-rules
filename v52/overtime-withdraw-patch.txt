@@ -1,0 +1,86 @@
+// V5.2 加班／換休：待審核申請撤回（直接刪除，不追蹤原因）
+// 本檔只處理撤回，不再重載加班資料、不包裝 navigate、不覆寫換休餘額。
+(() => {
+  const style=document.createElement('style');
+  style.id='v52-overtime-withdraw-style';
+  style.textContent='[data-wf-withdraw]{white-space:nowrap}';
+  document.head.appendChild(style);
+
+  function ownRow(kind,id){
+    const rows=kind==='leave'?(state.compLeaveRows||[]):(state.overtimeRows||[]);
+    return rows.find(r=>String(r.id)===String(id)&&String(r.applicant_staff_id)===String(state.profile?.id))||null;
+  }
+
+  function openWithdrawModal(kind,id){
+    const row=ownRow(kind,id);
+    if(!row){
+      toast('找不到這筆申請，請重新整理後再試','warn');
+      return;
+    }
+    if(row.status!=='pending'){
+      toast('只有待審核中的申請可以撤回','warn');
+      return;
+    }
+
+    const date=kind==='leave'?row.leave_date:row.work_date;
+    const time=row.start_time&&row.end_time
+      ? `${String(row.start_time).slice(0,5)}–${String(row.end_time).slice(0,5)}`
+      : '—';
+    openModal({
+      title:'撤回申請',
+      html:`
+        <div style="font-size:14px;font-weight:800;color:#344054">確定撤回此筆申請？</div>
+        <div class="ot-detail" style="margin-top:10px">日期：${escapeHTML(date||'—')}　｜　時間：${escapeHTML(time)}</div>`,
+      confirmText:'確認撤回',
+      onConfirm:()=>submitWithdraw(kind,id)
+    });
+  }
+
+  async function submitWithdraw(kind,id){
+    const row=ownRow(kind,id);
+    if(!row||row.status!=='pending'){
+      toast('此申請目前已不是待審核狀態，請重新整理後再確認','warn');
+      return false;
+    }
+
+    showLoading(true);
+    try{
+      const table=kind==='leave'?'comp_leave_usages':'overtime_requests';
+      const {data,error}=await db.from(table)
+        .delete()
+        .eq('id',id)
+        .eq('applicant_staff_id',state.profile.id)
+        .eq('status','pending')
+        .select('id')
+        .maybeSingle();
+      if(error)throw error;
+      if(!data)throw new Error('申請狀態已變更，請重新整理後再操作');
+
+      closeModal();
+      navigate('overtime');
+      toast('申請已撤回','success');
+      return true;
+    }catch(err){
+      console.error('撤回申請失敗',err);
+      toast('撤回失敗：'+(err?.message||err),'error');
+      return false;
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest?.('[data-wf-withdraw]');
+    if(!btn)return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    const [kind,id]=String(btn.dataset.wfWithdraw||'').split(':');
+    if(!['overtime','leave'].includes(kind)||!id){
+      toast('撤回資料格式不正確，請重新整理頁面','warn');
+      return;
+    }
+    openWithdrawModal(kind,id);
+  },true);
+})();

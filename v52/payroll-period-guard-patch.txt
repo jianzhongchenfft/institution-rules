@@ -1,0 +1,77 @@
+// V5.2 共通版面去除重複標題 + 薪資結算月份防呆
+(() => {
+  // 上方導覽列已顯示模組名稱與說明，內容區不再重複顯示相同標題。
+  if(!document.getElementById('v52-page-head-dedup-style')){
+    const layoutStyle=document.createElement('style');
+    layoutStyle.id='v52-page-head-dedup-style';
+    layoutStyle.textContent=`
+      .page-head > div:first-child:has(> h1){display:none!important}
+      .page-head:has(> div:first-child:only-child > h1){display:none!important}
+      .page-head:has(> .actions){justify-content:flex-end!important;align-items:center!important}
+    `;
+    document.head.appendChild(layoutStyle);
+  }
+
+  function payrollCurrentMonth(){
+    const now=new Date();
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  function payrollSelectedMonthClosed(){
+    const selected=String(state.overtimeMonth||'');
+    return /^\d{4}-\d{2}$/.test(selected) && selected < payrollCurrentMonth();
+  }
+
+  function applyPayrollPeriodGuard(){
+    const btn=document.getElementById('payrollCloseBtn');
+    if(!btn) return;
+
+    const canClose=payrollSelectedMonthClosed();
+    const buttonText=canClose?'✓ 確認本月已結算':'本月尚未結束，暫不可結算';
+    const buttonTitle=canClose?'確認薪資資料後進行月結':'僅能結算已完整結束的月份；當月請於次月1日起辦理結算。';
+
+    btn.disabled=!canClose;
+    btn.style.opacity=canClose?'':'0.55';
+    btn.style.cursor=canClose?'':'not-allowed';
+    if(btn.textContent!==buttonText) btn.textContent=buttonText;
+    if(btn.title!==buttonTitle) btn.title=buttonTitle;
+
+    const card=btn.closest('.ot-rule-card');
+    if(!card) return;
+    let notice=card.querySelector('[data-payroll-period-notice]');
+
+    if(!canClose){
+      if(!notice){
+        notice=document.createElement('div');
+        notice.dataset.payrollPeriodNotice='1';
+        notice.className='ot-rule-highlight';
+        card.appendChild(notice);
+      }
+      const [year,month]=String(state.overtimeMonth||'').split('-').map(Number);
+      const nextMonth=new Date(year,month,1);
+      const noticeText=`此月份尚未完整結束，需於 ${nextMonth.getFullYear()} 年 ${nextMonth.getMonth()+1} 月 1 日起才能進行月結。`;
+      if(notice.textContent!==noticeText) notice.textContent=noticeText;
+    }else if(notice){
+      notice.remove();
+    }
+  }
+
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest?.('#payrollCloseBtn');
+    if(!btn || payrollSelectedMonthClosed()) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    toast('此月份尚未完整結束，請於次月1日起再進行薪資結算。','warn');
+  },true);
+
+  // 只在畫面新增「薪資結算按鈕」時套用防呆，避免監聽器因自己修改 DOM 而形成無限循環。
+  const observer=new MutationObserver(mutations=>{
+    const shouldApply=mutations.some(m=>Array.from(m.addedNodes||[]).some(node=>{
+      if(node.nodeType!==1) return false;
+      return node.id==='payrollCloseBtn' || !!node.querySelector?.('#payrollCloseBtn');
+    }));
+    if(shouldApply) applyPayrollPeriodGuard();
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+  setTimeout(applyPayrollPeriodGuard,0);
+})();

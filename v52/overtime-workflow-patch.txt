@@ -1,0 +1,194 @@
+// V5.2 加班／換休流程補強：只保留編輯追蹤、重疊檢核與撤回按鈕
+// 月份篩選由 overtime-month-filter-patch 處理；撤回動作由 overtime-withdraw-patch 處理。
+// 本檔不再包裝 navigate、不再執行資料重載、不再保留舊的 withdrawn 流程。
+(() => {
+  Object.assign(state,{workflowEditingOvertimeId:null,workflowEditingLeaveId:null});
+
+  const active=new Set(['draft','pending','approved']);
+  const ownO=()=> (state.overtimeRows||[]).filter(r=>String(r.applicant_staff_id)===String(state.profile?.id));
+  const ownL=()=> (state.compLeaveRows||[]).filter(r=>String(r.applicant_staff_id)===String(state.profile?.id));
+  const norm=v=>{
+    const x=String(v||'').slice(0,5);
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(x)?x:null;
+  };
+  const sel=p=>{
+    const h=document.getElementById(p+'Hour')?.value||'';
+    const m=document.getElementById(p+'Minute')?.value||'';
+    return h&&m?`${h}:${m}`:null;
+  };
+  const min=v=>{
+    const x=norm(v);
+    if(!x)return null;
+    const [h,m]=x.split(':').map(Number);
+    return h*60+m;
+  };
+  const interval=(a,b)=>{
+    const start=min(a),rawEnd=min(b);
+    if(!Number.isFinite(start)||!Number.isFinite(rawEnd))return null;
+    const end=rawEnd===0&&start>0?1440:rawEnd;
+    return end>start?[start,end]:null;
+  };
+  const overlap=(a,b,c,d)=>{
+    const x=interval(a,b),y=interval(c,d);
+    return !!x&&!!y&&x[0]<y[1]&&x[1]>y[0];
+  };
+
+  function addWithdrawButtons(){
+    if(state.page!=='overtime')return;
+    const view=state.overtimeView;
+    if(!['mine','usage'].includes(view))return;
+
+    const rows=view==='mine'?ownO():ownL();
+    const domRows=[...document.querySelectorAll('#otMain .ot-table tbody tr')];
+    if(!domRows.length||domRows.length!==rows.length)return;
+
+    rows.forEach((row,index)=>{
+      if(row.status!=='pending')return;
+      const box=domRows[index]?.querySelector('.ot-actions');
+      if(!box||box.querySelector('[data-wf-withdraw]'))return;
+      const btn=document.createElement('button');
+      btn.className='btn sm';
+      btn.type='button';
+      btn.textContent='撤回申請';
+      btn.title='撤回待審核申請';
+      btn.dataset.wfWithdraw=`${view==='mine'?'overtime':'leave'}:${row.id}`;
+      box.appendChild(btn);
+    });
+  }
+
+  function inferO(){
+    if(state.workflowEditingOvertimeId)return state.workflowEditingOvertimeId;
+    const d=document.getElementById('otWorkDate')?.value;
+    const t=document.getElementById('otType')?.value;
+    const a=sel('otStart');
+    const b=sel('otEnd');
+    const c=Number(document.getElementById('otCaseCount')?.value||0);
+    const x=ownO()
+      .filter(r=>['draft','rejected'].includes(r.status)&&r.work_date===d&&r.request_type===t)
+      .filter(r=>t==='holiday_visit_comp'
+        ? Number(r.holiday_case_count||0)===c
+        : norm(r.start_time)===a&&norm(r.end_time)===b);
+    return x.length===1?x[0].id:null;
+  }
+
+  function inferL(){
+    if(state.workflowEditingLeaveId)return state.workflowEditingLeaveId;
+    const d=document.getElementById('clDate')?.value;
+    const a=sel('clStart');
+    const b=sel('clEnd');
+    const x=ownL().filter(r=>
+      ['draft','rejected'].includes(r.status)&&
+      r.leave_date===d&&
+      norm(r.start_time)===a&&
+      norm(r.end_time)===b
+    );
+    return x.length===1?x[0].id:null;
+  }
+
+  function validOvertime(){
+    const d=document.getElementById('otWorkDate')?.value;
+    const t=document.getElementById('otType')?.value;
+    if(!d||!t)return true;
+
+    const id=inferO();
+    const rows=ownO().filter(r=>
+      active.has(r.status)&&
+      String(r.id)!==String(id||'')&&
+      r.work_date===d
+    );
+
+    if(t==='holiday_visit_comp'){
+      const c=Number(document.getElementById('otCaseCount')?.value||0);
+      const same=rows.filter(r=>r.request_type==='holiday_visit_comp');
+      if(same.some(r=>Number(r.holiday_case_count||0)===c)){
+        toast('同一天相同家訪案數的假日家訪換休已存在，請勿重複申請','warn');
+        return false;
+      }
+      return !same.length||confirm('同一天已經有另一筆假日家訪換休申請。\n\n若這不是重複申請，確定要繼續嗎？');
+    }
+
+    const a=sel('otStart');
+    const b=sel('otEnd');
+    if(!a||!b)return true;
+
+    const timedTypes=new Set([
+      'overtime',
+      'holiday_overtime',
+      'rest_day_overtime',
+      'national_holiday_overtime'
+    ]);
+    const timed=rows.filter(r=>timedTypes.has(r.request_type));
+
+    if(timed.some(r=>norm(r.start_time)===a&&norm(r.end_time)===b)){
+      toast('同一天相同起訖時間已存在加班申請，請勿重複送出','warn');
+      return false;
+    }
+
+    const hit=timed.find(r=>overlap(a,b,r.start_time,r.end_time));
+    if(hit){
+      toast(`這段加班時間與既有申請（${String(hit.start_time||'').slice(0,5)}–${String(hit.end_time||'').slice(0,5)}）重疊，請調整時間後再申請。`,'warn');
+      return false;
+    }
+    return true;
+  }
+
+  function validLeave(){
+    const d=document.getElementById('clDate')?.value;
+    const a=sel('clStart');
+    const b=sel('clEnd');
+    if(!d||!a||!b)return true;
+
+    const id=inferL();
+    const hit=ownL().find(r=>
+      active.has(r.status)&&
+      String(r.id)!==String(id||'')&&
+      r.leave_date===d&&
+      overlap(a,b,r.start_time,r.end_time)
+    );
+    if(hit){
+      toast(`換休時段與既有申請 ${String(hit.start_time||'').slice(0,5)}–${String(hit.end_time||'').slice(0,5)} 重疊，請調整時間`,'warn');
+      return false;
+    }
+    return true;
+  }
+
+  document.addEventListener('click',e=>{
+    const b=e.target.closest?.('button');
+    if(!b)return;
+
+    if(b.id==='otAddBtn')state.workflowEditingOvertimeId=null;
+    if(b.dataset.otEdit)state.workflowEditingOvertimeId=b.dataset.otEdit;
+    if(b.id==='clAddBtn')state.workflowEditingLeaveId=null;
+    if(b.dataset.clEdit)state.workflowEditingLeaveId=b.dataset.clEdit;
+
+    const modal=b.closest('.modal');
+    if(!modal)return;
+    const submit=b.id==='modalConfirm'||b.textContent.trim()==='儲存草稿';
+    if(!submit)return;
+
+    const ok=modal.querySelector('#otWorkDate')
+      ? validOvertime()
+      : modal.querySelector('#clDate')
+        ? validLeave()
+        : true;
+    if(!ok){
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  },true);
+
+  let queued=false;
+  const observer=new MutationObserver(mutations=>{
+    if(queued||!mutations.some(m=>m.addedNodes?.length))return;
+    queued=true;
+    queueMicrotask(()=>{
+      queued=false;
+      addWithdrawButtons();
+    });
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+
+  document.addEventListener('click',e=>{
+    if(e.target.closest?.('[data-ot-view],#otReload'))queueMicrotask(addWithdrawButtons);
+  });
+})();

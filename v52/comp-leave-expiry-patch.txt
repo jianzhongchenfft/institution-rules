@@ -1,0 +1,279 @@
+// V5.2 換休期限／到期管理：一般加班週年制到期、假日家訪換休永久有效、到期提醒
+// 換休台帳由 overtime-patch 統一載入；本檔只負責期限設定與明細呈現。
+(() => {
+  const style=document.createElement('style');
+  style.id='v52-comp-leave-expiry-style';
+  style.textContent=`
+    .ce-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10.5px;font-weight:900;white-space:nowrap}
+    .ce-chip.ok{background:#eef7f1;color:#237a4b}
+    .ce-chip.soon{background:#fffaeb;color:#b54708}
+    .ce-chip.expired{background:#fef3f2;color:#b42318}
+    .ce-chip.missing{background:#f2f4f7;color:#667085}
+    .ce-chip.used{background:#f8fafc;color:#98a2b3}
+    .ce-chip.future{background:#eef4ff;color:#3538cd}
+    .ce-chip.permanent{background:#eef4ff;color:#3538cd}
+    .ce-warn{margin-top:7px;border:1px solid #fedf89;background:#fffaeb;color:#93370d;border-radius:8px;padding:7px 9px;font-size:11px;line-height:1.55}
+    .ce-hire-grid{display:grid;gap:8px}
+    .ce-hire-row{display:grid;grid-template-columns:minmax(130px,1fr) minmax(150px,190px);gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:8px 0}
+    .ce-hire-row:last-child{border-bottom:0}
+    .ce-hire-name{font-weight:900;color:#344054}
+    .ce-hire-role{font-size:11px;color:#667085;margin-top:2px}
+    @media(max-width:560px){.ce-hire-row{grid-template-columns:1fr}.ce-hire-row input{width:100%}}
+  `;
+  document.head.appendChild(style);
+
+  Object.assign(state,{
+    compLeaveExpiryStaff:state.compLeaveExpiryStaff||[],
+    compLeaveExpiryLoaded:false,
+    compLeaveExpiryLoading:false
+  });
+
+  function ceCanReview(){
+    return !!state.profile&&['organization_manager','admin'].includes(state.profile.role);
+  }
+
+  function ceToday(){return isoDate(new Date());}
+
+  function ceDuration(minutes){
+    const n=Math.max(0,Number(minutes)||0);
+    const h=Math.floor(n/60),m=n%60;
+    if(h&&m)return `${h}小時${m}分`;
+    if(h)return `${h}小時`;
+    return `${m}分鐘`;
+  }
+
+  function ceDate(value){
+    return value?rocDate(String(value).slice(0,10)+'T00:00:00'):'待設定';
+  }
+
+  function ceRole(role){return roleLabels?.[role]||role||'—';}
+
+  function ceStaff(staffId){
+    return (state.compLeaveExpiryStaff||[]).find(s=>String(s.id)===String(staffId))||null;
+  }
+
+  function ceCredits(staffId){
+    return (state.compLeaveCredits||[]).filter(c=>String(c.staff_id)===String(staffId));
+  }
+
+  function ceIsPermanentHoliday(c){
+    if(!c||c.source_type!=='overtime_request')return false;
+    const source=(state.overtimeRows||[]).find(r=>String(r.id)===String(c.source_id));
+    return source?.request_type==='holiday_visit_comp'||c.source_label==='假日家訪換休';
+  }
+
+  function ceDaysUntil(date){
+    if(!date)return null;
+    const a=new Date(ceToday()+'T00:00:00');
+    const b=new Date(String(date).slice(0,10)+'T00:00:00');
+    return Math.round((b-a)/86400000);
+  }
+
+  function ceBalance(staffId,asOf=ceToday()){
+    const credits=ceCredits(staffId);
+    const eligible=credits.filter(c=>String(c.earned_date)<=asOf&&(!c.expires_on||String(c.expires_on)>=asOf));
+    const remaining=eligible.reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const expired=credits
+      .filter(c=>!ceIsPermanentHoliday(c)&&c.expires_on&&String(c.expires_on)<asOf&&(Number(c.remaining_minutes)||0)>0)
+      .reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const missing=credits
+      .filter(c=>!ceIsPermanentHoliday(c)&&!c.expires_on&&(Number(c.remaining_minutes)||0)>0)
+      .reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const soon=credits.filter(c=>{
+      if(ceIsPermanentHoliday(c)||!c.expires_on||(Number(c.remaining_minutes)||0)<=0||String(c.earned_date)>asOf)return false;
+      const d=Math.round((new Date(String(c.expires_on)+'T00:00:00')-new Date(asOf+'T00:00:00'))/86400000);
+      return d>=0&&d<=30;
+    }).reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    return {remaining,expired,missing,soon};
+  }
+
+  async function ceLoad(force=false){
+    if(!state.profile||state.compLeaveExpiryLoading)return;
+    if(!state.compLeaveCreditsLoaded)return;
+    if(state.compLeaveExpiryLoaded&&!force){
+      queueMicrotask(ceEnhance);
+      return;
+    }
+
+    state.compLeaveExpiryLoading=true;
+    try{
+      const query=ceCanReview()
+        ? db.from('staff_users').select('id,display_name,role,is_active,hire_date').eq('is_active',true).order('display_name')
+        : db.from('staff_users').select('id,display_name,role,is_active,hire_date').eq('id',state.profile.id).limit(1);
+      const {data,error}=await query;
+      if(error)throw error;
+      state.compLeaveExpiryStaff=data||[];
+      state.compLeaveExpiryLoaded=true;
+      queueMicrotask(ceEnhance);
+    }catch(err){
+      console.error('讀取換休期限設定失敗',err);
+      toast('讀取換休期限設定失敗：'+(err?.message||err),'error');
+    }finally{
+      state.compLeaveExpiryLoading=false;
+    }
+  }
+
+  function ceStatus(c){
+    const rem=Number(c.remaining_minutes)||0;
+    if(rem<=0)return {cls:'used',text:'已用完'};
+    if(String(c.earned_date||'')>ceToday())return {cls:'future',text:'尚未取得'};
+    if(ceIsPermanentHoliday(c))return {cls:'permanent',text:'無到期限制'};
+    if(!c.expires_on)return {cls:'missing',text:'待設定到職日'};
+    const d=ceDaysUntil(c.expires_on);
+    if(d<0)return {cls:'expired',text:'已到期，待結清'};
+    if(d<=30)return {cls:'soon',text:`${d}天內到期`};
+    return {cls:'ok',text:'有效'};
+  }
+
+  function ceBalancePanel(){
+    if(state.page!=='overtime'||state.overtimeView!=='balance'||!state.compLeaveExpiryLoaded)return;
+    const main=document.getElementById('otMain');
+    if(!main)return;
+
+    document.getElementById('ceExpiryPanel')?.remove();
+    const staffId=state.profile?.id;
+    const credits=ceCredits(staffId)
+      .slice()
+      .sort((a,b)=>String(a.earned_date).localeCompare(String(b.earned_date))||String(a.created_at).localeCompare(String(b.created_at)));
+    const b=ceBalance(staffId);
+    const hasOrdinaryCredit=credits.some(c=>!ceIsPermanentHoliday(c)&&(Number(c.remaining_minutes)||0)>0);
+    const missingHire=!ceStaff(staffId)?.hire_date&&hasOrdinaryCredit;
+
+    const html=`<section id="ceExpiryPanel" class="ot-rule-card">
+      <h3>換休期限與剩餘明細</h3>
+      <p>一般加班換休依到職週年制計算到期日；假日家訪換休無到期限制。使用換休時，系統會先扣除有期限的一般加班換休，再使用永久有效的假日家訪換休。</p>
+      ${missingHire?'<div class="ce-warn">目前尚未設定到職日，因此一般加班換休無法計算法定最終到期日。請由機構負責人或系統管理員完成設定。</div>':''}
+      ${b.soon>0?`<div class="ce-warn">未來30天內有 <strong>${escapeHTML(ceDuration(b.soon))}</strong> 一般加班換休即將到期，建議優先安排。</div>`:''}
+      ${b.expired>0?`<div class="ot-rule-highlight">已有 <strong>${escapeHTML(ceDuration(b.expired))}</strong> 一般加班換休到期未休，不再列入可用換休，請於薪資作業中辦理結清。</div>`:''}
+      <div style="margin-top:12px">${credits.length
+        ? `<div class="ot-table-shell"><table class="ot-table"><thead><tr><th>取得日期</th><th>來源</th><th>取得時數</th><th>剩餘</th><th>到期日</th><th>狀態</th></tr></thead><tbody>${credits.map(c=>{
+            const s=ceStatus(c);
+            const expiryText=ceIsPermanentHoliday(c)?'無到期限制':(c.expires_on?ceDate(c.expires_on):'待設定');
+            return `<tr><td>${ceDate(c.earned_date)}</td><td>${escapeHTML(c.source_label||'換休')}</td><td>${escapeHTML(ceDuration(c.earned_minutes))}</td><td><strong>${escapeHTML(ceDuration(c.remaining_minutes))}</strong></td><td>${escapeHTML(expiryText)}</td><td><span class="ce-chip ${s.cls}">${escapeHTML(s.text)}</span></td></tr>`;
+          }).join('')}</tbody></table></div>`
+        : '<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休來源</h3><p>核准為換休的一般加班或假日家訪換休會自動建立來源。</p></div>'}</div>
+    </section>`;
+    main.insertAdjacentHTML('beforeend',html);
+  }
+
+  function cePayrollPanel(){
+    if(state.page!=='overtime'||state.overtimeView!=='payroll'||!state.compLeaveExpiryLoaded||!ceCanReview())return;
+    const main=document.getElementById('otMain');
+    if(!main)return;
+
+    document.getElementById('cePayrollExpiryPanel')?.remove();
+    const month=String(state.overtimeMonth||'');
+    if(!/^\d{4}-\d{2}$/.test(month))return;
+    const start=month+'-01';
+    const [y,m]=month.split('-').map(Number);
+    const end=isoDate(new Date(y,m,0));
+    const rows=(state.compLeaveCredits||[])
+      .filter(c=>!ceIsPermanentHoliday(c)&&c.expires_on&&String(c.expires_on)>=start&&String(c.expires_on)<=end&&(Number(c.remaining_minutes)||0)>0);
+    if(!rows.length)return;
+
+    const total=rows.reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const names=new Map((state.compLeaveExpiryStaff||[]).map(s=>[String(s.id),s.display_name]));
+    const html=`<section id="cePayrollExpiryPanel" class="ot-rule-card">
+      <h3>本月一般加班換休到期結清</h3>
+      <p>以下為本月到期仍未休完的一般加班換休；到期後會自動排除於可用換休餘額，並依原加班日薪資基數與倍率順位折算加班費。假日家訪換休無到期限制，不列入本表。</p>
+      <div class="ot-rule-highlight">本月到期未休合計：<strong>${escapeHTML(ceDuration(total))}</strong>。</div>
+      <div style="margin-top:12px"><div class="ot-table-shell"><table class="ot-table"><thead><tr><th>員工</th><th>來源日期</th><th>來源</th><th>到期日</th><th>待結清時數</th></tr></thead><tbody>${rows.map(c=>`<tr><td><strong>${escapeHTML(names.get(String(c.staff_id))||'—')}</strong></td><td>${ceDate(c.earned_date)}</td><td>${escapeHTML(c.source_label||'換休')}</td><td>${ceDate(c.expires_on)}</td><td><span class="ot-amount">${escapeHTML(ceDuration(c.remaining_minutes))}</span></td></tr>`).join('')}</tbody></table></div></div>
+    </section>`;
+    main.insertAdjacentHTML('beforeend',html);
+  }
+
+  function ceEnsureSettingsButton(){
+    if(state.page!=='overtime'||!ceCanReview())return;
+    const reload=document.getElementById('otReload');
+    if(!reload||document.getElementById('ceHireSettingsBtn'))return;
+
+    const btn=document.createElement('button');
+    btn.id='ceHireSettingsBtn';
+    btn.className='btn';
+    btn.textContent='📅 換休期限設定';
+    btn.title='設定員工到職日，以計算一般加班換休的週年制到期日';
+    btn.addEventListener('click',ceOpenHireSettings);
+    const anchor=document.getElementById('otCorrectionBtn')||reload;
+    anchor.insertAdjacentElement('afterend',btn);
+  }
+
+  function ceOpenHireSettings(){
+    if(!ceCanReview()){
+      toast('目前帳號沒有設定換休期限的權限','warn');
+      return;
+    }
+
+    const staff=(state.compLeaveExpiryStaff||[]).filter(s=>s.is_active!==false);
+    openModal({
+      title:'換休期限設定｜到職週年制',
+      html:`<div class="ot-rule-highlight" style="margin-top:0">系統依到職日計算一般加班換休所屬特休週年年度末日，並以該日作為最終到期日。假日家訪換休屬機構額外獎勵換休，無到期限制，不受此設定影響。</div>
+      <div class="ce-hire-grid" style="margin-top:12px">${staff.map(s=>`<div class="ce-hire-row"><div><div class="ce-hire-name">${escapeHTML(s.display_name||'—')}</div><div class="ce-hire-role">${escapeHTML(ceRole(s.role))}</div></div><input type="date" data-ce-hire-id="${escapeHTML(String(s.id))}" data-ce-original="${escapeHTML(s.hire_date||'')}" value="${escapeHTML(s.hire_date||'')}"></div>`).join('')}</div>`,
+      confirmText:'儲存到職日',
+      onConfirm:ceSaveHireSettings,
+      large:true
+    });
+  }
+
+  async function ceSaveHireSettings(){
+    const changed=[...document.querySelectorAll('[data-ce-hire-id]')]
+      .filter(input=>String(input.value||'')!==String(input.dataset.ceOriginal||''));
+    if(!changed.length){
+      closeModal();
+      toast('到職日沒有變更','success');
+      return true;
+    }
+
+    showLoading(true);
+    try{
+      for(const input of changed){
+        const {error}=await db.from('staff_users')
+          .update({hire_date:input.value||null,updated_at:new Date().toISOString()})
+          .eq('id',input.dataset.ceHireId);
+        if(error)throw error;
+      }
+      closeModal();
+      state.compLeaveExpiryLoaded=false;
+      navigate('overtime');
+      toast('到職日已更新，一般加班換休到期日將依最新資料重新載入','success');
+      return true;
+    }catch(err){
+      console.error(err);
+      toast('儲存到職日失敗：'+(err?.message||err),'error');
+      return false;
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  function ceEnhance(){
+    if(state.page!=='overtime'||!state.compLeaveExpiryLoaded)return;
+    ceEnsureSettingsButton();
+    ceBalancePanel();
+    cePayrollPanel();
+  }
+
+  let scheduled=false;
+  function scheduleEnhance(){
+    if(scheduled)return;
+    scheduled=true;
+    queueMicrotask(()=>{
+      scheduled=false;
+      if(state.page!=='overtime')return;
+      if(!state.compLeaveExpiryLoaded)ceLoad();
+      else ceEnhance();
+    });
+  }
+
+  const observer=new MutationObserver(mutations=>{
+    const relevant=mutations.some(m=>Array.from(m.addedNodes||[]).some(n=>
+      n.nodeType===1&&(
+        n.id==='otMain'||
+        n.id==='otReload'||
+        n.matches?.('.modal')||
+        n.querySelector?.('#otMain,#otReload')
+      )
+    ));
+    if(relevant)scheduleEnhance();
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+})();

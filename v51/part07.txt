@@ -45,6 +45,54 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!overtimeRes.ok) throw new Error(`v52/overtime-patch.txt 載入失敗（${overtimeRes.status}）`);
       eval(await overtimeRes.text());
 
+      const payrollGuardRes = await fetch('v52/payroll-period-guard-patch.txt',{cache:'no-store'});
+      if(!payrollGuardRes.ok) throw new Error(`v52/payroll-period-guard-patch.txt 載入失敗（${payrollGuardRes.status}）`);
+      eval(await payrollGuardRes.text());
+
+      const overtimeIntegrityRes = await fetch('v52/overtime-integrity-patch.txt',{cache:'no-store'});
+      if(!overtimeIntegrityRes.ok) throw new Error(`v52/overtime-integrity-patch.txt 載入失敗（${overtimeIntegrityRes.status}）`);
+      eval(await overtimeIntegrityRes.text());
+
+      const payrollCorrectionRes = await fetch('v52/payroll-correction-patch.txt',{cache:'no-store'});
+      if(!payrollCorrectionRes.ok) throw new Error(`v52/payroll-correction-patch.txt 載入失敗（${payrollCorrectionRes.status}）`);
+      eval(await payrollCorrectionRes.text());
+
+      const compLeaveExpiryRes = await fetch('v52/comp-leave-expiry-patch.txt',{cache:'no-store'});
+      if(!compLeaveExpiryRes.ok) throw new Error(`v52/comp-leave-expiry-patch.txt 載入失敗（${compLeaveExpiryRes.status}）`);
+      eval(await compLeaveExpiryRes.text());
+
+      const overtimeWorkflowRes = await fetch('v52/overtime-workflow-patch.txt',{cache:'no-store'});
+      if(!overtimeWorkflowRes.ok) throw new Error(`v52/overtime-workflow-patch.txt 載入失敗（${overtimeWorkflowRes.status}）`);
+      eval(await overtimeWorkflowRes.text());
+
+      const overtimeWorkflowTrackingRes = await fetch('v52/overtime-workflow-tracking-patch.txt',{cache:'no-store'});
+      if(!overtimeWorkflowTrackingRes.ok) throw new Error(`v52/overtime-workflow-tracking-patch.txt 載入失敗（${overtimeWorkflowTrackingRes.status}）`);
+      eval(await overtimeWorkflowTrackingRes.text());
+
+      const overtimePayrollCalcRes = await fetch('v52/overtime-payroll-calc-patch.txt',{cache:'no-store'});
+      if(!overtimePayrollCalcRes.ok) throw new Error(`v52/overtime-payroll-calc-patch.txt 載入失敗（${overtimePayrollCalcRes.status}）`);
+      eval(await overtimePayrollCalcRes.text());
+
+      const overtimePayrollSummaryRes = await fetch('v52/overtime-payroll-summary-patch.txt',{cache:'no-store'});
+      if(!overtimePayrollSummaryRes.ok) throw new Error(`v52/overtime-payroll-summary-patch.txt 載入失敗（${overtimePayrollSummaryRes.status}）`);
+      eval(await overtimePayrollSummaryRes.text());
+
+      const overtimePayrollEditFixRes = await fetch('v52/overtime-payroll-edit-fix-patch.txt',{cache:'no-store'});
+      if(!overtimePayrollEditFixRes.ok) throw new Error(`v52/overtime-payroll-edit-fix-patch.txt 載入失敗（${overtimePayrollEditFixRes.status}）`);
+      eval(await overtimePayrollEditFixRes.text());
+
+      const overtimePersonalHoursRes = await fetch('v52/overtime-personal-hours-patch.txt',{cache:'no-store'});
+      if(!overtimePersonalHoursRes.ok) throw new Error(`v52/overtime-personal-hours-patch.txt 載入失敗（${overtimePersonalHoursRes.status}）`);
+      eval(await overtimePersonalHoursRes.text());
+
+      const overtimeMonthFilterRes = await fetch('v52/overtime-month-filter-patch.txt',{cache:'no-store'});
+      if(!overtimeMonthFilterRes.ok) throw new Error(`v52/overtime-month-filter-patch.txt 載入失敗（${overtimeMonthFilterRes.status}）`);
+      eval(await overtimeMonthFilterRes.text());
+
+      const overtimeWithdrawRes = await fetch('v52/overtime-withdraw-patch.txt',{cache:'no-store'});
+      if(!overtimeWithdrawRes.ok) throw new Error(`v52/overtime-withdraw-patch.txt 載入失敗（${overtimeWithdrawRes.status}）`);
+      eval(await overtimeWithdrawRes.text());
+
       if(state.profile) renderNav();
 
       if(state.profile && state.page==='dashboard') renderDashboard();
@@ -54,10 +102,19 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
     }catch(err){
       console.error('系統功能模組載入失敗',err);
       if(state.profile) toast('系統功能模組載入失敗，請重新整理頁面。','error');
+      throw err;
     }
   }
 
-  loadCaseVisitsModulePatch();
+  const initAfterModules=init;
+  init=async function(){
+    try{
+      await loadCaseVisitsModulePatch();
+    }catch(err){
+      console.error('系統功能模組載入未完整完成',err);
+    }
+    return initAfterModules();
+  };
 
   init();
 })();
