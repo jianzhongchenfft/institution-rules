@@ -1,0 +1,124 @@
+name: One-time sync overtime UI cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-sync-overtime-ui-cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync tested overtime UI cleanup
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def clean_write(path, text):
+              text='\n'.join(line.rstrip() for line in text.splitlines())+'\n'
+              Path(path).write_text(text, encoding='utf-8')
+
+          # Main overtime UI: remove obsolete rules tab/view and nonessential explanatory text.
+          p=Path('v52/overtime-patch.txt')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('// V5.2 加班／換休管理：申請、審核與規則','// V5.2 加班／換休管理：申請與審核',1)
+          s,n=re.subn(r'  function renderOvertimeRules\(\)\{.*?^  function overtimeRowDetail', '  function overtimeRowDetail', s, count=1, flags=re.S|re.M)
+          if n!=1:
+              raise SystemExit('renderOvertimeRules block not found')
+          s=s.replace("['mine','balance','usage','review','payroll','rules']","['mine','balance','usage','review','payroll']",1)
+          s=s.replace("['mine','balance','usage','rules']","['mine','balance','usage']",1)
+          s=s.replace("['review','payroll','rules']","['review','payroll']",1)
+          s=s.replace("['rules']","['mine']",1)
+          s,n=re.subn(r'\n\s*<button class="ot-tab[^\n]*data-ot-view="rules"[^\n]*</button>', '', s, count=1)
+          if n!=1:
+              raise SystemExit('rules button not found')
+          s,n=re.subn(r"\$\{state\.overtimeView==='rules' \? renderOvertimeRules\(\)\s*: state\.overtimeView==='review' \? renderOvertimeReview\(\)", "${state.overtimeView==='review' ? renderOvertimeReview()", s, count=1)
+          if n!=1:
+              raise SystemExit('rules render branch not found')
+
+          s=s.replace('<div><h1>⏱ 加班／換休管理</h1><p>填寫加班申請、管理換休取得與使用，並集中處理審核紀錄。</p></div>', '<div><h1>⏱ 加班／換休管理</h1></div>',1)
+          for old in [
+              '<div class="stat-foot">僅計已核准申請</div>',
+              '<div class="stat-foot">依換休台帳，已扣除待審核</div>',
+              '<div class="stat-foot">與目前剩餘換休相同</div>',
+              '<div class="stat-foot">${canReview?\'含加班與換休使用\':\'已送出等待審核\'}</div>',
+              '<div class="stat-foot">等待處理</div>',
+              '<div class="stat-foot">依目前仍有效的換休台帳</div>',
+              '<div class="stat-foot">僅計已核准使用</div>',
+              '<div class="stat-foot">送審中，暫時保留</div>',
+              '<div class="stat-foot">僅計已核准且選擇領加班費</div>',
+              '<div class="stat-foot">已核准且選擇換休</div>'
+          ]:
+              s=s.replace(old,'')
+          s=s.replace('<div class="stat-foot">${settlement?escapeHTML(settledInfo):\'確認發薪資料後再鎖定\'}</div>', '${settlement?`<div class="stat-foot">${escapeHTML(settledInfo)}</div>`:\'\'}',1)
+          s=s.replace("<div class=\"ot-empty\"><div class=\"icon\">✓</div><h3>目前沒有資料</h3><p>${review?'沒有待審核的加班／換休申請。':'尚無符合條件的申請紀錄。'}</p></div>","<div class=\"ot-empty\"><div class=\"icon\">✓</div><h3>目前沒有資料</h3></div>")
+          s=s.replace("<div class=\"ot-empty\"><div class=\"icon\">🕒</div><h3>目前沒有資料</h3><p>${review?'沒有待審核的換休使用申請。':'尚無換休使用紀錄。'}</p></div>","<div class=\"ot-empty\"><div class=\"icon\">🕒</div><h3>目前沒有資料</h3></div>")
+          s=s.replace('<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休取得紀錄</h3><p>已核准且選擇「換休」的加班或假日家訪換休，會自動列在這裡。</p></div>','<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休取得紀錄</h3></div>')
+          s=s.replace('<div class="ot-empty"><div class="icon">💰</div><h3>本月尚無可結算資料</h3><p>已核准的加班、換休取得或換休使用紀錄會顯示在這裡。</p></div>','<div class="ot-empty"><div class="icon">💰</div><h3>本月尚無可結算資料</h3></div>')
+          s=s.replace('<p>提供機構負責人發薪前核對已核准的加班與換休紀錄。</p>','')
+          s=s.replace('        <div class="ot-rule-highlight">目前先以「待計薪加班時數」供薪資核對。系統尚未保存各員工月薪計算基數，且「假日加班」尚未細分休息日、例假日或國定假日，因此本版不自動換算加班費金額，避免誤算。</div>\n','')
+          s=s.replace('<div class="help">24小時制，分鐘以10分鐘為間隔（00／10／20／30／40／50）</div>','')
+          s=s.replace('<div class="help">24小時制，分鐘以30分鐘為間隔（00／30）</div>','')
+          s=s.replace('<div id="otCompensationHelp" class="help"></div>','')
+          s=re.sub(r"\n\s*\$\('otCompensationHelp'\)\.textContent='[^']*';",'',s)
+          clean_write(p,s)
+
+          # Month-close corrections: remove normal explanatory prose and card footer rewrites.
+          p=Path('v52/payroll-correction-patch.txt')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('  function pcUpdateCard(label,value,foot=null){','  function pcUpdateCard(label,value){',1)
+          s=re.sub(r"\n\s*if\(foot\)\{\n\s*const f=card\.querySelector\('\.stat-foot'\);\n\s*if\(f&&f\.textContent!==foot\)f\.textContent=foot;\n\s*\}",'',s,count=1)
+          s=s.replace('<div><h3>月結後更正</h3><p>原月結資料保持鎖定；後續調整以獨立更正單追加，不覆蓋原始結算。</p></div>','<div><h3>月結後更正</h3></div>',1)
+          s=s.replace('<div class="ot-empty"><div class="icon">🧾</div><h3>尚無月結更正</h3><p>若結算後才發現漏算或誤算，可由機構負責人建立更正單。</p></div>','<div class="ot-empty"><div class="icon">🧾</div><h3>尚無月結更正</h3></div>',1)
+          s=re.sub(r"pcUpdateCard\(('本月待計薪加班'|'本月新增換休'|'本月使用換休'),([^;]+?),[^;]+?\);",r"pcUpdateCard(\1,\2);",s)
+          clean_write(p,s)
+
+          # Integrity view: keep lock/void warnings, remove redundant no-data explanation.
+          p=Path('v52/overtime-integrity-patch.txt')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('<div class="ot-empty"><div class="icon">✓</div><h3>本月沒有可更正的已核准紀錄</h3><p>只有已核准且尚未作廢的紀錄會列在這裡。</p></div>','<div class="ot-empty"><div class="icon">✓</div><h3>本月沒有可更正的已核准紀錄</h3></div>',1)
+          clean_write(p,s)
+
+          # Expiry view: keep warnings/status; remove normal-state tutorial prose.
+          p=Path('v52/comp-leave-expiry-patch.txt')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('      <p>一般加班換休依到職週年制計算到期日；假日家訪換休無到期限制。使用換休時，系統會先扣除有期限的一般加班換休，再使用永久有效的假日家訪換休。</p>\n','',1)
+          s=s.replace('<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休來源</h3><p>核准為換休的一般加班或假日家訪換休會自動建立來源。</p></div>','<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休來源</h3></div>',1)
+          clean_write(p,s)
+          PY
+
+      - name: Verify
+        run: |
+          set -euo pipefail
+          files=(v52/overtime-patch.txt v52/payroll-correction-patch.txt v52/overtime-integrity-patch.txt v52/comp-leave-expiry-patch.txt)
+          for f in "${files[@]}"; do
+            node --check < "$f"
+          done
+          ! grep -q '加班規則' v52/overtime-patch.txt
+          ! grep -q 'renderOvertimeRules' v52/overtime-patch.txt
+          ! grep -q "overtimeView==='rules'" v52/overtime-patch.txt
+          ! grep -q '僅計已核准申請' v52/overtime-patch.txt
+          ! grep -q '依換休台帳，已扣除待審核' v52/overtime-patch.txt
+          ! grep -q '含加班與換休使用' v52/overtime-patch.txt
+          ! grep -q '24小時制，分鐘以10分鐘為間隔' v52/overtime-patch.txt
+          ! grep -q '24小時制，分鐘以30分鐘為間隔' v52/overtime-patch.txt
+          ! grep -q '填寫加班申請、管理換休取得與使用' v52/overtime-patch.txt
+          ! grep -q '原月結＋月結更正' v52/payroll-correction-patch.txt
+          git diff --check
+
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v52/overtime-patch.txt v52/payroll-correction-patch.txt v52/overtime-integrity-patch.txt v52/comp-leave-expiry-patch.txt
+          git commit -m 'Sync overtime UI cleanup from test'
+          git push origin main
