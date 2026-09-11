@@ -1,0 +1,499 @@
+// V5.2 出勤／休假管理：特休（前台整合、資料獨立）
+(() => {
+  const module = modules.find(m => m.id === 'overtime');
+  if (module) {
+    module.label = '出勤／休假管理';
+    module.crumb = '加班、換休與特休管理';
+    module.icon = '🗓';
+  }
+
+  Object.assign(state, {
+    attendanceSection: state.attendanceSection || 'overtime',
+    annualLeaveRows: state.annualLeaveRows || [],
+    annualLeaveCredits: state.annualLeaveCredits || [],
+    annualLeaveAllocations: state.annualLeaveAllocations || [],
+    annualLeaveStaff: state.annualLeaveStaff || [],
+    annualLeaveLoaded: false,
+    annualLeaveView: state.annualLeaveView || 'mine',
+    annualLeaveMonth: state.annualLeaveMonth || isoDate(new Date()).slice(0, 7)
+  });
+
+  const style = document.createElement('style');
+  style.id = 'v52-annual-leave-style';
+  style.textContent = `
+    .attendance-switch{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}
+    .attendance-switch .btn{min-width:116px}
+    .attendance-switch .active{background:var(--green-700);border-color:var(--green-700);color:#fff}
+    .al-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .al-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .al-toolbar .spacer{flex:1}
+    .al-tabs{display:flex;gap:7px;flex-wrap:wrap}
+    .al-tab{border:1px solid var(--line);background:#fff;color:#667085;border-radius:999px;padding:7px 11px;font-size:11.5px;font-weight:900;cursor:pointer}
+    .al-tab.active{background:var(--green-700);border-color:var(--green-700);color:#fff}
+    .al-table-shell{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+    .al-table{width:100%;min-width:860px;border-collapse:collapse}
+    .al-table th{padding:10px 12px;text-align:left;background:#faf8f7;color:#667085;font-size:11px;font-weight:900;border-bottom:1px solid var(--line);white-space:nowrap}
+    .al-table td{padding:11px 12px;border-bottom:1px solid var(--line);font-size:12.5px;color:#344054;vertical-align:middle}
+    .al-table tr:last-child td{border-bottom:0}
+    .al-amount{font-weight:900;color:var(--green-800);white-space:nowrap}
+    .al-detail{font-size:11px;color:#667085;line-height:1.5;margin-top:2px}
+    .al-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 8px;font-size:10.5px;font-weight:900;white-space:nowrap}
+    .al-status.draft{background:#f2f4f7;color:#667085}
+    .al-status.pending{background:#fffaeb;color:#b54708}
+    .al-status.approved{background:#eef7f1;color:#237a4b}
+    .al-status.rejected{background:#fef3f2;color:#b42318}
+    .al-status.withdrawn,.al-status.voided{background:#f2f4f7;color:#667085}
+    .al-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .al-empty{padding:34px 18px;text-align:center;color:#667085;background:#fff;border:1px solid var(--line);border-radius:14px}
+    .al-empty .icon{font-size:28px;margin-bottom:7px}
+    .al-empty h3{margin:0;color:#344054;font-size:15px}
+    .al-readonly{background:#f8fafc!important;color:#475467!important;font-weight:900}
+    .al-time-pair{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+    .al-calc{border:1px solid #f0ded7;background:#fff8f5;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:900;color:#7d4b3b;line-height:1.6}
+    @media(max-width:820px){.al-summary{grid-template-columns:1fr 1fr}.al-toolbar .spacer{display:none}}
+    @media(max-width:560px){.al-summary{grid-template-columns:1fr}.al-toolbar>*{width:100%}.al-tabs{width:100%}.al-tab{flex:1}.al-actions{flex-direction:column}.al-actions .btn{width:100%}}
+  `;
+  document.head.appendChild(style);
+
+  function alCanSubmit(){ return !!state.profile; }
+  function alCanManage(){ return !!state.profile && ['business_manager','organization_manager','admin'].includes(state.profile.role); }
+  function alCanReview(){ return !!state.profile && ['organization_manager','admin'].includes(state.profile.role); }
+  function alRoleLabel(role){ return roleLabels[role] || role || '—'; }
+  function alStatusLabel(status){ return ({draft:'草稿',pending:'待審核',approved:'已核准',rejected:'已退回',withdrawn:'已撤回',voided:'已作廢'})[status] || status || '—'; }
+  function alDuration(minutes){
+    const n=Math.max(0,Number(minutes)||0), h=Math.floor(n/60), m=n%60;
+    if(h&&m) return `${h}小時${m}分`;
+    if(h) return `${h}小時`;
+    return `${m}分鐘`;
+  }
+  function alDate(value){
+    if(!value) return '—';
+    const d=new Date(`${String(value).slice(0,10)}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? String(value) : `${d.getFullYear()-1911}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function alTime(value){ return value ? String(value).slice(0,5) : '—'; }
+  function alMinutesBetween(start,end){
+    if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(start||'') || !/^([01]\d|2[0-3]):[0-5]\d$/.test(end||'')) return 0;
+    const [sh,sm]=start.split(':').map(Number), [eh,em]=end.split(':').map(Number);
+    return Math.max(0,(eh*60+em)-(sh*60+sm));
+  }
+  function alTimeOptions(selected){
+    let html='<option value="">時</option>';
+    for(let i=0;i<24;i++){
+      const v=String(i).padStart(2,'0');
+      html+=`<option value="${v}" ${v===selected?'selected':''}>${v}</option>`;
+    }
+    return html;
+  }
+  function alTimeParts(value){
+    const v=String(value||'').slice(0,5);
+    if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) return {hour:'',minute:'00'};
+    const [hour,minute]=v.split(':');
+    return {hour,minute};
+  }
+  function alSelectedTime(prefix){
+    const h=$(prefix+'Hour')?.value||'', m=$(prefix+'Minute')?.value||'';
+    return h && m ? `${h}:${m}` : '';
+  }
+  function alMonthRange(month){
+    const safe=/^\d{4}-\d{2}$/.test(month||'')?month:isoDate(new Date()).slice(0,7);
+    const [y,m]=safe.split('-').map(Number);
+    const start=`${y}-${String(m).padStart(2,'0')}-01`;
+    const end=isoDate(new Date(y,m,0));
+    return {start,end};
+  }
+  function alOwnRows(){ return (state.annualLeaveRows||[]).filter(r=>String(r.applicant_staff_id)===String(state.profile?.id)); }
+  function alOwnCredits(){ return (state.annualLeaveCredits||[]).filter(c=>String(c.staff_id)===String(state.profile?.id)); }
+  function alBalance(staffId,date=isoDate(new Date())){
+    const credits=(state.annualLeaveCredits||[]).filter(c=>String(c.staff_id)===String(staffId) && String(c.period_start)<=date && String(c.period_end)>=date);
+    const granted=credits.reduce((s,c)=>s+(Number(c.granted_minutes)||0),0);
+    const remaining=credits.reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const pending=(state.annualLeaveRows||[]).filter(r=>String(r.applicant_staff_id)===String(staffId) && r.status==='pending' && credits.some(c=>String(r.leave_date)>=String(c.period_start)&&String(r.leave_date)<=String(c.period_end))).reduce((s,r)=>s+(Number(r.minutes)||0),0);
+    return {granted,used:Math.max(0,granted-remaining),remaining,pending,available:Math.max(0,remaining-pending)};
+  }
+
+  function attendanceTabs(active){
+    return `<div id="attendanceSectionTabs" class="attendance-switch">
+      <button type="button" class="btn ${active==='overtime'?'active':''}" data-attendance-section="overtime">加班／換休</button>
+      <button type="button" class="btn ${active==='annual'?'active':''}" data-attendance-section="annual">特休</button>
+    </div>`;
+  }
+
+  function wireAttendanceTabs(){
+    document.querySelectorAll('[data-attendance-section]').forEach(btn=>btn.addEventListener('click',()=>{
+      const target=btn.dataset.attendanceSection;
+      if(target==='annual'){
+        state.attendanceSection='annual';
+        loadAnnualLeaveData().then(renderAnnualLeavePage);
+      }else{
+        state.attendanceSection='overtime';
+        overtimeNavigateForAnnual('overtime');
+      }
+    }));
+  }
+
+  function decorateOvertimePage(){
+    if(state.page!=='overtime' || state.attendanceSection!=='overtime') return;
+    const head=$('content')?.querySelector('.page-head');
+    if(!head) return;
+    const h1=head.querySelector('h1');
+    if(h1 && h1.textContent!=='🗓 出勤／休假管理') h1.textContent='🗓 出勤／休假管理';
+    if(!$('attendanceSectionTabs')){
+      head.insertAdjacentHTML('afterend',attendanceTabs('overtime'));
+      wireAttendanceTabs();
+    }
+  }
+
+  async function loadAnnualLeaveData(){
+    if(!state.profile) return;
+    showLoading(true);
+    try{
+      const tasks=[
+        db.from('annual_leave_requests').select('id,applicant_staff_id,applicant_name,applicant_role,leave_date,start_time,end_time,minutes,reason,notes,status,review_note,submitted_at,reviewed_at,created_at,updated_at').order('leave_date',{ascending:false}).order('created_at',{ascending:false}),
+        db.from('annual_leave_credits').select('id,staff_id,period_start,period_end,granted_minutes,remaining_minutes,label,note,created_by_name,created_at,updated_at').order('period_end',{ascending:true}).order('created_at',{ascending:true}),
+        db.from('annual_leave_allocations').select('id,credit_id,request_id,allocation_date,minutes,is_active,reversed_at,created_at').order('created_at',{ascending:false})
+      ];
+      if(alCanManage()) tasks.push(db.from('staff_users').select('id,display_name,role,hire_date,is_active').eq('is_active',true).order('display_name',{ascending:true}));
+      const results=await Promise.all(tasks);
+      for(const r of results) if(r.error) throw r.error;
+      state.annualLeaveRows=results[0].data||[];
+      state.annualLeaveCredits=results[1].data||[];
+      state.annualLeaveAllocations=results[2].data||[];
+      state.annualLeaveStaff=alCanManage()?(results[3]?.data||[]):[];
+      state.annualLeaveLoaded=true;
+    }catch(err){
+      console.error('讀取特休資料失敗',err);
+      state.annualLeaveLoaded=false;
+      toast('讀取特休資料失敗：'+(err?.message||err),'error');
+    }finally{ showLoading(false); }
+  }
+
+  function alRequestTable(rows,{review=false}={}){
+    if(!rows.length) return '<div class="al-empty"><div class="icon">🌿</div><h3>目前沒有特休申請紀錄</h3></div>';
+    return `<div class="al-table-shell"><table class="al-table"><thead><tr>${review?'<th>申請人</th>':''}<th>日期</th><th>時間</th><th>時數</th><th>狀態</th><th>備註</th><th>操作</th></tr></thead><tbody>${rows.map(r=>`<tr>
+      ${review?`<td><strong>${escapeHTML(r.applicant_name||'—')}</strong><div class="al-detail">${escapeHTML(alRoleLabel(r.applicant_role))}</div></td>`:''}
+      <td>${escapeHTML(alDate(r.leave_date))}</td>
+      <td>${escapeHTML(alTime(r.start_time))}–${escapeHTML(alTime(r.end_time))}</td>
+      <td><span class="al-amount">${escapeHTML(alDuration(r.minutes))}</span></td>
+      <td><span class="al-status ${escapeHTML(r.status)}">${escapeHTML(alStatusLabel(r.status))}</span>${r.review_note?`<div class="al-detail">${escapeHTML(r.review_note)}</div>`:''}</td>
+      <td>${escapeHTML(r.reason||r.notes||'—')}</td>
+      <td><div class="al-actions">
+        ${!review && ['draft','rejected'].includes(r.status)?`<button class="btn sm" data-al-edit="${r.id}">編輯</button>`:''}
+        ${!review && r.status==='pending'?`<button class="btn sm" data-al-withdraw="${r.id}">撤回</button>`:''}
+        ${review && r.status==='pending'?`<button class="btn sm primary" data-al-approve="${r.id}">核准</button><button class="btn sm" data-al-reject="${r.id}">退回</button>`:''}
+      </div></td>
+    </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  function alCreditTable(){
+    let credits=alCanManage()?(state.annualLeaveCredits||[]):alOwnCredits();
+    if(!credits.length) return '<div class="al-empty"><div class="icon">📒</div><h3>尚未建立特休額度</h3></div>';
+    const names=new Map((state.annualLeaveStaff||[]).map(s=>[String(s.id),s.display_name]));
+    return `<div class="al-table-shell"><table class="al-table"><thead><tr>${alCanManage()?'<th>員工</th>':''}<th>額度期間</th><th>額度名稱</th><th>原始額度</th><th>剩餘</th><th>備註</th></tr></thead><tbody>${credits.map(c=>`<tr>
+      ${alCanManage()?`<td><strong>${escapeHTML(names.get(String(c.staff_id))||'—')}</strong></td>`:''}
+      <td>${escapeHTML(alDate(c.period_start))}～${escapeHTML(alDate(c.period_end))}</td>
+      <td>${escapeHTML(c.label||'特休額度')}</td>
+      <td>${escapeHTML(alDuration(c.granted_minutes))}</td>
+      <td><strong>${escapeHTML(alDuration(c.remaining_minutes))}</strong></td>
+      <td>${escapeHTML(c.note||'—')}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  function renderAnnualLeavePage(){
+    if(state.page!=='overtime' || state.attendanceSection!=='annual') return;
+    const today=isoDate(new Date());
+    const balance=alBalance(state.profile?.id,today);
+    const own=alOwnRows();
+    const {start,end}=alMonthRange(state.annualLeaveMonth);
+    const monthOwn=own.filter(r=>r.leave_date>=start&&r.leave_date<=end);
+    const reviewRows=(state.annualLeaveRows||[]).filter(r=>r.status==='pending');
+    const validViews=alCanReview()?['mine','credits','review']:['mine','credits'];
+    if(!validViews.includes(state.annualLeaveView)) state.annualLeaveView='mine';
+
+    $('topTitle').textContent='出勤／休假管理';
+    $('crumb').textContent='加班、換休與特休管理';
+    $('content').innerHTML=`
+      <div class="page-head">
+        <div><h1>🗓 出勤／休假管理</h1></div>
+        <div class="actions">
+          ${alCanSubmit()?'<button id="alAddBtn" class="btn primary">＋ 申請特休</button>':''}
+          ${alCanManage()?'<button id="alCreditBtn" class="btn">＋ 設定特休額度</button>':''}
+        </div>
+      </div>
+      ${attendanceTabs('annual')}
+      <section class="al-summary">
+        <article class="stat-card"><div class="stat-head"><span>本期特休額度</span><span class="stat-icon">🌿</span></div><div class="stat-value">${escapeHTML(alDuration(balance.granted))}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>已使用特休</span><span class="stat-icon">➖</span></div><div class="stat-value">${escapeHTML(alDuration(balance.used))}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>待審核特休</span><span class="stat-icon">⏳</span></div><div class="stat-value">${escapeHTML(alDuration(balance.pending))}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>目前可用特休</span><span class="stat-icon">✅</span></div><div class="stat-value">${escapeHTML(alDuration(balance.available))}</div></article>
+      </section>
+      <div class="al-toolbar">
+        <div class="al-tabs">
+          <button class="al-tab ${state.annualLeaveView==='mine'?'active':''}" data-al-view="mine">我的申請</button>
+          <button class="al-tab ${state.annualLeaveView==='credits'?'active':''}" data-al-view="credits">${alCanManage()?'額度管理':'我的特休帳本'}</button>
+          ${alCanReview()?`<button class="al-tab ${state.annualLeaveView==='review'?'active':''}" data-al-view="review">待審核 ${reviewRows.length}</button>`:''}
+        </div>
+        <span class="spacer"></span>
+        <label class="schedule-filter-label" for="alMonth">月份</label>
+        <input id="alMonth" type="month" value="${escapeHTML(state.annualLeaveMonth)}">
+        <button id="alReload" class="btn">↻ 重新整理</button>
+      </div>
+      <div id="alMain">${state.annualLeaveView==='credits'?alCreditTable():state.annualLeaveView==='review'?alRequestTable(reviewRows,{review:true}):alRequestTable(monthOwn)}</div>`;
+
+    wireAttendanceTabs();
+    $('alAddBtn')?.addEventListener('click',()=>openAnnualLeaveModal());
+    $('alCreditBtn')?.addEventListener('click',()=>openAnnualCreditModal());
+    document.querySelectorAll('[data-al-view]').forEach(btn=>btn.addEventListener('click',()=>{state.annualLeaveView=btn.dataset.alView;renderAnnualLeavePage();}));
+    $('alMonth')?.addEventListener('change',e=>{state.annualLeaveMonth=e.target.value||isoDate(new Date()).slice(0,7);renderAnnualLeavePage();});
+    $('alReload')?.addEventListener('click',async()=>{await loadAnnualLeaveData();renderAnnualLeavePage();toast('已重新整理特休資料','success');});
+    wireAnnualLeaveActions();
+  }
+
+  function annualLeaveFormHTML(existing){
+    const date=existing?.leave_date||isoDate(new Date());
+    const sp=alTimeParts(existing?.start_time), ep=alTimeParts(existing?.end_time);
+    if(!existing){ sp.minute='00'; ep.minute='00'; }
+    const b=alBalance(state.profile?.id,date);
+    return `<div class="form-grid">
+      <div class="field"><label>申請人</label><input class="al-readonly" value="${escapeHTML(state.profile?.display_name||'—')}" disabled></div>
+      <div class="field"><label>身分</label><input class="al-readonly" value="${escapeHTML(alRoleLabel(state.profile?.role))}" disabled></div>
+      <div class="field"><label>特休日期 *</label><input id="alDate" type="date" value="${escapeHTML(date)}"></div>
+      <div class="field"><label>目前可再申請</label><input id="alBalanceValue" class="al-readonly" value="${escapeHTML(alDuration(b.available))}" disabled></div>
+      <div class="field"><label>開始時間 *</label><div class="al-time-pair"><select id="alStartHour">${alTimeOptions(sp.hour)}</select><select id="alStartMinute"><option value="00" ${sp.minute==='00'?'selected':''}>00</option><option value="30" ${sp.minute==='30'?'selected':''}>30</option></select></div></div>
+      <div class="field"><label>結束時間 *</label><div class="al-time-pair"><select id="alEndHour">${alTimeOptions(ep.hour)}</select><select id="alEndMinute"><option value="00" ${ep.minute==='00'?'selected':''}>00</option><option value="30" ${ep.minute==='30'?'selected':''}>30</option></select></div></div>
+      <div class="field full"><label>特休時數</label><div id="alDurationHelp" class="al-calc">系統將依開始與結束時間自動計算</div></div>
+      <div class="field full"><label>備註／事由</label><textarea id="alReason" placeholder="選填">${escapeHTML(existing?.reason||'')}</textarea></div>
+      <div class="field full"><label>其他備註</label><textarea id="alNotes" placeholder="選填">${escapeHTML(existing?.notes||'')}</textarea></div>
+    </div>`;
+  }
+
+  function openAnnualLeaveModal(existing=null){
+    if(!alCanSubmit()){toast('目前帳號沒有特休申請權限','warn');return;}
+    openModal({
+      title:existing?'編輯特休申請':'申請特休',
+      html:annualLeaveFormHTML(existing),
+      confirmText:'送出審核',
+      onConfirm:()=>saveAnnualLeave(existing,'pending'),
+      large:true
+    });
+    if(!existing){
+      const foot=$('modalRoot').querySelector('.modal-foot');
+      if(foot){
+        const draft=el('button',{class:'btn',text:'儲存草稿',onClick:()=>saveAnnualLeave(null,'draft')});
+        foot.insertBefore(draft,$('modalConfirm'));
+      }
+    }
+    const update=()=>{
+      const start=alSelectedTime('alStart'), end=alSelectedTime('alEnd'), mins=alMinutesBetween(start,end);
+      $('alDurationHelp').textContent=start&&end&&mins>0?alDuration(mins):'請選擇完整且正確的起訖時間';
+    };
+    const updateBalance=()=>{
+      const b=alBalance(state.profile?.id,$('alDate').value||isoDate(new Date()));
+      $('alBalanceValue').value=alDuration(b.available);
+    };
+    ['alStartHour','alStartMinute','alEndHour','alEndMinute'].forEach(id=>$(id)?.addEventListener('change',update));
+    $('alDate')?.addEventListener('change',updateBalance);
+    update();
+  }
+
+  async function saveAnnualLeave(existing,status){
+    const leaveDate=$('alDate').value;
+    const start=alSelectedTime('alStart'), end=alSelectedTime('alEnd');
+    const minutes=alMinutesBetween(start,end);
+    const reason=$('alReason').value.trim(), notes=$('alNotes').value.trim();
+    if(!leaveDate){toast('請選擇特休日期','warn');return false;}
+    if(!start||!end){toast('請選擇完整的開始與結束時間','warn');return false;}
+    if(!['00','30'].includes(start.slice(3,5))||!['00','30'].includes(end.slice(3,5))){toast('特休時間請以30分鐘為間隔','warn');return false;}
+    if(minutes<=0){toast('結束時間須晚於開始時間','warn');return false;}
+    const balance=alBalance(state.profile.id,leaveDate);
+    if(status==='pending' && minutes>balance.available){toast(`所選日期目前可用特休僅 ${alDuration(balance.available)}`,'warn');return false;}
+    const payload={
+      applicant_staff_id:state.profile.id,
+      applicant_name:state.profile.display_name,
+      applicant_role:state.profile.role,
+      leave_date:leaveDate,
+      start_time:start,
+      end_time:end,
+      minutes,
+      reason,
+      notes:notes||null,
+      status,
+      submitted_at:status==='pending'?new Date().toISOString():null,
+      review_note:null,
+      reviewed_at:null,
+      reviewed_by:null,
+      updated_at:new Date().toISOString()
+    };
+    showLoading(true);
+    try{
+      let error;
+      if(existing){ ({error}=await db.from('annual_leave_requests').update(payload).eq('id',existing.id)); }
+      else { payload.created_by=state.user.id; ({error}=await db.from('annual_leave_requests').insert(payload)); }
+      if(error) throw error;
+      closeModal();
+      await loadAnnualLeaveData();
+      state.annualLeaveView='mine';
+      renderAnnualLeavePage();
+      toast(status==='pending'?'特休申請已送出審核':'特休草稿已儲存','success');
+      return true;
+    }catch(err){
+      console.error('儲存特休失敗',err);
+      toast('儲存特休申請失敗：'+(err?.message||err),'error');
+      return false;
+    }finally{showLoading(false);}
+  }
+
+  function openAnnualCreditModal(){
+    if(!alCanManage()){toast('目前帳號沒有特休額度管理權限','warn');return;}
+    if(!(state.annualLeaveStaff||[]).length){toast('目前沒有可設定額度的員工資料','warn');return;}
+    const options=state.annualLeaveStaff.map(s=>`<option value="${s.id}">${escapeHTML(s.display_name)}｜${escapeHTML(alRoleLabel(s.role))}</option>`).join('');
+    openModal({
+      title:'設定特休額度',
+      html:`<div class="form-grid">
+        <div class="field full"><label>員工 *</label><select id="alCreditStaff"><option value="" disabled selected>請選擇</option>${options}</select></div>
+        <div class="field"><label>額度起日 *</label><input id="alCreditStart" type="date"></div>
+        <div class="field"><label>額度迄日 *</label><input id="alCreditEnd" type="date"></div>
+        <div class="field"><label>特休總時數 *</label><input id="alCreditHours" type="number" min="0.5" max="400" step="0.5" placeholder="例如 56"></div>
+        <div class="field"><label>額度名稱</label><input id="alCreditLabel" type="text" maxlength="80" placeholder="例如：115年度特休"></div>
+        <div class="field full"><label>備註</label><textarea id="alCreditNote" placeholder="選填"></textarea></div>
+      </div>`,
+      confirmText:'建立額度',
+      onConfirm:saveAnnualCredit,
+      large:true
+    });
+  }
+
+  async function saveAnnualCredit(){
+    const staffId=$('alCreditStaff').value, start=$('alCreditStart').value, end=$('alCreditEnd').value;
+    const hours=Number($('alCreditHours').value), label=$('alCreditLabel').value.trim(), note=$('alCreditNote').value.trim();
+    if(!staffId){toast('請選擇員工','warn');return false;}
+    if(!start||!end){toast('請填寫額度起訖日期','warn');return false;}
+    if(end<start){toast('額度迄日不可早於起日','warn');return false;}
+    if(!Number.isFinite(hours)||hours<=0||Math.round(hours*2)!==hours*2){toast('特休總時數請以0.5小時為單位','warn');return false;}
+    const minutes=Math.round(hours*60);
+    const staff=state.annualLeaveStaff.find(s=>String(s.id)===String(staffId));
+    const duplicate=(state.annualLeaveCredits||[]).some(c=>String(c.staff_id)===String(staffId)&&c.period_start===start&&c.period_end===end);
+    if(duplicate && !confirm('此員工已有相同期間的特休額度。若這是補登或追加額度可繼續；否則請先取消並確認資料。\n\n仍要建立嗎？')) return false;
+    showLoading(true);
+    try{
+      const {error}=await db.from('annual_leave_credits').insert({
+        staff_id:staffId,
+        period_start:start,
+        period_end:end,
+        granted_minutes:minutes,
+        remaining_minutes:minutes,
+        label:label||null,
+        note:note||null,
+        created_by:state.user.id,
+        created_by_name:state.profile.display_name
+      });
+      if(error) throw error;
+      closeModal();
+      await loadAnnualLeaveData();
+      state.annualLeaveView='credits';
+      renderAnnualLeavePage();
+      toast(`已建立 ${staff?.display_name||'員工'} 的特休額度`,'success');
+      return true;
+    }catch(err){
+      console.error('建立特休額度失敗',err);
+      toast('建立特休額度失敗：'+(err?.message||err),'error');
+      return false;
+    }finally{showLoading(false);}
+  }
+
+  async function reviewAnnualLeave(id,status,note=null){
+    if(!alCanReview()){toast('目前帳號沒有特休審核權限','warn');return;}
+    const row=(state.annualLeaveRows||[]).find(r=>String(r.id)===String(id));
+    if(!row||row.status!=='pending'){toast('此特休申請目前不是待審核狀態','warn');return;}
+    if(status==='approved'&&!confirm(`確定核准「${row.applicant_name}」${alDate(row.leave_date)} ${alDuration(row.minutes)} 特休嗎？`)) return;
+    showLoading(true);
+    try{
+      const {error}=await db.from('annual_leave_requests').update({
+        status,
+        review_note:note||null,
+        reviewed_by:state.user.id,
+        reviewed_at:new Date().toISOString(),
+        updated_at:new Date().toISOString()
+      }).eq('id',id).eq('status','pending');
+      if(error) throw error;
+      closeModal();
+      await loadAnnualLeaveData();
+      renderAnnualLeavePage();
+      toast(status==='approved'?'特休申請已核准':'特休申請已退回','success');
+    }catch(err){
+      console.error('審核特休失敗',err);
+      toast('審核特休失敗：'+(err?.message||err),'error');
+    }finally{showLoading(false);}
+  }
+
+  function openAnnualRejectModal(id){
+    openModal({
+      title:'退回特休申請',
+      html:'<div class="field"><label>退回原因 *</label><textarea id="alRejectReason" placeholder="請說明需要補充或修正的內容"></textarea></div>',
+      confirmText:'確認退回',
+      onConfirm:async()=>{
+        const note=$('alRejectReason').value.trim();
+        if(!note){toast('請填寫退回原因','warn');return false;}
+        await reviewAnnualLeave(id,'rejected',note);
+        return true;
+      }
+    });
+  }
+
+  async function withdrawAnnualLeave(id){
+    const row=alOwnRows().find(r=>String(r.id)===String(id));
+    if(!row||row.status!=='pending'){toast('只有待審核中的特休申請可以撤回','warn');return;}
+    if(!confirm(`確定撤回 ${alDate(row.leave_date)} 的特休申請嗎？`)) return;
+    showLoading(true);
+    try{
+      const {error}=await db.from('annual_leave_requests').update({
+        status:'withdrawn',
+        withdraw_reason:'申請人撤回',
+        withdrawn_by:state.user.id,
+        withdrawn_at:new Date().toISOString(),
+        updated_at:new Date().toISOString()
+      }).eq('id',id).eq('status','pending');
+      if(error) throw error;
+      await loadAnnualLeaveData();
+      renderAnnualLeavePage();
+      toast('特休申請已撤回','success');
+    }catch(err){
+      console.error('撤回特休失敗',err);
+      toast('撤回特休失敗：'+(err?.message||err),'error');
+    }finally{showLoading(false);}
+  }
+
+  function wireAnnualLeaveActions(){
+    document.querySelectorAll('[data-al-edit]').forEach(btn=>btn.addEventListener('click',()=>{
+      const row=alOwnRows().find(r=>String(r.id)===String(btn.dataset.alEdit));
+      if(row) openAnnualLeaveModal(row);
+    }));
+    document.querySelectorAll('[data-al-withdraw]').forEach(btn=>btn.addEventListener('click',()=>withdrawAnnualLeave(btn.dataset.alWithdraw)));
+    document.querySelectorAll('[data-al-approve]').forEach(btn=>btn.addEventListener('click',()=>reviewAnnualLeave(btn.dataset.alApprove,'approved')));
+    document.querySelectorAll('[data-al-reject]').forEach(btn=>btn.addEventListener('click',()=>openAnnualRejectModal(btn.dataset.alReject)));
+  }
+
+  const overtimeNavigateForAnnual = navigate;
+  navigate = function(id){
+    if(id!=='overtime') return overtimeNavigateForAnnual(id);
+    if(state.attendanceSection==='annual'){
+      state.page='overtime';
+      renderNav();
+      $('sidebar').classList.remove('open');
+      window.scrollTo({top:0,behavior:'auto'});
+      $('content').innerHTML='<div class="empty compact"><div class="icon">🌿</div><h3>正在載入特休資料</h3><p>請稍候。</p></div>';
+      return loadAnnualLeaveData().then(renderAnnualLeavePage);
+    }
+    return overtimeNavigateForAnnual(id);
+  };
+
+  const observer=new MutationObserver(()=>{
+    if(state.page==='overtime'&&state.attendanceSection==='overtime') decorateOvertimePage();
+  });
+  observer.observe($('content'),{childList:true,subtree:true});
+
+  if(state.profile){
+    renderNav();
+    if(state.page==='overtime'&&state.attendanceSection==='overtime') setTimeout(decorateOvertimePage,0);
+  }
+})();
