@@ -1,0 +1,121 @@
+// V5.2 特休到期未休：工資結清／協議遞延
+(() => {
+  const canResolve=()=>!!state.profile&&['organization_manager','admin'].includes(state.profile.role);
+  if(!canResolve()) return;
+
+  const style=document.createElement('style');
+  style.id='v52-annual-leave-expiry-style';
+  style.textContent=`
+    .ale-panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;margin-top:12px}
+    .ale-panel h3{margin:0 0 6px;font-size:15px;color:#344054}.ale-note{font-size:11.5px;color:#667085;line-height:1.65}
+    .ale-alert{margin-top:10px;border:1px solid #fedf89;background:#fffaeb;color:#93370d;border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.6}
+    .ale-table-shell{overflow:auto;margin-top:12px;border:1px solid var(--line);border-radius:12px}.ale-table{width:100%;min-width:880px;border-collapse:collapse;background:#fff}
+    .ale-table th{padding:9px 11px;text-align:left;background:#faf8f7;color:#667085;font-size:11px;font-weight:900;border-bottom:1px solid var(--line);white-space:nowrap}
+    .ale-table td{padding:10px 11px;border-bottom:1px solid var(--line);font-size:12px;color:#344054;vertical-align:middle}.ale-table tr:last-child td{border-bottom:0}
+    .ale-actions{display:flex;gap:6px;flex-wrap:wrap}.ale-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10.5px;font-weight:900;white-space:nowrap}
+    .ale-chip.pending{background:#fffaeb;color:#b54708}.ale-chip.cash{background:#eef7f1;color:#237a4b}.ale-chip.carry{background:#eef4ff;color:#3538cd}
+    .ale-empty{padding:22px 12px;text-align:center;color:#667085;font-size:12px}.ale-divider{height:1px;background:var(--line);margin:16px 0}
+    .ale-form-help{font-size:11px;color:#667085;line-height:1.55;margin-top:5px}.ale-confirm{display:flex;gap:8px;align-items:flex-start;border:1px solid #f0ded7;background:#fff8f5;border-radius:10px;padding:10px 11px;margin-top:10px;font-size:12px;color:#7d4b3b;line-height:1.55}.ale-confirm input{margin-top:2px}
+  `;
+  document.head.appendChild(style);
+
+  Object.assign(state,{annualExpiryCredits:state.annualExpiryCredits||[],annualExpiryEvents:state.annualExpiryEvents||[],annualExpiryStaff:state.annualExpiryStaff||[],annualExpiryLoading:false,annualExpiryLoaded:false});
+
+  const today=()=>isoDate(new Date());
+  const dur=n=>{n=Math.max(0,Number(n)||0);const h=Math.floor(n/60),m=n%60;return h&&m?`${h}小時${m}分`:h?`${h}小時`:`${m}分鐘`;};
+  const dateText=v=>v?rocDate(String(v).slice(0,10)+'T00:00:00'):'—';
+  const dtText=v=>v?rocDate(v):'—';
+  const pad=n=>String(n).padStart(2,'0');
+  const nameMap=()=>new Map((state.annualExpiryStaff||[]).map(s=>[String(s.id),s.display_name||'—']));
+  const creditMap=()=>new Map((state.annualExpiryCredits||[]).map(c=>[String(c.id),c]));
+
+  function addDays(value,days){
+    const [y,m,d]=String(value).slice(0,10).split('-').map(Number);
+    const dt=new Date(Date.UTC(y,m-1,d+days));
+    return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth()+1)}-${pad(dt.getUTCDate())}`;
+  }
+  function addOneYear(value){
+    const [y,m,d]=String(value).slice(0,10).split('-').map(Number);
+    const ny=y+1,last=new Date(Date.UTC(ny,m,0)).getUTCDate();
+    return `${ny}-${pad(m)}-${pad(Math.min(d,last))}`;
+  }
+  function canCarry(c){return !!c&&c.generation_source!=='carryover'&&today()<=addOneYear(c.period_end);}
+
+  async function load(force=false){
+    if(state.annualExpiryLoading)return;
+    if(state.annualExpiryLoaded&&!force){render();return;}
+    state.annualExpiryLoading=true;
+    try{
+      const [creditsRes,eventsRes,staffRes]=await Promise.all([
+        db.from('annual_leave_credits').select('id,staff_id,period_start,period_end,granted_minutes,remaining_minutes,label,note,generation_source,settlement_status,daily_hours_snapshot,source_credit_id,created_at,updated_at').order('period_end',{ascending:false}).order('created_at',{ascending:false}),
+        db.from('annual_leave_settlement_events').select('id,credit_id,staff_id,action,minutes,agreement_date,note,processed_by_name,carryover_credit_id,created_at').order('created_at',{ascending:false}),
+        db.from('staff_users').select('id,display_name,role,is_active').order('display_name',{ascending:true})
+      ]);
+      if(creditsRes.error)throw creditsRes.error;if(eventsRes.error)throw eventsRes.error;if(staffRes.error)throw staffRes.error;
+      state.annualExpiryCredits=creditsRes.data||[];state.annualExpiryEvents=eventsRes.data||[];state.annualExpiryStaff=staffRes.data||[];state.annualExpiryLoaded=true;
+      render();
+    }catch(err){console.error('讀取特休到期處理資料失敗',err);toast('讀取特休到期處理資料失敗：'+(err?.message||err),'error');}
+    finally{state.annualExpiryLoading=false;}
+  }
+
+  function pendingRows(){return (state.annualExpiryCredits||[]).filter(c=>c.settlement_status==='pending_settlement'&&(Number(c.remaining_minutes)||0)>0).sort((a,b)=>String(a.period_end).localeCompare(String(b.period_end)));}
+  function pendingHTML(){
+    const rows=pendingRows(),names=nameMap();
+    if(!rows.length)return '<div class="ale-empty">目前沒有到期未休、待處理的特休。</div>';
+    return `<div class="ale-table-shell"><table class="ale-table"><thead><tr><th>員工</th><th>來源批次</th><th>到期日</th><th>待處理時數</th><th>狀態</th><th>操作</th></tr></thead><tbody>${rows.map(c=>{
+      const carryAllowed=canCarry(c),status=c.generation_source==='carryover'?'遞延特休到期':'一般特休到期';
+      return `<tr><td><strong>${escapeHTML(names.get(String(c.staff_id))||'—')}</strong></td><td>${escapeHTML(c.label||'特休額度')}<div class="al-detail">${escapeHTML(dateText(c.period_start))}～${escapeHTML(dateText(c.period_end))}</div></td><td>${escapeHTML(dateText(c.period_end))}</td><td><strong>${escapeHTML(dur(c.remaining_minutes))}</strong></td><td><span class="ale-chip pending">${escapeHTML(status)}</span>${!carryAllowed&&c.generation_source!=='carryover'?'<div class="al-detail">已超過下一年度遞延期間，只能結清</div>':''}</td><td><div class="ale-actions"><button class="btn sm primary" data-ale-cash="${c.id}">確認工資結清</button>${carryAllowed?`<button class="btn sm" data-ale-carry="${c.id}">協議遞延</button>`:''}</div></td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+
+  function historyHTML(){
+    const rows=(state.annualExpiryEvents||[]).slice(0,30),names=nameMap(),credits=creditMap();
+    if(!rows.length)return '<div class="ale-empty">目前尚無到期處理紀錄。</div>';
+    return `<div class="ale-table-shell"><table class="ale-table"><thead><tr><th>員工</th><th>原批次</th><th>處理方式</th><th>時數</th><th>處理資訊</th><th>經手人</th></tr></thead><tbody>${rows.map(e=>{
+      const c=credits.get(String(e.credit_id)),child=e.carryover_credit_id?credits.get(String(e.carryover_credit_id)):null,isCarry=e.action==='carryover';
+      const info=isCarry?`同意日：${dateText(e.agreement_date)}${child?`<div class="al-detail">遞延有效：${dateText(child.period_start)}～${dateText(child.period_end)}</div>`:''}`:'已確認工資結清';
+      return `<tr><td><strong>${escapeHTML(names.get(String(e.staff_id))||'—')}</strong></td><td>${escapeHTML(c?.label||'特休')}<div class="al-detail">${c?`${escapeHTML(dateText(c.period_start))}～${escapeHTML(dateText(c.period_end))}`:'—'}</div></td><td><span class="ale-chip ${isCarry?'carry':'cash'}">${isCarry?'協議遞延':'工資結清'}</span></td><td><strong>${escapeHTML(dur(e.minutes))}</strong></td><td>${info}${e.note?`<div class="al-detail">備註：${escapeHTML(e.note)}</div>`:''}</td><td>${escapeHTML(e.processed_by_name||'—')}<div class="al-detail">${escapeHTML(dtText(e.created_at))}</div></td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+
+  function render(){
+    document.getElementById('aleExpiryPanel')?.remove();
+    if(!canResolve()||state.page!=='overtime'||state.attendanceSection!=='annual'||state.annualLeaveView!=='credits')return;
+    const main=document.getElementById('alMain');if(!main)return;
+    const rows=pendingRows(),total=rows.reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0),panel=document.createElement('section');
+    panel.id='aleExpiryPanel';panel.className='ale-panel';
+    panel.innerHTML=`<h3>到期未休特休處理</h3><div class="ale-note">特休到期仍有餘額時，由機構負責人或系統管理員在此記錄處理方式。工資結清目前只記錄「已完成結清」的時數與稽核紀錄，尚未自動計算薪資金額；協議遞延會保留原批次，另建立下一年度的遞延特休批次。</div>${rows.length?`<div class="ale-alert">目前共有 <strong>${rows.length}</strong> 筆到期未休待處理，合計 <strong>${escapeHTML(dur(total))}</strong>。</div>`:''}${pendingHTML()}<div class="ale-divider"></div><h3>最近處理紀錄</h3><div class="ale-note">保留原批次、處理時數、處理方式、同意日期與經手人，供後續查核。</div>${historyHTML()}`;
+    (document.getElementById('alaManagerPanel')||main).insertAdjacentElement('afterend',panel);wire();
+  }
+
+  function getCredit(id){return (state.annualExpiryCredits||[]).find(c=>String(c.id)===String(id))||null;}
+  function openCash(id){
+    const c=getCredit(id);if(!c)return toast('找不到這筆特休額度','warn');const names=nameMap();
+    openModal({title:'確認未休特休工資結清',html:`<div class="al-calc">${escapeHTML(names.get(String(c.staff_id))||'—')}｜${escapeHTML(c.label||'特休')}｜待結清 ${escapeHTML(dur(c.remaining_minutes))}</div><div class="field" style="margin-top:12px"><label>備註（選填）</label><textarea id="aleCashNote" rows="3" placeholder="例如：併入115年9月薪資結清"></textarea></div><label class="ale-confirm"><input id="aleCashConfirm" type="checkbox"><span>我確認此筆未休特休已完成工資結清。完成後原批次剩餘時數將歸零並保留處理紀錄。</span></label><div class="ale-form-help">本階段尚未自動試算結清金額，請確認薪資作業已實際完成後再勾選。</div>`,confirmText:'確認已結清',onConfirm:()=>submitResolution(c.id,'cash_settlement',null,$('aleCashNote')?.value||'',!!$('aleCashConfirm')?.checked)});
+  }
+  function openCarry(id){
+    const c=getCredit(id);if(!c)return toast('找不到這筆特休額度','warn');if(!canCarry(c))return toast('此筆特休目前只能辦理工資結清','warn');
+    const names=nameMap(),nextStart=addDays(c.period_end,1),nextEnd=addOneYear(c.period_end);
+    openModal({title:'協議遞延未休特休',html:`<div class="al-calc">${escapeHTML(names.get(String(c.staff_id))||'—')}｜遞延 ${escapeHTML(dur(c.remaining_minutes))}<br>新批次有效期間：${escapeHTML(dateText(nextStart))}～${escapeHTML(dateText(nextEnd))}</div><div class="field" style="margin-top:12px"><label>勞雇雙方同意日期 *</label><input id="aleAgreementDate" type="date" max="${escapeHTML(today())}" value="${escapeHTML(today())}"><div class="ale-form-help">需確認員工與機構已同意將此筆未休特休遞延至下一年度。</div></div><div class="field"><label>備註（選填）</label><textarea id="aleCarryNote" rows="3" placeholder="例如：雙方於面談時同意遞延"></textarea></div><label class="ale-confirm"><input id="aleCarryConfirm" type="checkbox"><span>我確認勞雇雙方已同意遞延。系統會保留原批次，並另建立一筆新的遞延特休。</span></label>`,confirmText:'確認遞延',onConfirm:()=>submitResolution(c.id,'carryover',$('aleAgreementDate')?.value||null,$('aleCarryNote')?.value||'',!!$('aleCarryConfirm')?.checked)});
+  }
+
+  async function submitResolution(id,action,agreementDate,note,confirmed){
+    if(!confirmed){toast(action==='carryover'?'請先確認勞雇雙方已同意遞延':'請先確認工資結清已完成','warn');return false;}
+    if(action==='carryover'&&!agreementDate){toast('請填寫勞雇雙方同意日期','warn');return false;}
+    showLoading(true);
+    try{
+      const {error}=await db.rpc('resolve_annual_leave_expiry',{p_credit_id:id,p_action:action,p_agreement_date:agreementDate,p_note:String(note||'').trim()||null});if(error)throw error;
+      closeModal();state.annualExpiryLoaded=false;await load(true);state.annualLeaveCredits=(state.annualExpiryCredits||[]).slice();
+      document.querySelector('[data-al-view="credits"]')?.click();
+      toast(action==='carryover'?'已建立遞延特休並保留原批次紀錄':'已記錄未休特休工資結清','success');return true;
+    }catch(err){console.error('特休到期處理失敗',err);toast('處理失敗：'+(err?.message||err),'error');return false;}
+    finally{showLoading(false);}
+  }
+
+  function wire(){document.querySelectorAll('[data-ale-cash]').forEach(btn=>btn.addEventListener('click',()=>openCash(btn.dataset.aleCash)));document.querySelectorAll('[data-ale-carry]').forEach(btn=>btn.addEventListener('click',()=>openCarry(btn.dataset.aleCarry)));}
+  let timer=null;
+  const observer=new MutationObserver(()=>{if(state.page!=='overtime'||state.attendanceSection!=='annual'||state.annualLeaveView!=='credits')return;clearTimeout(timer);timer=setTimeout(()=>{if(!document.getElementById('aleExpiryPanel'))load(false);},40);});
+  observer.observe(document.getElementById('content'),{childList:true,subtree:true});
+  document.addEventListener('click',e=>{if(e.target.closest?.('[data-al-view="credits"]'))setTimeout(()=>load(true),80);if(e.target.closest?.('#alReload'))setTimeout(()=>load(true),150);});
+  if(state.page==='overtime'&&state.attendanceSection==='annual'&&state.annualLeaveView==='credits')load(true);
+})();
