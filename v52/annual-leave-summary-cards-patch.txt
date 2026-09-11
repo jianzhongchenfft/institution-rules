@@ -1,0 +1,63 @@
+// V5.2 測試版：特休摘要卡片精簡為 3 張
+(() => {
+  const style=document.createElement('style');
+  style.id='v52-annual-leave-summary-cards-style';
+  style.textContent=`
+    .al-summary{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+    @media(max-width:820px){.al-summary{grid-template-columns:1fr 1fr!important}}
+    @media(max-width:560px){.al-summary{grid-template-columns:1fr!important}}
+  `;
+  document.head.appendChild(style);
+
+  function duration(minutes){
+    const n=Math.max(0,Number(minutes)||0);
+    const h=Math.floor(n/60),m=n%60;
+    if(h&&m)return `${h}小時${m}分`;
+    if(h)return `${h}小時`;
+    return `${m}分鐘`;
+  }
+
+  function currentAnnualCredits(){
+    const today=typeof isoDate==='function'?isoDate(new Date()):new Date().toISOString().slice(0,10);
+    const staffId=String(state.profile?.id||'');
+    return (state.annualLeaveCredits||[]).filter(c=>
+      String(c.staff_id)===staffId &&
+      String(c.period_start||'')<=today &&
+      String(c.period_end||'')>=today
+    );
+  }
+
+  function refreshAnnualSummary(){
+    if(state.page!=='overtime'||state.attendanceSection!=='annual')return;
+    const summary=document.querySelector('#content .al-summary');
+    if(!summary)return;
+
+    const credits=currentAnnualCredits();
+    const granted=credits.reduce((sum,c)=>sum+(Number(c.granted_minutes)||0),0);
+    const remaining=credits.reduce((sum,c)=>sum+(Number(c.remaining_minutes)||0),0);
+    const pendingCount=(state.annualLeaveRows||[]).filter(r=>r.status==='pending').length;
+    const grantedText=duration(granted);
+    const remainingText=duration(remaining);
+    const pendingText=String(pendingCount);
+
+    const desired=`
+      <article class="stat-card"><div class="stat-head"><span>特休額度</span><span class="stat-icon">🌿</span></div><div class="stat-value">${grantedText}</div></article>
+      <article class="stat-card"><div class="stat-head"><span>目前剩餘特休</span><span class="stat-icon">✅</span></div><div class="stat-value">${remainingText}</div></article>
+      <article class="stat-card"><div class="stat-head"><span>全部待審核</span><span class="stat-icon">⏳</span></div><div class="stat-value">${pendingText}</div></article>`;
+
+    if(summary.dataset.summaryVersion!=='three-cards-v1'){
+      summary.innerHTML=desired;
+      summary.dataset.summaryVersion='three-cards-v1';
+      return;
+    }
+
+    const values=summary.querySelectorAll('.stat-value');
+    if(values[0]&&values[0].textContent!==grantedText)values[0].textContent=grantedText;
+    if(values[1]&&values[1].textContent!==remainingText)values[1].textContent=remainingText;
+    if(values[2]&&values[2].textContent!==pendingText)values[2].textContent=pendingText;
+  }
+
+  const observer=new MutationObserver(refreshAnnualSummary);
+  observer.observe(document.getElementById('content'),{childList:true,subtree:true});
+  refreshAnnualSummary();
+})();
