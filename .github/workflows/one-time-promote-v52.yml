@@ -1,0 +1,125 @@
+name: One-time promote V5.2 frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-promote-v52.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Promote tested V5.2 runtime files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+
+          base = 'https://raw.githubusercontent.com/jianzhongchenfft/institution-rules-test/main/'
+
+          unchanged = [
+              'v51/case-visits-patch.txt',
+              'v51/case-pdf-import-patch.txt',
+              'v52/schedule-patch.txt',
+              'v52/schedule-recurrence-patch.txt',
+              'v52/schedule-leave-patch.txt',
+              'v52/schedule-mobile-patch.txt',
+          ]
+
+          runtime = [
+              'v52/overtime-patch.txt',
+              'v52/payroll-period-guard-patch.txt',
+              'v52/overtime-integrity-patch.txt',
+              'v52/payroll-correction-patch.txt',
+              'v52/comp-leave-expiry-patch.txt',
+              'v52/overtime-workflow-patch.txt',
+              'v52/overtime-workflow-tracking-patch.txt',
+              'v52/overtime-payroll-calc-patch.txt',
+              'v52/overtime-payroll-summary-patch.txt',
+              'v52/overtime-payroll-edit-fix-patch.txt',
+              'v52/overtime-personal-hours-patch.txt',
+              'v52/overtime-month-filter-patch.txt',
+              'v52/overtime-withdraw-patch.txt',
+          ]
+
+          def remote(path: str) -> bytes:
+              with urlopen(base + path, timeout=30) as r:
+                  return r.read()
+
+          # Existing case/schedule modules must already be identical to TEST.
+          # This prevents accidentally overwriting production-only V5.1 behavior.
+          for path in unchanged:
+              local = Path(path).read_bytes()
+              expected = remote(path)
+              if local != expected:
+                  raise SystemExit(f'Preflight mismatch: {path}')
+
+          # Promote only the runtime patches that were actually loaded and tested in TEST.
+          for path in runtime:
+              p = Path(path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_bytes(remote(path))
+
+          # Keep production-only regulation/version controls, but replace the module-loader tail
+          # with the TEST loader that has the complete V5.2 overtime/payroll stack.
+          prod_path = Path('v51/part07.txt')
+          prod = prod_path.read_text(encoding='utf-8')
+          test = remote('v51/part07.txt').decode('utf-8')
+          marker = '  async function loadCaseVisitsModulePatch(){'
+          if prod.count(marker) != 1 or test.count(marker) != 1:
+              raise SystemExit('part07 loader marker mismatch')
+          merged = prod.split(marker, 1)[0] + marker + test.split(marker, 1)[1]
+          if 'data-delete-version' not in merged or 'deleteRegulationVersion' not in merged:
+              raise SystemExit('Production regulation delete controls were not preserved')
+          for path in runtime:
+              if path not in merged:
+                  raise SystemExit(f'Loader missing runtime patch: {path}')
+          prod_path.write_text(merged, encoding='utf-8')
+          PY
+
+      - name: Syntax and promotion checks
+        run: |
+          set -euo pipefail
+          files=(
+            v52/overtime-patch.txt
+            v52/payroll-period-guard-patch.txt
+            v52/overtime-integrity-patch.txt
+            v52/payroll-correction-patch.txt
+            v52/comp-leave-expiry-patch.txt
+            v52/overtime-workflow-patch.txt
+            v52/overtime-workflow-tracking-patch.txt
+            v52/overtime-payroll-calc-patch.txt
+            v52/overtime-payroll-summary-patch.txt
+            v52/overtime-payroll-edit-fix-patch.txt
+            v52/overtime-personal-hours-patch.txt
+            v52/overtime-month-filter-patch.txt
+            v52/overtime-withdraw-patch.txt
+          )
+          for f in "${files[@]}"; do
+            node --check "$f"
+          done
+          grep -q 'const initAfterModules=init;' v51/part07.txt
+          grep -q 'data-delete-version' v51/part07.txt
+          grep -q 'deleteRegulationVersion' v51/part07.txt
+          git diff --check
+
+      - name: Commit promoted frontend
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v51/part07.txt v52/
+          if git diff --cached --quiet; then
+            echo 'No runtime changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Promote tested V5.2 overtime payroll frontend'
+          git push origin main
