@@ -1,0 +1,153 @@
+// V5.2 特休週年制自動產生：狀態提示、到期提醒
+(() => {
+  const style=document.createElement('style');
+  style.id='v52-annual-leave-auto-style';
+  style.textContent=`
+    .ala-panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;margin-top:12px}
+    .ala-panel h3{margin:0 0 10px;font-size:15px}
+    .ala-note{font-size:11.5px;color:#667085;line-height:1.6}
+    .ala-grid{display:grid;gap:8px;margin-top:10px}
+    .ala-row{display:grid;grid-template-columns:minmax(120px,1fr) 150px 135px minmax(180px,1.3fr);gap:10px;align-items:center;border-top:1px solid var(--line);padding:9px 0;font-size:12px}
+    .ala-row:first-child{border-top:0}
+    .ala-name{font-weight:900;color:#344054}
+    .ala-sub{font-size:10.5px;color:#667085;margin-top:2px}
+    .ala-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10.5px;font-weight:900;white-space:nowrap}
+    .ala-chip.ok{background:#eef7f1;color:#237a4b}
+    .ala-chip.warn{background:#fffaeb;color:#b54708}
+    .ala-chip.pending{background:#fef3f2;color:#b42318}
+    .ala-reminder{border:1px solid #fedf89;background:#fffaeb;color:#93370d;border-radius:10px;padding:9px 11px;margin:0 0 12px;font-size:12px;line-height:1.6}
+    @media(max-width:820px){.ala-row{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.ala-row{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(style);
+
+  Object.assign(state,{
+    annualAutoStaff:state.annualAutoStaff||[],
+    annualAutoCredits:state.annualAutoCredits||[],
+    annualAutoLoading:false,
+    annualAutoLoadedAt:0
+  });
+
+  const canManage=()=>!!state.profile&&['business_manager','organization_manager','admin'].includes(state.profile.role);
+  const today=()=>isoDate(new Date());
+  const duration=minutes=>{
+    const n=Math.max(0,Number(minutes)||0),h=Math.floor(n/60),m=n%60;
+    return h&&m?`${h}小時${m}分`:h?`${h}小時`:`${m}分鐘`;
+  };
+  const dateText=value=>value?rocDate(String(value).slice(0,10)+'T00:00:00'):'未設定';
+  const roleText=role=>roleLabels?.[role]||role||'—';
+  const daysUntil=value=>{
+    if(!value)return null;
+    const a=new Date(today()+'T00:00:00'),b=new Date(String(value).slice(0,10)+'T00:00:00');
+    return Math.round((b-a)/86400000);
+  };
+
+  async function loadMeta(force=false){
+    if(!state.profile||state.annualAutoLoading)return;
+    if(!force&&Date.now()-(state.annualAutoLoadedAt||0)<15000){enhance();return;}
+    state.annualAutoLoading=true;
+    try{
+      const staffQuery=canManage()
+        ? db.from('staff_users').select('id,display_name,role,is_active,hire_date,agreed_daily_hours').eq('is_active',true).order('display_name')
+        : db.from('staff_users').select('id,display_name,role,is_active,hire_date,agreed_daily_hours').eq('id',state.profile.id).limit(1);
+      const creditQuery=db.from('annual_leave_credits')
+        .select('id,staff_id,period_start,period_end,granted_minutes,remaining_minutes,label,note,entitlement_key,entitlement_days,daily_hours_snapshot,generation_source,settlement_status,auto_generated_at')
+        .order('period_start',{ascending:false});
+      const [staffRes,creditRes]=await Promise.all([staffQuery,creditQuery]);
+      if(staffRes.error)throw staffRes.error;
+      if(creditRes.error)throw creditRes.error;
+      state.annualAutoStaff=staffRes.data||[];
+      state.annualAutoCredits=creditRes.data||[];
+      state.annualAutoLoadedAt=Date.now();
+      enhance();
+    }catch(err){
+      console.error('讀取特休自動產生狀態失敗',err);
+    }finally{state.annualAutoLoading=false;}
+  }
+
+  function ownExpiring(){
+    const staffId=String(state.profile?.id||'');
+    return (state.annualAutoCredits||[]).filter(c=>{
+      if(String(c.staff_id)!==staffId||c.settlement_status!=='active'||(Number(c.remaining_minutes)||0)<=0)return false;
+      const d=daysUntil(c.period_end);
+      return d!==null&&d>=0&&d<=30;
+    });
+  }
+
+  function renderOwnReminder(){
+    if(state.page!=='overtime'||state.attendanceSection!=='annual')return;
+    const summary=document.querySelector('#content .al-summary');
+    if(!summary)return;
+    const expiring=ownExpiring();
+    const existing=document.getElementById('alaOwnReminder');
+    if(!expiring.length){existing?.remove();return;}
+    const total=expiring.reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const nearest=expiring.slice().sort((a,b)=>String(a.period_end).localeCompare(String(b.period_end)))[0];
+    const html=`你目前有 <strong>${escapeHTML(duration(total))}</strong> 特休將於 <strong>${escapeHTML(dateText(nearest.period_end))}</strong> 前到期；到期未休將轉為待結清，不會直接消失。`;
+    if(existing){
+      if(existing.innerHTML!==html)existing.innerHTML=html;
+      return;
+    }
+    const box=document.createElement('div');
+    box.id='alaOwnReminder';
+    box.className='ala-reminder';
+    box.innerHTML=html;
+    summary.insertAdjacentElement('afterend',box);
+  }
+
+  function renderManagerPanel(){
+    const existing=document.getElementById('alaManagerPanel');
+    if(!canManage()||state.page!=='overtime'||state.attendanceSection!=='annual'||state.annualLeaveView!=='credits'){
+      existing?.remove();
+      return;
+    }
+    const main=document.getElementById('alMain');
+    if(!main)return;
+    const t=today();
+    const rows=(state.annualAutoStaff||[]).map(s=>{
+      const credits=(state.annualAutoCredits||[]).filter(c=>String(c.staff_id)===String(s.id));
+      const current=credits.find(c=>String(c.period_start)<=t&&String(c.period_end)>=t&&c.settlement_status==='active');
+      const pending=credits.filter(c=>c.settlement_status==='pending_settlement'&&(Number(c.remaining_minutes)||0)>0)
+        .reduce((sum,c)=>sum+(Number(c.remaining_minutes)||0),0);
+      let status='<span class="ala-chip ok">自動產生啟用</span>';
+      if(!s.hire_date)status='<span class="ala-chip warn">待補到職日</span>';
+      else if(!Number(s.agreed_daily_hours))status='<span class="ala-chip warn">待補約定工時</span>';
+      if(pending>0)status+=` <span class="ala-chip pending">待結清 ${escapeHTML(duration(pending))}</span>`;
+      const entitlement=current
+        ? `${escapeHTML(current.label||'特休')}｜${escapeHTML(duration(current.remaining_minutes))} / ${escapeHTML(duration(current.granted_minutes))}<div class="ala-sub">有效至 ${escapeHTML(dateText(current.period_end))}${current.daily_hours_snapshot?`｜${escapeHTML(String(current.entitlement_days||'—'))}日 × ${escapeHTML(String(current.daily_hours_snapshot))}小時`:''}</div>`
+        : '<span class="ala-sub">目前尚無有效特休批次</span>';
+      return `<div class="ala-row"><div><div class="ala-name">${escapeHTML(s.display_name||'—')}</div><div class="ala-sub">${escapeHTML(roleText(s.role))}</div></div><div>到職：${escapeHTML(dateText(s.hire_date))}</div><div>每日 ${s.agreed_daily_hours?escapeHTML(String(Number(s.agreed_daily_hours))):'—'} 小時</div><div>${status}<div style="margin-top:5px">${entitlement}</div></div></div>`;
+    }).join('');
+
+    const html=`<h3>特休自動產生狀態</h3><div class="ala-note">週年制。系統每日 00:10（台灣時間）檢查一次；滿半年起依年資自動建立特休批次。額度依該批次生效時的約定每日工時快照換算，特休申請維持 30 分鐘為單位。</div><div class="ala-grid">${rows||'<div class="ala-note">目前沒有可顯示的人員。</div>'}</div>`;
+    if(existing){
+      if(existing.innerHTML!==html)existing.innerHTML=html;
+      return;
+    }
+    const panel=document.createElement('section');
+    panel.id='alaManagerPanel';
+    panel.className='ala-panel';
+    panel.innerHTML=html;
+    main.insertAdjacentElement('afterend',panel);
+  }
+
+  function enhance(){
+    if(state.page!=='overtime'||state.attendanceSection!=='annual')return;
+    renderOwnReminder();
+    renderManagerPanel();
+  }
+
+  let timer=null;
+  const observer=new MutationObserver(()=>{
+    if(state.page!=='overtime'||state.attendanceSection!=='annual')return;
+    clearTimeout(timer);
+    timer=setTimeout(()=>loadMeta(false),40);
+  });
+  observer.observe(document.getElementById('content'),{childList:true,subtree:true});
+
+  document.addEventListener('click',e=>{
+    if(e.target.closest?.('#alReload'))setTimeout(()=>loadMeta(true),100);
+  });
+
+  if(state.profile&&state.page==='overtime'&&state.attendanceSection==='annual')loadMeta(true);
+})();
