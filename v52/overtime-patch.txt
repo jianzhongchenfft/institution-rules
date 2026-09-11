@@ -1,4 +1,4 @@
-// V5.2 加班／換休管理：申請、審核與規則
+// V5.2 加班／換休管理：申請與審核
 (() => {
   const overtimeStyle = document.createElement('style');
   overtimeStyle.id = 'v52-overtime-style';
@@ -295,39 +295,6 @@
     return {overtimeMinutes,compMinutes,pending:pendingOvertime+pendingLeave,pendingOvertime,pendingLeave,ownPending,balance};
   }
 
-  function renderOvertimeRules(){
-    return `
-      <section class="ot-rule-card">
-        <h3>加班申請原則</h3>
-        <p>加班以實際執行機構交辦工作為認列基礎，並依機構規定提出申請及完成審核。</p>
-        <ol class="ot-rule-list">
-          <li>如有加班需要，應向「機構負責人」提出申請，並由機構負責人審核。</li>
-          <li>申請時應填寫日期、開始時間、結束時間及加班事由；開始與結束時間採24小時制，並以10分鐘為間隔（分鐘僅00、10、20、30、40、50），系統依時間自動計算加班分鐘數。</li>
-          <li>加班不得以單一申請跨越午夜；如實際工作跨日，請自行分成兩筆申請。第一天結束時間填00:00（視同當日24:00），第二天以隔日00:00為開始時間另行申請。</li>
-          <li>申請類型分為「平日加班」、「假日加班」及「假日家訪換休」。</li>
-          <li>平日加班及假日加班應選擇「領加班費」或「換休」；選擇換休時，應依勞工意願並經機構同意後辦理。</li>
-          <li>提早到班或延後離開，不因打卡時間本身當然認列為加班，仍以該時段是否實際執行機構交辦工作為準。</li>
-          <li>例如機構正常上班時間為上午9時，如因9時需直接至案家家訪而於8時40分先到機構，應視8時40分至9時之間是否有實際執行機構交辦工作，再判斷是否申請加班。</li>
-          <li>加班申請經核准後，始納入機構加班紀錄；如資料不足或不符規定，機構負責人得退回並註明原因。</li>
-        </ol>
-      </section>
-      <section class="ot-rule-card">
-        <h3>假日家訪換休</h3>
-        <p>因個案情形確有需要於假日進行家訪時，依當日完成之家訪案數計算換休：</p>
-        <div class="ot-rule-highlight">1個個案換休2小時；2個個案換休4小時；以此類推，由系統依「家訪案數 × 2小時」自動計算。</div>
-      </section>
-      <section class="ot-rule-card">
-        <h3>換休使用</h3>
-        <ol class="ot-rule-list">
-          <li>只有已核准且處理方式為「換休」的加班，以及已核准的假日家訪換休，才會列入可用換休時數。</li>
-          <li>使用換休應另提出申請，填寫換休日期、開始時間、結束時間及換休事由；開始與結束時間以30分鐘為間隔（分鐘僅00或30），系統依起訖時間自動計算使用換休時數。</li>
-          <li>換休使用申請送出後會先列為待審核，該時數暫時保留；機構負責人核准後才正式列入已使用時數。</li>
-          <li>已退回的換休使用申請不扣除換休時數，申請人可修改後重新送審。</li>
-          <li>申請使用的換休時數不得超過所選換休日期當日的可用換休餘額。</li>
-        </ol>
-      </section>`;
-  }
-
   function overtimeRowDetail(r){
     if(r.request_type==='holiday_visit_comp'){
       return `<div class="ot-detail">${Number(r.holiday_case_count)||0} 案・換休 ${overtimeDurationLabel(r.comp_minutes)}</div>`;
@@ -341,7 +308,7 @@
 
   function overtimeRenderTable(rows,{review=false}={}){
     if(!rows.length){
-      return `<div class="ot-empty"><div class="icon">✓</div><h3>目前沒有資料</h3><p>${review?'沒有待審核的加班／換休申請。':'尚無符合條件的申請紀錄。'}</p></div>`;
+      return `<div class="ot-empty"><div class="icon">✓</div><h3>目前沒有資料</h3></div>`;
     }
     return `<div class="ot-table-shell"><table class="ot-table"><thead><tr>
       ${review?'<th>申請人</th>':''}<th>日期</th><th>類型</th><th>認列</th><th>事由</th><th>狀態</th><th>操作</th>
@@ -368,20 +335,20 @@
     const sources=overtimeOwnRows().filter(r=>r.status==='approved' && r.compensation_method==='comp_leave');
     return `
       <section class="ot-summary">
-        <article class="stat-card"><div class="stat-head"><span>已取得換休</span><span class="stat-icon">➕</span></div><div class="stat-value">${overtimeDurationLabel(balance.earned)}</div><div class="stat-foot">依目前仍有效的換休台帳</div></article>
-        <article class="stat-card"><div class="stat-head"><span>已使用換休</span><span class="stat-icon">➖</span></div><div class="stat-value">${overtimeDurationLabel(balance.used)}</div><div class="stat-foot">僅計已核准使用</div></article>
-        <article class="stat-card"><div class="stat-head"><span>待審核使用</span><span class="stat-icon">⏳</span></div><div class="stat-value">${overtimeDurationLabel(balance.pending)}</div><div class="stat-foot">送審中，暫時保留</div></article>
-        <article class="stat-card"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(balance.requestable)}</div><div class="stat-foot">依換休台帳，已扣除待審核</div></article>
+        <article class="stat-card"><div class="stat-head"><span>已取得換休</span><span class="stat-icon">➕</span></div><div class="stat-value">${overtimeDurationLabel(balance.earned)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>已使用換休</span><span class="stat-icon">➖</span></div><div class="stat-value">${overtimeDurationLabel(balance.used)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>待審核使用</span><span class="stat-icon">⏳</span></div><div class="stat-value">${overtimeDurationLabel(balance.pending)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(balance.requestable)}</div></article>
       </section>
       <section class="ot-rule-card">
         <h3>換休取得明細</h3>
-        ${sources.length ? `<div class="ot-table-shell"><table class="ot-table"><thead><tr><th>日期</th><th>來源</th><th>取得時數</th><th>事由</th></tr></thead><tbody>${sources.map(r=>`<tr><td>${rocDate(r.work_date+'T00:00:00')}</td><td><div class="ot-type">${overtimeTypeLabel(r.request_type)}</div></td><td><span class="ot-amount">${overtimeDurationLabel(compLeaveSourceMinutes(r))}</span></td><td>${escapeHTML(r.reason||'—')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休取得紀錄</h3><p>已核准且選擇「換休」的加班或假日家訪換休，會自動列在這裡。</p></div>`}
+        ${sources.length ? `<div class="ot-table-shell"><table class="ot-table"><thead><tr><th>日期</th><th>來源</th><th>取得時數</th><th>事由</th></tr></thead><tbody>${sources.map(r=>`<tr><td>${rocDate(r.work_date+'T00:00:00')}</td><td><div class="ot-type">${overtimeTypeLabel(r.request_type)}</div></td><td><span class="ot-amount">${overtimeDurationLabel(compLeaveSourceMinutes(r))}</span></td><td>${escapeHTML(r.reason||'—')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休取得紀錄</h3></div>`}
       </section>`;
   }
 
   function compLeaveUsageRenderTable(rows,{review=false}={}){
     if(!rows.length){
-      return `<div class="ot-empty"><div class="icon">🕒</div><h3>目前沒有資料</h3><p>${review?'沒有待審核的換休使用申請。':'尚無換休使用紀錄。'}</p></div>`;
+      return `<div class="ot-empty"><div class="icon">🕒</div><h3>目前沒有資料</h3></div>`;
     }
     return `<div class="ot-table-shell"><table class="ot-table"><thead><tr>
       ${review?'<th>申請人</th>':''}<th>換休日期</th><th>換休時間</th><th>使用時數</th><th>事由</th><th>狀態</th><th>操作</th>
@@ -569,24 +536,23 @@
       : '尚未結算';
     return `
       <section class="ot-summary">
-        <article class="stat-card"><div class="stat-head"><span>本月待計薪加班</span><span class="stat-icon">💰</span></div><div class="stat-value">${overtimeDurationLabel(totals.overtimePayMinutes)}</div><div class="stat-foot">僅計已核准且選擇領加班費</div></article>
-        <article class="stat-card"><div class="stat-head"><span>本月新增換休</span><span class="stat-icon">➕</span></div><div class="stat-value">${overtimeDurationLabel(totals.compLeaveEarnedMinutes)}</div><div class="stat-foot">已核准且選擇換休</div></article>
-        <article class="stat-card"><div class="stat-head"><span>本月使用換休</span><span class="stat-icon">➖</span></div><div class="stat-value">${overtimeDurationLabel(totals.compLeaveUsedMinutes)}</div><div class="stat-foot">僅計已核准使用</div></article>
-        <article class="stat-card"><div class="stat-head"><span>結算狀態</span><span class="stat-icon">${settlement?'🔒':'📂'}</span></div><div class="stat-value" style="font-size:18px">${settlement?'已結算':'未結算'}</div><div class="stat-foot">${settlement?escapeHTML(settledInfo):'確認發薪資料後再鎖定'}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>本月待計薪加班</span><span class="stat-icon">💰</span></div><div class="stat-value">${overtimeDurationLabel(totals.overtimePayMinutes)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>本月新增換休</span><span class="stat-icon">➕</span></div><div class="stat-value">${overtimeDurationLabel(totals.compLeaveEarnedMinutes)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>本月使用換休</span><span class="stat-icon">➖</span></div><div class="stat-value">${overtimeDurationLabel(totals.compLeaveUsedMinutes)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>結算狀態</span><span class="stat-icon">${settlement?'🔒':'📂'}</span></div><div class="stat-value" style="font-size:18px">${settlement?'已結算':'未結算'}</div>${settlement?`<div class="stat-foot">${escapeHTML(settledInfo)}</div>`:''}</article>
       </section>
       <section class="ot-rule-card">
         <div style="display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
           <div>
             <h3 style="margin-bottom:5px">${payrollMonthLabel(state.overtimeMonth)}薪資結算報表</h3>
-            <p>提供機構負責人發薪前核對已核准的加班與換休紀錄。</p>
+
           </div>
           ${!settlement?'<button id="payrollCloseBtn" class="btn primary">✓ 確認本月已結算</button>':'<span class="ot-status approved">🔒 已結算鎖定</span>'}
         </div>
-        <div class="ot-rule-highlight">目前先以「待計薪加班時數」供薪資核對。系統尚未保存各員工月薪計算基數，且「假日加班」尚未細分休息日、例假日或國定假日，因此本版不自動換算加班費金額，避免誤算。</div>
       </section>
       <section class="ot-rule-card">
         <h3>員工月結摘要</h3>
-        ${rows.length?`<div class="ot-table-shell"><table class="ot-table"><thead><tr><th>員工</th><th>待計薪加班</th><th>新增換休</th><th>使用換休</th><th>月底換休餘額</th><th>操作</th></tr></thead><tbody>${rows.map(r=>`<tr><td><div class="ot-review-name">${escapeHTML(r.name)}</div><div class="ot-detail">${escapeHTML(overtimeRoleLabel(r.role))}</div></td><td><span class="ot-amount">${overtimeDurationLabel(r.overtimePayMinutes)}</span></td><td>${overtimeDurationLabel(r.compLeaveEarnedMinutes)}</td><td>${overtimeDurationLabel(r.compLeaveUsedMinutes)}</td><td><strong>${overtimeDurationLabel(r.compLeaveBalanceMinutes)}</strong></td><td><button class="btn sm" data-payroll-detail="${escapeHTML(String(r.staffId))}">查看明細</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="ot-empty"><div class="icon">💰</div><h3>本月尚無可結算資料</h3><p>已核准的加班、換休取得或換休使用紀錄會顯示在這裡。</p></div>'}
+        ${rows.length?`<div class="ot-table-shell"><table class="ot-table"><thead><tr><th>員工</th><th>待計薪加班</th><th>新增換休</th><th>使用換休</th><th>月底換休餘額</th><th>操作</th></tr></thead><tbody>${rows.map(r=>`<tr><td><div class="ot-review-name">${escapeHTML(r.name)}</div><div class="ot-detail">${escapeHTML(overtimeRoleLabel(r.role))}</div></td><td><span class="ot-amount">${overtimeDurationLabel(r.overtimePayMinutes)}</span></td><td>${overtimeDurationLabel(r.compLeaveEarnedMinutes)}</td><td>${overtimeDurationLabel(r.compLeaveUsedMinutes)}</td><td><strong>${overtimeDurationLabel(r.compLeaveBalanceMinutes)}</strong></td><td><button class="btn sm" data-payroll-detail="${escapeHTML(String(r.staffId))}">查看明細</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="ot-empty"><div class="icon">💰</div><h3>本月尚無可結算資料</h3></div>'}
       </section>`;
   }
 
@@ -651,27 +617,27 @@
     const canReview=overtimeCanReview();
     const reviewCount=summary.pending;
     const validViews=canSubmit
-      ? (canReview?['mine','balance','usage','review','payroll','rules']:['mine','balance','usage','rules'])
-      : (canReview?['review','payroll','rules']:['rules']);
+      ? (canReview?['mine','balance','usage','review','payroll']:['mine','balance','usage'])
+      : (canReview?['review','payroll']:['mine']);
     if(!validViews.includes(state.overtimeView)) state.overtimeView=canReview&&!canSubmit?'review':'mine';
 
     $('content').innerHTML=`
       <div class="page-head">
-        <div><h1>⏱ 加班／換休管理</h1><p>填寫加班申請、管理換休取得與使用，並集中處理審核紀錄。</p></div>
+        <div><h1>⏱ 加班／換休管理</h1></div>
         <div class="actions">
           ${canSubmit?'<button id="otAddBtn" class="btn primary">＋ 新增申請</button><button id="clAddBtn" class="btn">＋ 使用換休</button>':''}
         </div>
       </div>
       ${canSubmit?`
       <section class="ot-summary">
-        <article class="stat-card"><div class="stat-head"><span>本月我的加班</span><span class="stat-icon">⏱</span></div><div class="stat-value">${overtimeDurationLabel(summary.overtimeMinutes)}</div><div class="stat-foot">僅計已核准申請</div></article>
-        <article class="stat-card"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div><div class="stat-foot">依換休台帳，已扣除待審核</div></article>
-        <article class="stat-card"><div class="stat-head"><span>可再申請換休</span><span class="stat-icon">✅</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div><div class="stat-foot">與目前剩餘換休相同</div></article>
-        <article class="stat-card"><div class="stat-head"><span>${canReview?'全部待審核':'我的待審核'}</span><span class="stat-icon">📄</span></div><div class="stat-value">${canReview?reviewCount:summary.ownPending}</div><div class="stat-foot">${canReview?'含加班與換休使用':'已送出等待審核'}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>本月我的加班</span><span class="stat-icon">⏱</span></div><div class="stat-value">${overtimeDurationLabel(summary.overtimeMinutes)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>可再申請換休</span><span class="stat-icon">✅</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>${canReview?'全部待審核':'我的待審核'}</span><span class="stat-icon">📄</span></div><div class="stat-value">${canReview?reviewCount:summary.ownPending}</div></article>
       </section>`:`
       <section class="ot-summary">
-        <article class="stat-card"><div class="stat-head"><span>待審核加班／換休</span><span class="stat-icon">⏱</span></div><div class="stat-value">${summary.pendingOvertime}</div><div class="stat-foot">等待處理</div></article>
-        <article class="stat-card"><div class="stat-head"><span>待審核換休使用</span><span class="stat-icon">🕒</span></div><div class="stat-value">${summary.pendingLeave}</div><div class="stat-foot">等待處理</div></article>
+        <article class="stat-card"><div class="stat-head"><span>待審核加班／換休</span><span class="stat-icon">⏱</span></div><div class="stat-value">${summary.pendingOvertime}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>待審核換休使用</span><span class="stat-icon">🕒</span></div><div class="stat-value">${summary.pendingLeave}</div></article>
       </section>`}
       <div class="ot-toolbar">
         <div class="ot-tabs">
@@ -679,7 +645,6 @@
           <button class="ot-tab ${state.overtimeView==='balance'?'active':''}" data-ot-view="balance">我的換休</button>
           <button class="ot-tab ${state.overtimeView==='usage'?'active':''}" data-ot-view="usage">換休使用紀錄</button>`:''}
           ${canReview?`<button class="ot-tab ${state.overtimeView==='review'?'active':''}" data-ot-view="review">待審核 ${reviewCount}</button><button class="ot-tab ${state.overtimeView==='payroll'?'active':''}" data-ot-view="payroll">薪資結算</button>`:''}
-          <button class="ot-tab ${state.overtimeView==='rules'?'active':''}" data-ot-view="rules">加班規則</button>
         </div>
         <span class="spacer"></span>
         <label class="schedule-filter-label" for="otMonth">月份</label>
@@ -687,8 +652,7 @@
         <button id="otReload" class="btn">↻ 重新整理</button>
       </div>
       <div id="otMain">
-        ${state.overtimeView==='rules' ? renderOvertimeRules()
-          : state.overtimeView==='review' ? renderOvertimeReview()
+        ${state.overtimeView==='review' ? renderOvertimeReview()
           : state.overtimeView==='payroll' ? renderPayrollReport()
           : state.overtimeView==='balance' ? renderCompLeaveOverview()
           : state.overtimeView==='usage' ? compLeaveUsageRenderTable(ownLeave)
@@ -723,8 +687,8 @@
         <div class="field"><label>申請類型 *</label><select id="otType"><option value="" ${!type?'selected':''} disabled>請選擇</option><option value="overtime" ${type==='overtime'?'selected':''}>平日加班</option><option value="holiday_overtime" ${type==='holiday_overtime'?'selected':''}>假日加班</option><option value="holiday_visit_comp" ${type==='holiday_visit_comp'?'selected':''}>假日家訪換休</option></select></div>
         <div id="otTimeFields" class="field full">
           <div class="form-grid">
-            <div class="field"><label>開始時間 *</label><div class="ot-time-pair"><select id="otStartHour">${overtimeTimeOptions(23,startParts.hour,'時')}</select><select id="otStartMinute">${overtimeTenMinuteOptions(startParts.minute)}</select></div><div class="help">24小時制，分鐘以10分鐘為間隔（00／10／20／30／40／50）</div></div>
-            <div class="field"><label>結束時間 *</label><div class="ot-time-pair"><select id="otEndHour">${overtimeTimeOptions(23,endParts.hour,'時')}</select><select id="otEndMinute">${overtimeTenMinuteOptions(endParts.minute)}</select></div><div class="help">24小時制，分鐘以10分鐘為間隔（00／10／20／30／40／50）</div></div>
+            <div class="field"><label>開始時間 *</label><div class="ot-time-pair"><select id="otStartHour">${overtimeTimeOptions(23,startParts.hour,'時')}</select><select id="otStartMinute">${overtimeTenMinuteOptions(startParts.minute)}</select></div></div>
+            <div class="field"><label>結束時間 *</label><div class="ot-time-pair"><select id="otEndHour">${overtimeTimeOptions(23,endParts.hour,'時')}</select><select id="otEndMinute">${overtimeTenMinuteOptions(endParts.minute)}</select></div></div>
             <div class="field full"><label>加班分鐘數</label><div id="otMinuteCalc" class="ot-calc">系統將依開始與結束時間自動計算</div></div>
           </div>
         </div>
@@ -735,7 +699,7 @@
           </div>
         </div>
         <div class="field full"><label>加班事由 *</label><textarea id="otReason" placeholder="請簡要說明本次加班或假日家訪原因">${escapeHTML(existing?.reason||'')}</textarea></div>
-        <div class="field full"><label>加班處理方式 *</label><select id="otCompensation"><option value="" ${!compensation?'selected':''} disabled>請選擇</option><option value="overtime_pay" ${compensation==='overtime_pay'?'selected':''}>領加班費</option><option value="comp_leave" ${compensation==='comp_leave'?'selected':''}>換休</option></select><div id="otCompensationHelp" class="help"></div></div>
+        <div class="field full"><label>加班處理方式 *</label><select id="otCompensation"><option value="" ${!compensation?'selected':''} disabled>請選擇</option><option value="overtime_pay" ${compensation==='overtime_pay'?'selected':''}>領加班費</option><option value="comp_leave" ${compensation==='comp_leave'?'selected':''}>換休</option></select></div>
         <div class="field full"><label>備註</label><textarea id="otNotes" placeholder="選填">${escapeHTML(existing?.notes||'')}</textarea></div>
       </div>`;
   }
@@ -764,14 +728,11 @@
       if(!selected){
         compensationEl.value='';
         compensationEl.disabled=true;
-        $('otCompensationHelp').textContent='請先選擇申請類型。';
       }else if(holiday){
         compensationEl.value='comp_leave';
         compensationEl.disabled=true;
-        $('otCompensationHelp').textContent='假日家訪換休固定為換休。';
       }else{
         compensationEl.disabled=false;
-        $('otCompensationHelp').textContent='請選擇本次加班要領加班費或換休。';
       }
       updateOvertimeCalc();
     };
@@ -886,8 +847,8 @@
         <div class="field"><label>身分</label><input class="ot-readonly" value="${escapeHTML(overtimeRoleLabel(state.profile?.role))}" disabled></div>
         <div class="field"><label>換休日期 *</label><input id="clDate" type="date" value="${escapeHTML(today)}"></div>
         <div class="field"><label>目前可再申請</label><input id="clBalanceValue" class="ot-readonly" value="${escapeHTML(overtimeDurationLabel(balance.requestable))}" disabled></div>
-        <div class="field"><label>開始時間 *</label><div class="ot-time-pair"><select id="clStartHour">${overtimeTimeOptions(23,startParts.hour,'時')}</select><select id="clStartMinute"><option value="00" ${startParts.minute==='00'?'selected':''}>00</option><option value="30" ${startParts.minute==='30'?'selected':''}>30</option></select></div><div class="help">24小時制，分鐘以30分鐘為間隔（00／30）</div></div>
-        <div class="field"><label>結束時間 *</label><div class="ot-time-pair"><select id="clEndHour">${overtimeTimeOptions(23,endParts.hour,'時')}</select><select id="clEndMinute"><option value="00" ${endParts.minute==='00'?'selected':''}>00</option><option value="30" ${endParts.minute==='30'?'selected':''}>30</option></select></div><div class="help">24小時制，分鐘以30分鐘為間隔（00／30）</div></div>
+        <div class="field"><label>開始時間 *</label><div class="ot-time-pair"><select id="clStartHour">${overtimeTimeOptions(23,startParts.hour,'時')}</select><select id="clStartMinute"><option value="00" ${startParts.minute==='00'?'selected':''}>00</option><option value="30" ${startParts.minute==='30'?'selected':''}>30</option></select></div></div>
+        <div class="field"><label>結束時間 *</label><div class="ot-time-pair"><select id="clEndHour">${overtimeTimeOptions(23,endParts.hour,'時')}</select><select id="clEndMinute"><option value="00" ${endParts.minute==='00'?'selected':''}>00</option><option value="30" ${endParts.minute==='30'?'selected':''}>30</option></select></div></div>
         <div class="field full"><label>使用換休時數</label><div id="clDurationHelp" class="ot-calc">系統將依開始與結束時間自動計算</div></div>
         <div class="field full"><label>換休事由 *</label><textarea id="clReason" placeholder="請簡要說明本次換休原因">${escapeHTML(existing?.reason||'')}</textarea></div>
         <div class="field full"><label>備註</label><textarea id="clNotes" placeholder="選填">${escapeHTML(existing?.notes||'')}</textarea></div>

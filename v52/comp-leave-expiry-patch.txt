@@ -141,7 +141,6 @@
 
     const html=`<section id="ceExpiryPanel" class="ot-rule-card">
       <h3>換休期限與剩餘明細</h3>
-      <p>一般加班換休依到職週年制計算到期日；假日家訪換休無到期限制。使用換休時，系統會先扣除有期限的一般加班換休，再使用永久有效的假日家訪換休。</p>
       ${missingHire?'<div class="ce-warn">目前尚未設定到職日，因此一般加班換休無法計算法定最終到期日。請由機構負責人或系統管理員完成設定。</div>':''}
       ${b.soon>0?`<div class="ce-warn">未來30天內有 <strong>${escapeHTML(ceDuration(b.soon))}</strong> 一般加班換休即將到期，建議優先安排。</div>`:''}
       ${b.expired>0?`<div class="ot-rule-highlight">已有 <strong>${escapeHTML(ceDuration(b.expired))}</strong> 一般加班換休到期未休，不再列入可用換休，請於薪資作業中辦理結清。</div>`:''}
@@ -151,7 +150,7 @@
             const expiryText=ceIsPermanentHoliday(c)?'無到期限制':(c.expires_on?ceDate(c.expires_on):'待設定');
             return `<tr><td>${ceDate(c.earned_date)}</td><td>${escapeHTML(c.source_label||'換休')}</td><td>${escapeHTML(ceDuration(c.earned_minutes))}</td><td><strong>${escapeHTML(ceDuration(c.remaining_minutes))}</strong></td><td>${escapeHTML(expiryText)}</td><td><span class="ce-chip ${s.cls}">${escapeHTML(s.text)}</span></td></tr>`;
           }).join('')}</tbody></table></div>`
-        : '<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休來源</h3><p>核准為換休的一般加班或假日家訪換休會自動建立來源。</p></div>'}</div>
+        : '<div class="ot-empty"><div class="icon">🕒</div><h3>尚無換休來源</h3></div>'}</div>
     </section>`;
     main.insertAdjacentHTML('beforeend',html);
   }

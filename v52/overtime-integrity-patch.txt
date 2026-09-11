@@ -61,7 +61,7 @@
   }
 
   function renderCorrectionRows(items,settled){
-    if(!items.length) return '<div class="ot-empty"><div class="icon">✓</div><h3>本月沒有可更正的已核准紀錄</h3><p>只有已核准且尚未作廢的紀錄會列在這裡。</p></div>';
+    if(!items.length) return '<div class="ot-empty"><div class="icon">✓</div><h3>本月沒有可更正的已核准紀錄</h3></div>';
     return `<div class="ot-table-shell"><table class="ot-correction-table"><thead><tr><th>日期</th><th>申請人</th><th>類型</th><th>認列</th><th>事由</th><th>操作</th></tr></thead><tbody>${items.map(item=>{
       const r=item.row;
       return `<tr><td>${dateText(item.date)}</td><td><strong>${escapeHTML(item.name)}</strong></td><td>${escapeHTML(typeText(r,item.kind))}</td><td>${escapeHTML(amountText(r,item.kind))}</td><td>${escapeHTML(r.reason||'—')}</td><td>${settled?'<span class="ot-status approved">已月結鎖定</span>':`<button class="btn sm" data-integrity-void="${item.kind}:${item.id}">作廢／更正</button>`}</td></tr>`;

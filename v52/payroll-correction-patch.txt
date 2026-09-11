@@ -94,16 +94,12 @@
     }
   }
 
-  function pcUpdateCard(label,value,foot=null){
+  function pcUpdateCard(label,value){
     document.querySelectorAll('#content .stat-card').forEach(card=>{
       const head=card.querySelector('.stat-head span:first-child');
       if(head?.textContent.trim()!==label)return;
       const val=card.querySelector('.stat-value');
       if(val&&val.textContent!==value)val.textContent=value;
-      if(foot){
-        const f=card.querySelector('.stat-foot');
-        if(f&&f.textContent!==foot)f.textContent=foot;
-      }
     });
   }
 
@@ -152,7 +148,7 @@
     return `
       <section id="payrollCorrectionPanel" class="ot-rule-card">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
-          <div><h3>月結後更正</h3><p>原月結資料保持鎖定；後續調整以獨立更正單追加，不覆蓋原始結算。</p></div>
+          <div><h3>月結後更正</h3></div>
           ${pcCanReview()?'<button id="pcAddBtn" class="btn primary">＋ 新增月結更正</button>':''}
         </div>
         <div class="ot-rule-highlight">更正單建立後不可修改或刪除；若更正單本身填錯，請再新增一筆反向更正，保留完整稽核軌跡。</div>
@@ -160,7 +156,7 @@
           ${rows.length?`<div class="ot-table-shell"><table class="ot-table"><thead><tr><th>員工</th><th>加班計薪</th><th>換休取得</th><th>換休使用</th><th>更正後月底換休餘額</th></tr></thead><tbody>${rows.map(r=>`<tr><td><div class="ot-review-name">${escapeHTML(r.name)}</div><div class="ot-detail">${escapeHTML(pcRoleLabel(r.role))}</div></td><td>${pcFlow(r.originalPay,r.corrPay,r.finalPay)}</td><td>${pcFlow(r.originalEarned,r.corrEarned,r.finalEarned)}</td><td>${pcFlow(r.originalUsed,r.corrUsed,r.finalUsed)}</td><td><strong>${escapeHTML(pcDuration(r.finalBalance))}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="ot-empty"><p>目前沒有可顯示的結算資料。</p></div>'}
         </div>
         <div style="margin-top:14px"><h3>更正紀錄</h3>
-          ${corrections.length?`<div class="pc-history">${corrections.map(c=>`<div class="pc-history-item"><div class="pc-history-top"><div><div class="pc-history-main">${escapeHTML(c.staff_name)}｜${escapeHTML(pcTypeLabel(c.adjustment_type))}　${pcSigned(c.adjustment_minutes)}</div><div class="pc-history-sub">${pcCorrectionMetaHTML(c)}原因：${escapeHTML(c.reason)}<br>更正人：${escapeHTML(c.created_by_name||'—')}・${rocDate(c.created_at)}</div></div></div></div>`).join('')}</div>`:'<div class="ot-empty"><div class="icon">🧾</div><h3>尚無月結更正</h3><p>若結算後才發現漏算或誤算，可由機構負責人建立更正單。</p></div>'}
+          ${corrections.length?`<div class="pc-history">${corrections.map(c=>`<div class="pc-history-item"><div class="pc-history-top"><div><div class="pc-history-main">${escapeHTML(c.staff_name)}｜${escapeHTML(pcTypeLabel(c.adjustment_type))}　${pcSigned(c.adjustment_minutes)}</div><div class="pc-history-sub">${pcCorrectionMetaHTML(c)}原因：${escapeHTML(c.reason)}<br>更正人：${escapeHTML(c.created_by_name||'—')}・${rocDate(c.created_at)}</div></div></div></div>`).join('')}</div>`:'<div class="ot-empty"><div class="icon">🧾</div><h3>尚無月結更正</h3></div>'}
         </div>
       </section>`;
   }
@@ -174,9 +170,9 @@
     const payAdj=pcSum(corr,'overtime_pay');
     const earnedAdj=pcSum(corr,'comp_leave_earned');
     const usedAdj=pcSum(corr,'comp_leave_used');
-    pcUpdateCard('本月待計薪加班',pcDuration((Number(settlement.total_overtime_pay_minutes)||0)+payAdj),payAdj?'原月結＋月結更正':'僅計已核准且選擇領加班費');
-    pcUpdateCard('本月新增換休',pcDuration((Number(settlement.total_comp_leave_earned_minutes)||0)+earnedAdj),earnedAdj?'原月結＋月結更正':'已核准且選擇換休');
-    pcUpdateCard('本月使用換休',pcDuration((Number(settlement.total_comp_leave_used_minutes)||0)+usedAdj),usedAdj?'原月結＋月結更正':'僅計已核准使用');
+    pcUpdateCard('本月待計薪加班',pcDuration((Number(settlement.total_overtime_pay_minutes)||0)+payAdj));
+    pcUpdateCard('本月新增換休',pcDuration((Number(settlement.total_comp_leave_earned_minutes)||0)+earnedAdj));
+    pcUpdateCard('本月使用換休',pcDuration((Number(settlement.total_comp_leave_used_minutes)||0)+usedAdj));
 
     const main=document.getElementById('otMain');
     if(!main)return;
