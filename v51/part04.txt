@@ -91,7 +91,7 @@ les = new Set(['organization_manager','admin']);
     showLoading(true);
     try{
       const email = session.user.email || '';
-      const { data:profile, error } = await db.from('staff_users').select('id,email,display_name,role,is_active').ilike('email', email).maybeSingle();
+      const { data:profile, error } = await db.from('staff_users').select('id,email,display_name,role,is_active,can_supervise').ilike('email', email).maybeSingle();
       if(error) throw error;
       if(!profile || !profile.is_active){
         await db.auth.signOut();
