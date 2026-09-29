@@ -1,0 +1,1206 @@
+  // V5.2 個案管理：照顧服務管理資訊平臺 HTML 匯入
+  const CASE_HTML_BUCKET = 'case-html-imports';
+
+  const caseHtmlStyle = document.createElement('style');
+  caseHtmlStyle.id = 'v52-case-html-import-style';
+  caseHtmlStyle.textContent = `
+    .html-import-note{padding:11px 12px;border:1px solid #f0ded7;background:#fff8f5;border-radius:10px;font-size:11.5px;line-height:1.65;color:#765548;margin-bottom:12px}
+    .html-import-status{margin-top:10px;padding:10px 12px;border-radius:9px;background:#f8fafc;border:1px solid var(--line);font-size:11.5px;color:#475467;white-space:pre-wrap}
+    .case-html-file-drop{padding:10px 12px 12px!important;overflow:visible!important}
+    #htmlCaseFile,#planVersionFile{display:block;width:100%;box-sizing:border-box;min-height:48px;padding:7px 8px 9px;margin:0;line-height:1.45;overflow:visible}
+    #htmlCaseFile::file-selector-button,#planVersionFile::file-selector-button{margin:0 12px 0 0;padding:7px 12px;line-height:1.25;cursor:pointer}
+    .import-section{font-size:12px;font-weight:900;color:#8b5746;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+    .import-section:first-child{margin-top:0;padding-top:0;border-top:0}
+    .import-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .import-preview-grid .field.full{grid-column:1/-1}
+    .import-warning{padding:10px 12px;border-radius:9px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11.5px;line-height:1.6;margin-bottom:10px}
+    .import-diff{display:grid;gap:7px;margin-bottom:10px}.diff-row{display:grid;grid-template-columns:150px 1fr 28px 1fr;gap:8px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff}.diff-label{font-size:10.5px;font-weight:900;color:#475467}.diff-value{font-size:11.5px;word-break:break-word}.diff-arrow{text-align:center;color:#98a2b3;font-weight:900}.diff-empty{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#f8fafc;font-size:11.5px;color:#667085}.budget-editor{display:grid;gap:8px}.budget-row{display:grid;grid-template-columns:.65fr 1fr 1fr 1fr auto;gap:8px;align-items:end;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+    .contact-editor,.service-editor{display:grid;gap:8px}
+    .contact-row,.service-row{display:grid;gap:8px;align-items:end;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+    .contact-row{grid-template-columns:1.1fr .8fr 1fr auto}.service-row{grid-template-columns:.55fr .8fr 1.4fr .6fr .7fr .7fr auto}
+    .mini-field label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:4px}.mini-field input,.mini-field select{width:100%;box-sizing:border-box}
+    .contact-flags{grid-column:1/-1;display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#475467}.contact-flags label{display:flex;align-items:center;gap:5px}.contact-flags input{width:auto}
+    .html-plan-preview details{border:1px solid var(--line);border-radius:9px;background:#fff;margin:6px 0}.html-plan-preview summary{cursor:pointer;padding:9px 10px;font-size:11.5px;font-weight:900}.html-plan-preview pre{white-space:pre-wrap;font-family:inherit;font-size:11.5px;line-height:1.65;margin:0;padding:0 10px 10px;color:#475467}
+    .import-detail-block{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.import-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.import-detail-cell{border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fafcfb}.import-detail-cell label{display:block;font-size:9.5px;color:#667085;font-weight:900;margin-bottom:4px}.import-detail-cell div{font-size:12px;font-weight:800;color:#344054;word-break:break-word}
+    .approved-chip-wrap{display:flex;gap:6px;flex-wrap:wrap}.approved-chip{display:inline-flex;border-radius:999px;padding:5px 8px;background:#fff3ee;color:#8b5746;font-size:10.5px;font-weight:900;border:1px solid #f0d5ca}
+    .import-history{display:grid;gap:7px}.import-history-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fff}.import-history-row small{display:block;color:#667085;margin-top:3px}
+    .plan-version-list{display:grid;gap:7px}.plan-version-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:#fff}.plan-version-row.current{background:#fff8f5;border-color:#efcabc}.plan-version-main{min-width:0}.plan-version-main strong{font-size:12px}.plan-version-main small{display:block;color:#667085;margin-top:3px;line-height:1.5}.plan-current-badge{display:inline-flex;margin-left:6px;border-radius:999px;padding:3px 7px;background:#eef7f1;color:#237a4b;font-size:9.5px;font-weight:900}.plan-void-badge{display:inline-flex;margin-left:6px;border-radius:999px;padding:3px 7px;background:#f2f4f7;color:#667085;font-size:9.5px;font-weight:900}.case-version-btn.voided{background:#f8f8f8;color:#98a2b3;border-style:dashed}.section-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .case-page{display:grid;gap:14px}
+    .case-page-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px}
+    .case-page-title-wrap{display:flex;gap:12px;align-items:flex-start;min-width:0}.case-back-btn{flex:0 0 auto}.case-page-title{font-size:20px;font-weight:900;color:#344054;line-height:1.25}.case-page-sub{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px}
+    .case-meta-chip{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 8px;background:#fff;font-size:10.5px;font-weight:800;color:#475467}.case-meta-chip.primary{background:#fff5f0;border-color:#efcfc2;color:#9a5c47}
+    .case-page-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+    .case-detail-tabs{display:flex;gap:6px;overflow-x:auto;padding:4px;background:#fff;border:1px solid var(--line);border-radius:13px;scrollbar-width:thin}.case-detail-tab{border:0;background:transparent;border-radius:9px;padding:9px 12px;white-space:nowrap;font-size:11.5px;font-weight:900;color:#667085;cursor:pointer}.case-detail-tab.active{background:#fff2ec;color:#914f39}.case-detail-tab:hover{background:#faf5f2}
+    .case-tab-panel{display:grid;gap:14px}.case-panel-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px}.case-panel-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:11px}.case-panel-head strong{font-size:13px;color:#344054}.case-panel-note{font-size:10.5px;color:#667085;line-height:1.55}
+    .case-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.case-overview-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}.case-overview-card label{display:block;font-size:10px;color:#667085;font-weight:900;margin-bottom:5px}.case-overview-card strong{display:block;font-size:14px;color:#344054}.case-overview-card small{display:block;margin-top:5px;color:#667085;line-height:1.5}
+    .case-data-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.case-data-item{border:1px solid var(--line);border-radius:10px;padding:10px;background:#fafcfb;min-width:0}.case-data-item.wide{grid-column:1/-1}.case-data-item label{display:block;font-size:9.5px;color:#667085;font-weight:900;margin-bottom:4px}.case-data-item div{font-size:11.5px;font-weight:800;color:#344054;word-break:break-word;line-height:1.55}
+    .case-table-simple{width:100%;border-collapse:collapse;font-size:11px}.case-table-simple th,.case-table-simple td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.case-table-simple th{font-size:10px;color:#667085;background:#fafafa}.case-table-simple tr:last-child td{border-bottom:0}
+    .case-version-grid{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.6fr);gap:12px}.case-version-nav{display:grid;gap:7px;align-content:start}.case-version-btn{width:100%;text-align:left;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;cursor:pointer}.case-version-btn.active{background:#fff7f3;border-color:#ecc7b9}.case-version-btn strong{font-size:11.5px}.case-version-btn small{display:block;color:#667085;margin-top:4px;line-height:1.45}
+    .case-timeline{display:grid;gap:0}.case-timeline-item{position:relative;padding:0 0 18px 26px;border-left:2px solid #eee;margin-left:7px}.case-timeline-item:last-child{padding-bottom:0}.case-timeline-dot{position:absolute;left:-7px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid #d9a38d}.case-timeline-date{font-size:10px;color:#667085;font-weight:800}.case-timeline-title{font-size:11.5px;font-weight:900;color:#344054;margin-top:3px}.case-timeline-text{font-size:10.5px;color:#667085;line-height:1.55;margin-top:3px}
+    .case-empty-inline{padding:16px;border:1px dashed var(--line);border-radius:11px;text-align:center;color:#667085;font-size:11px;background:#fafafa}
+    @media(max-width:1000px){.case-overview-grid{grid-template-columns:1fr 1fr}.case-data-grid{grid-template-columns:1fr 1fr}.case-version-grid{grid-template-columns:1fr}}
+    @media(max-width:650px){.case-page-head{flex-direction:column}.case-page-actions{justify-content:flex-start}.case-overview-grid,.case-data-grid{grid-template-columns:1fr}.case-data-item.wide{grid-column:auto}.case-detail-tab{padding:8px 10px}}
+    @media(max-width:900px){.service-row,.budget-row{grid-template-columns:1fr 1fr}.service-row .wide{grid-column:1/-1}.import-detail-grid{grid-template-columns:1fr 1fr}.diff-row{grid-template-columns:120px 1fr 24px 1fr}}
+    @media(max-width:650px){.import-choice,.import-preview-grid{grid-template-columns:1fr}.contact-row{grid-template-columns:1fr 1fr}.import-detail-grid{grid-template-columns:1fr}.service-row,.budget-row{grid-template-columns:1fr 1fr}.diff-row{grid-template-columns:1fr}.diff-arrow{display:none}}
+  `;
+  document.head.appendChild(caseHtmlStyle);
+
+  function htmlCleanText(value=''){
+    return String(value).replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').replace(/\r/g,'').trim();
+  }
+  function htmlRocToIso(value){
+    const s=htmlCleanText(value);
+    if(!s)return '';
+    let m=s.match(/(\d{1,4})\s*[年\/\.\-]\s*(\d{1,2})\s*[月\/\.\-]\s*(\d{1,2})/);
+    if(!m)return '';
+    let y=Number(m[1]); if(y<1911)y+=1911;
+    const mo=String(Number(m[2])).padStart(2,'0'), d=String(Number(m[3])).padStart(2,'0');
+    return `${y}-${mo}-${d}`;
+  }
+  function htmlNum(value){
+    const m=String(value||'').replace(/,/g,'').match(/-?\d+(?:\.\d+)?/); return m?Number(m[0]):null;
+  }
+  function htmlTablePairs(doc){
+    const pairs=[];
+    doc.querySelectorAll('tr').forEach(tr=>{
+      const cells=[...tr.children].filter(x=>/^(TH|TD)$/.test(x.tagName));
+      for(let i=0;i<cells.length;i++){
+
+        if(cells[i].tagName!=='TH')continue;
+        let td=null; for(let j=i+1;j<cells.length;j++){if(cells[j].tagName==='TH')break;if(cells[j].tagName==='TD'){td=cells[j];break;}}
+        if(td)pairs.push({label:htmlCleanText(cells[i].textContent).replace(/^＊/,'').trim(),value:htmlCleanText(td.textContent)});
+      }
+    });
+    return pairs;
+  }
+  function htmlFindPair(pairs, labels){
+    for(const target of labels){
+      const exact=pairs.find(x=>x.label===target); if(exact?.value)return exact.value;
+      const fuzzy=pairs.find(x=>x.label.includes(target)); if(fuzzy?.value)return fuzzy.value;
+    }
+    return '';
+  }
+  function htmlLabeledBlock(doc,label){
+    const th=[...doc.querySelectorAll('th')].find(x=>htmlCleanText(x.textContent).includes(label));
+    if(!th)return '';
+    const td=th.nextElementSibling?.tagName==='TD'?th.nextElementSibling:th.parentElement?.querySelector('td');
+    return htmlCleanText(td?.textContent||'');
+  }
+  function htmlSectionText(text, startLabel, nextLabels=[]){
+    const start=text.indexOf(startLabel); if(start<0)return '';
+    let end=text.length;
+    nextLabels.forEach(l=>{const i=text.indexOf(l,start+startLabel.length);if(i>=0&&i<end)end=i;});
+    return htmlCleanText(text.slice(start+startLabel.length,end)).replace(/^\s*[：:]\s*/,'');
+  }
+  function htmlFullContactName(raw, role){
+    const re=role==='primary'
+      ?/(?:主要照顧者|案妻為主要照顧者)[：:]?\s*([^\n。]+)/
+      :/(?:次要照顧者)[：:]?\s*([^\n。]+)/;
+    const m=raw.match(re); if(!m)return '';
+    const line=m[1];
+    const n=line.match(/[-－]\s*([^\(（\s，,]+)\s*[\(（]/) || line.match(/^([^\(（，,]+)\s*[\(（]/);
+    return htmlCleanText(n?.[1]||'').replace(/^案(?:妻|夫|女|子|妹|兄|姐|弟)[-－]?/,'');
+  }
+  function htmlParseContacts(doc,pairs,raw){
+    const contacts=[];
+    let pName=htmlFullContactName(raw,'primary') || htmlFindPair(pairs,['B1a.主要照顧者姓名','主要照顧者姓名']);
+    let pRel=htmlFindPair(pairs,['B1b.與個案之關係','主要照顧者與個案之關係']);
+    let pPhone='';
+    const mainLabel=[...doc.querySelectorAll('th')].find(x=>htmlCleanText(x.textContent).includes('主要照顧者姓名'));
+    if(mainLabel){
+      let tr=mainLabel.closest('tr'); for(let k=0;k<5&&tr;k++,tr=tr.nextElementSibling){const t=htmlCleanText(tr.textContent);const m=t.match(/手機\s*(0\d[\d\-\s]{7,14})/);if(m){pPhone=htmlCleanText(m[1]).replace(/\s/g,'');break;}}
+    }
+    if(pName)contacts.push({contact_name:pName,relationship:pRel.replace(/^\d+\.?\s*/,''),phone:pPhone,is_primary_contact:/主要聯絡人[^\n。]*?主要照顧者|主要照顧者[^\n。]*?主要聯絡人/.test(raw),is_primary_caregiver:true,is_secondary_caregiver:false,notes:''});
+
+    let sName=htmlFullContactName(raw,'secondary') || htmlFindPair(pairs,['B4.次要照顧者姓名','次要照顧者姓名']);
+    let sRel=htmlFindPair(pairs,['B5.次要照顧者與個案之關係','次要照顧者與個案之關係']);
+    let sPhone='';
+    const secLabel=[...doc.querySelectorAll('th')].find(x=>htmlCleanText(x.textContent).includes('次要照顧者姓名'));
+    if(secLabel){
+      let tr=secLabel.closest('tr'); for(let k=0;k<5&&tr;k++,tr=tr.nextElementSibling){const t=htmlCleanText(tr.textContent);const m=t.match(/次要照顧者手機\s*(0\d[\d\-\s]{7,14})/);if(m){sPhone=htmlCleanText(m[1]).replace(/\s/g,'');break;}}
+    }
+
+    if(sName)contacts.push({contact_name:sName,relationship:sRel.replace(/^\d+\.?\s*/,''),phone:sPhone,is_primary_contact:/主要聯絡人[^\n。]*?(?:案大妹|案妹)|(?:案大妹|案妹)[^\n。]*?主要聯絡人/.test(raw),is_primary_caregiver:false,is_secondary_caregiver:true,notes:''});
+    if(contacts.length && !contacts.some(x=>x.is_primary_contact))contacts[0].is_primary_contact=true;
+    return contacts;
+  }
+  function htmlServiceGroup(code){
+    code=String(code||'').toUpperCase();
+    if(code.startsWith('BA'))return 'B'; if(code.startsWith('CA'))return 'C'; if(code.startsWith('DA'))return 'D';
+    if(code.startsWith('EA')||code.startsWith('FA'))return 'EF'; if(code.startsWith('GA'))return 'G'; if(code.startsWith('SC'))return 'S';
+    return code.replace(/\d.*$/,'')||'OTHER';
+  }
+  function htmlParseServices(doc){
+    const out=[]; const seen=new Set();
+    doc.querySelectorAll('table').forEach(table=>{
+      const headers=[...table.querySelectorAll('thead th')].map(x=>htmlCleanText(x.textContent));
+      if(!headers.some(x=>x.includes('服務項目'))||!headers.some(x=>x.includes('服務數量')))return;
+      table.querySelectorAll('tbody tr').forEach(tr=>{
+        const cells=[...tr.querySelectorAll(':scope > td')].map(x=>htmlCleanText(x.textContent));
+        if(cells.length<4)return;
+        const serviceText=cells[1]||'';
+        const m=serviceText.match(/([A-Z]{1,3}\d+(?:-\d+)?)\s*(?:\[([^\]]+)\])?/i); if(!m)return;
+        const code=m[1].toUpperCase(), key=code+'|'+(cells[3]||''); if(seen.has(key))return; seen.add(key);
+        out.push({service_group:htmlServiceGroup(code),service_code:code,service_name:htmlCleanText(m[2]||serviceText.replace(m[1],'')),unit_price:htmlNum(cells[2]),approved_quantity:htmlNum(cells[3]),subtotal:htmlNum(cells[4]),valid_from:'',valid_to:''});
+      });
+    });
+    return out;
+  }
+  function htmlParseBudgets(doc,services){
+    const out=[]; const cats=new Set();
+    const whole=htmlCleanText(doc.body?.textContent||'');
+    if(services.some(x=>['B','C'].includes(x.service_group))){
+      const m=whole.match(/BC碼給付額度[：:]\s*([\d,.]+).*?B碼擬定總計[：:]\s*([\d,.]+).*?當月剩餘額度[：:]\s*([\d,.]+)/s);
+      if(m){out.push({category:'BC',benefit_limit:htmlNum(m[1]),planned_total:htmlNum(m[2]),remaining_amount:htmlNum(m[3]),valid_from:'',valid_to:''});cats.add('BC');}
+    }
+    if(services.some(x=>x.service_group==='G')){
+      const gTable=[...doc.querySelectorAll('table')].find(t=>/GA\d+/i.test(htmlCleanText(t.textContent)) && /服務數量/.test(htmlCleanText(t.textContent)));
+      const gPanel=gTable?.closest('.panel') || gTable?.parentElement;
+      const txt=htmlCleanText(gPanel?.textContent||'');
+      const m=txt.match(/給付額度[：:]\s*([\d,.]+).*?擬定總計[：:]\s*([\d,.]+).*?剩餘額度[：:]\s*([\d,.]+)/s);
+      if(m){out.push({category:'G',benefit_limit:htmlNum(m[1]),planned_total:htmlNum(m[2]),remaining_amount:htmlNum(m[3]),valid_from:'',valid_to:''});cats.add('G');}
+    }
+    return out;
+  }
+  function htmlParseCarePlan(doc,allText){
+    const goal=htmlLabeledBlock(doc,'計畫目標');
+    const exec=htmlLabeledBlock(doc,'計畫執行規劃');
+    const brief=htmlLabeledBlock(doc,'計畫簡述');
+    const note=htmlLabeledBlock(doc,'其他備註');
+    const combined=[brief,goal,exec,note].filter(Boolean).join('\n\n');
+    const phone=htmlRocToIso((goal.match(/電聯日期[：:]\s*([^\n]+)/)||[])[1]||'');
+    const home=htmlRocToIso((goal.match(/家訪日期[：:]\s*([^\n]+)/)||[])[1]||'');
+    const subjectDate=htmlRocToIso((allText.match(/AA01\s*[\(（]\s*([^\)）]+)/)||[])[1]||'');
+    const planDate=home||subjectDate||'';
+    const visitWith=htmlCleanText((goal.match(/偕同訪視者[：:]\s*([^\n]+)/)||[])[1]||'');
+
+    const sections={}; if(brief)sections['計畫簡述']=brief;if(goal)sections['計畫目標']=goal;if(exec)sections['計畫執行規劃']=exec;if(note)sections['其他備註']=note;
+    return {plan_date:planDate,phone_contact_date:phone,home_visit_date:home,visit_with:visitWith,sections,raw_plan_text:combined};
+  }
+  function htmlParseDocument(source){
+    const doc=new DOMParser().parseFromString(source,'text/html');
+    const pairs=htmlTablePairs(doc); const allText=htmlCleanText(doc.body?.textContent||'');
+    const headMatch=allText.match(/個案姓名\/身分證字號[：:]\s*([^\/\n]+)\/([A-Z]\d{9})/i);
+    let caseName=htmlFindPair(pairs,['個案姓名']) || htmlCleanText(headMatch?.[1]||'');
+    let nationalId=htmlFindPair(pairs,['個案身分證']) || htmlCleanText(headMatch?.[2]||'');
+    nationalId=(nationalId.match(/[A-Z]\d{9}/i)||[])[0]||nationalId;
+    const birth=htmlFindPair(pairs,['個案生日','出生日期']);
+    const phone=(htmlFindPair(pairs,['個案電話']).match(/0\d[\d\-\s]{7,14}/)||[])[0]||'';
+    let gender=(pairs.find(x=>x.label==='性別'||x.label==='個案性別')?.value||'').replace(/^\d+\.?\s*/,''); if(!/^(男|女)$/.test(gender))gender='';
+    const address=htmlFindPair(pairs,['居住(通訊)地址','居住地址','通訊地址','現居地址']);
+    let cms=(allText.match(/CMS\s*(?:第)?\s*([1-8])\s*級/i)||[])[1]||htmlFindPair(pairs,['CMS等級','失能等級']).match(/[1-8]/)?.[0]||'';
+    let aUnit=htmlFindPair(pairs,['A單位名稱']);
+    let manager=htmlFindPair(pairs,['A個管姓名']);
+    const managerTh=[...doc.querySelectorAll('th')].find(x=>htmlCleanText(x.textContent).includes('A個管姓名'));
+    const managerTable=managerTh?.closest('table');
+    const managerPhoneTh=managerTable?[...managerTable.querySelectorAll('th')].find(x=>htmlCleanText(x.textContent).includes('聯絡電話')):null;
+    const managerPhoneCell=managerPhoneTh?.nextElementSibling?.tagName==='TD'?managerPhoneTh.nextElementSibling:managerPhoneTh?.parentElement?.querySelector('td');
+    let managerPhone=(htmlCleanText(managerPhoneCell?.textContent||'').match(/0\d[\d#\-\s]{7,20}/)||[])[0]||'';
+    let assessor=htmlFindPair(pairs,['承辦人']);
+    const topAssessor=(allText.match(/評估照專[：:]\s*([^\n]+)/)||[])[1]; if(topAssessor)assessor=htmlCleanText(topAssessor);
+    const assessment=htmlRocToIso(htmlFindPair(pairs,['處理時間','評估日期']));
+    const approval=htmlRocToIso(htmlFindPair(pairs,['近一次照顧計畫送審日期','審核日期']));
+    const identityType=htmlFindPair(pairs,['長照資格','補助身分','身分類別']);
+    const disabilityRaw=htmlFindPair(pairs,['身心障礙手冊/證明','身心障礙證明']);
+    let hasDisability=null;
+    if(disabilityRaw){hasDisability=!/^(?:無|否|2\.?否)$/i.test(htmlCleanText(disabilityRaw));}
+    const indigenousRaw=htmlFindPair(pairs,['原住民身分','原住民身份']);
+    let isIndigenous=null;
+    if(indigenousRaw){isIndigenous=/^(?:是|1\.?是)$/i.test(htmlCleanText(indigenousRaw))?true:/^(?:否|2\.?否)$/i.test(htmlCleanText(indigenousRaw))?false:null;}
+    const indigenousGroup=htmlFindPair(pairs,['原住民族別']);
+    const welfareIdentityRaw=htmlFindPair(pairs,['長照福利身份','長照福利身分']);
+    let welfareIdentity=welfareIdentityRaw;
+    if(/第一類|低收入戶|低收/.test(welfareIdentityRaw))welfareIdentity='低收入戶';
+    else if(/第二類|中低收入戶|中低收/.test(welfareIdentityRaw))welfareIdentity='中低收入戶';
+    else if(/第三類|一般戶/.test(welfareIdentityRaw))welfareIdentity='一般戶';
+    let copayRate=htmlCopayForWelfareIdentity(welfareIdentity);
+    if(copayRate===''){
+      const copayMatch=allText.match(/個案部分負擔(?:比例)?(?:為|[：:])?\s*([0-9]+(?:\.[0-9]+)?)\s*%/) || allText.match(/部分負擔(?:比例)?(?:為|[：:])?\s*([0-9]+(?:\.[0-9]+)?)\s*%/);
+      copayRate=copayMatch?Number(copayMatch[1]):null;
+    }
+    let livesAlone=null; const living=htmlFindPair(pairs,['目前居住狀況','居住狀況','居住型態']); if(living){if(/獨居/.test(living))livesAlone=true;else if(/同住|與.+同住/.test(living))livesAlone=false;}
+    const carePlan=htmlParseCarePlan(doc,allText);
+    const services=htmlParseServices(doc); const budgets=htmlParseBudgets(doc,services);
+    const contacts=htmlParseContacts(doc,pairs,carePlan.raw_plan_text||allText);
+    const ca=(source.match(/ca110id=(\d+)/)||[])[1]||'';
+    return {case_name:caseName,national_id:nationalId.toUpperCase(),birth_date:htmlRocToIso(birth),gender,address,phone:phone.replace(/\s/g,''),lives_alone:livesAlone,cms_level:cms,identity_type:identityType,has_disability:hasDisability,is_indigenous:isIndigenous,indigenous_group:indigenousGroup,welfare_identity:welfareIdentity,copay_rate:copayRate,assessment_date:assessment,plan_approval_date:approval,a_unit_name:aUnit,case_manager_name:manager,case_manager_phone:managerPhone.replace(/\s/g,''),assessor_name:assessor,source_ca110_id:ca,contacts,services,budgets,care_plan:carePlan,warnings:[]};
+  }
+  async function htmlSha256(file){
+    const b=await file.arrayBuffer(); const h=await crypto.subtle.digest('SHA-256',b); return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  function htmlNormalizeCaseNo(value=''){
+    return String(value||'').replace(/\s+/g,'').toUpperCase();
+  }
+  function htmlCopayForWelfareIdentity(value){
+    if(value==='一般戶')return 16;
+    if(value==='中低收入戶')return 5;
+    if(value==='低收入戶')return 0;
+    return '';
+  }
+  function htmlWelfareOptions(current=''){
+    return '<option value="">未設定</option>'+
+      '<option value="一般戶" '+(current==='一般戶'?'selected':'')+'>一般戶</option>'+
+      '<option value="中低收入戶" '+(current==='中低收入戶'?'selected':'')+'>中低收入戶</option>'+
+      '<option value="低收入戶" '+(current==='低收入戶'?'selected':'')+'>低收入戶</option>';
+  }
+  function htmlBindWelfareCopay(identityId,copayId){
+    const identity=$(identityId),copay=$(copayId); if(!identity||!copay)return;
+    const sync=()=>{copay.value=htmlCopayForWelfareIdentity(identity.value);};
+    identity.addEventListener('change',sync); sync();
+  }
+  function htmlBindIndigenousGroup(statusId,groupId){
+    const status=$(statusId),group=$(groupId); if(!status||!group)return;
+    const sync=()=>{
+      const enabled=status.value==='true';
+      group.disabled=!enabled;
+      if(status.value==='false')group.value='';
+    };
+    status.addEventListener('change',sync); sync();
+  }
+  function htmlBindCaseNoInput(id){
+    const input=$(id); if(!input)return;
+    input.addEventListener('keydown',e=>{if(e.key===' '||e.key==='Tab'&&false)e.preventDefault();});
+    input.addEventListener('input',()=>{const next=htmlNormalizeCaseNo(input.value);if(input.value!==next)input.value=next;});
+    input.value=htmlNormalizeCaseNo(input.value);
+  }
+  function htmlSupervisorOptions(selected=''){
+    const supervisors=(state.caseStaff||[]).filter(s=>s.can_supervise||s.role==='supervisor');
+    const actual=selected || (state.profile?.can_supervise ? state.profile.id : '');
+    return `<option value="">請選擇</option>${supervisors.map(s=>`<option value="${s.id}" ${actual===s.id?'selected':''}>${escapeHTML(s.display_name)}</option>`).join('')}`;
+  }
+  function htmlOpenFileModal(){
+    const me=state.profile?.role==='supervisor';
+    openModal({title:'確認 HTML 匯入資料',showConfirm:false,large:true,html:`
+      <div class="html-import-note">請上傳「照顧服務管理資訊平臺」下載的 HTML／HTM 檔。解析只讀取檔案內容，不執行檔案中的 JavaScript。個案編號為機構系統編號，需由匯入人手動輸入。</div>
+      <div class="form-grid">
+        <div class="field"><label>個案編號 *</label><input id="htmlCaseNo" placeholder="例如：115C00001"></div>
+        <div class="field"><label>負責督導 *</label><select id="htmlSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions('')}</select></div>
+        <div class="field"><label>服務類別 *</label><select id="htmlUsageType"><option value="">請選擇</option><option value="居家">居家</option><option value="喘息">喘息</option><option value="居家+喘息">居家+喘息</option></select></div>
+        <div class="field"><label>繳款方式</label><select id="htmlPaymentMethod"><option value="">未設定</option><option value="銀行匯款">銀行匯款</option><option value="超商繳款">超商繳款</option><option value="現金繳費">現金繳費</option><option value="不收費">不收費</option></select><div class="help">非必填</div></div>
+        <div class="field full"><label>照管平台 HTML *</label><div class="file-drop case-html-file-drop"><input id="htmlCaseFile" type="file" accept=".html,.htm,text/html,application/xhtml+xml"><div class="help">僅接受 HTML／HTM，單檔上限 10 MB。</div></div></div>
+        <div class="field full"><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap"><button id="manualCaseFromHtml" class="btn" type="button">手動建立</button><button id="parseCaseHtml" class="btn primary" type="button">解析 HTML 並預覽</button></div></div>
+      </div><div id="htmlParseStatus" class="html-import-status">尚未開始解析。</div>`});
+    htmlBindCaseNoInput('htmlCaseNo');
+    $('manualCaseFromHtml').addEventListener('click',htmlOpenManualModal);
+
+    $('parseCaseHtml').addEventListener('click',async()=>{
+      const caseNo=htmlNormalizeCaseNo($('htmlCaseNo').value); $('htmlCaseNo').value=caseNo; const file=$('htmlCaseFile').files[0]; const supervisor=me?state.profile.id:$('htmlSupervisor').value;
+      const usageType=$('htmlUsageType').value, paymentMethod=$('htmlPaymentMethod').value;
+      if(!caseNo){toast('請輸入個案編號','warn');return;} if(!supervisor){toast('請選擇負責督導','warn');return;} if(!usageType){toast('請選擇服務類別','warn');return;} if(!file){toast('請選擇 HTML 檔案','warn');return;}
+      if(!/\.html?$/i.test(file.name)){toast('檔案格式必須是 HTML 或 HTM','warn');return;} if(file.size>10*1024*1024){toast('HTML 檔案不可超過 10 MB','warn');return;}
+      const status=$('htmlParseStatus'); $('parseCaseHtml').disabled=true;
+      try{status.textContent='正在讀取 HTML…'; const source=await file.text(); const parsed=htmlParseDocument(source); parsed.case_no=caseNo;parsed.supervisor_id=supervisor;parsed.service_usage_type=usageType;parsed.payment_method=paymentMethod;parsed.file_name=file.name;parsed.source_hash=await htmlSha256(file);parsed._file=file;parsed._source=source;status.textContent='解析完成，正在比對既有個案…'; await htmlResolveMatch(parsed); htmlOpenPreview(parsed);}
+      catch(err){console.error(err);toast('HTML 解析失敗：'+(err?.message||err),'error');status.textContent='解析失敗，請確認檔案是否為照顧服務管理資訊平臺匯出的 HTML。';$('parseCaseHtml').disabled=false;}
+    });
+  }
+  async function htmlLoadExistingSnapshot(caseId){
+    const results=await Promise.all([
+      db.from('care_cases').select('*').eq('id',caseId).maybeSingle(),
+      db.from('case_approved_services').select('service_group,service_code,service_name,unit_price,approved_quantity,subtotal').eq('case_id',caseId).eq('is_current',true).order('service_code'),
+      db.from('service_budgets').select('category,benefit_limit,planned_total,remaining_amount,valid_from,valid_to').eq('case_id',caseId).eq('is_current',true).order('category'),
+      db.from('care_plans').select('id,plan_date,is_current').eq('case_id',caseId).eq('is_current',true).maybeSingle()
+    ]);
+    const err=results.find(function(x){return x.error;});
+    if(err&&err.error)throw err.error;
+    return {caseData:results[0].data,services:results[1].data||[],budgets:results[2].data||[],plan:results[3].data||null};
+  }
+
+  async function htmlResolveMatch(d){
+    d._match=null; d._potential=[]; d._caseNoConflict=null; d._existing=null;
+    const fields='id,case_no,case_name,national_id,birth_date,supervisor_id,service_usage_type,payment_method';
+    const byNo=await db.from('care_cases').select(fields).ilike('case_no',d.case_no).limit(2); if(byNo.error)throw byNo.error;
+    if(byNo.data&&byNo.data[0])d._caseNoConflict=byNo.data[0];
+    if(d.national_id){
+      const r=await db.from('care_cases').select(fields).ilike('national_id',d.national_id).limit(2);
+      if(r.error)throw r.error;
+      if(r.data&&r.data[0])d._match=r.data[0];
+    }
+    if(!d._match && d.case_name && d.birth_date){
+      const r=await db.from('care_cases').select(fields).eq('case_name',d.case_name).eq('birth_date',d.birth_date).limit(5);
+      if(r.error)throw r.error;
+      d._potential=r.data||[];
+    }
+    if(!d._match && d._caseNoConflict)d._match=d._caseNoConflict;
+    if(d._match)d._existing=await htmlLoadExistingSnapshot(d._match.id);
+  }
+  function htmlContactRow(r={}){
+    return `<div class="contact-row" data-contact-row>
+      <div class="mini-field"><label>姓名</label><input data-contact-name value="${escapeHTML(r.contact_name||'')}"></div><div class="mini-field"><label>關係</label><input data-contact-rel value="${escapeHTML(r.relationship||'')}"></div><div class="mini-field"><label>電話</label><input data-contact-phone value="${escapeHTML(r.phone||'')}"></div><button class="btn sm" type="button" data-del-contact>刪除</button>
+      <div class="contact-flags"><label><input type="checkbox" data-contact-primary ${r.is_primary_contact?'checked':''}>主要聯絡人</label><label><input type="checkbox" data-contact-caregiver ${r.is_primary_caregiver?'checked':''}>主要照顧者</label><label><input type="checkbox" data-contact-secondary ${r.is_secondary_caregiver?'checked':''}>次要照顧者</label></div>
+    </div>`;
+  }
+  function htmlContactsEditor(rows){
+    return `<div id="htmlContactEditor" class="contact-editor">${(rows||[]).map(r=>htmlContactRow(r)).join('')}</div><div style="margin-top:7px"><button id="htmlAddContact" class="btn sm" type="button">＋ 新增聯絡人</button></div>`;
+  }
+  function htmlReadContacts(){return [...document.querySelectorAll('[data-contact-row]')].map(r=>({contact_name:r.querySelector('[data-contact-name]').value.trim(),relationship:r.querySelector('[data-contact-rel]').value.trim(),phone:r.querySelector('[data-contact-phone]').value.trim(),is_primary_contact:r.querySelector('[data-contact-primary]').checked,is_primary_caregiver:r.querySelector('[data-contact-caregiver]').checked,is_secondary_caregiver:r.querySelector('[data-contact-secondary]').checked,notes:''})).filter(x=>x.contact_name);}
+  function htmlServiceEditor(rows){
+    return `<div id="htmlServiceEditor" class="service-editor">${(rows||[]).map((r,i)=>`<div class="service-row" data-service-row>
+      <div class="mini-field"><label>類別</label><input data-svc-group value="${escapeHTML(r.service_group||'')}"></div><div class="mini-field"><label>服務碼</label><input data-svc-code value="${escapeHTML(r.service_code||'')}"></div><div class="mini-field wide"><label>服務名稱</label><input data-svc-name value="${escapeHTML(r.service_name||'')}"></div><div class="mini-field"><label>核定量</label><input data-svc-qty type="number" step="0.01" value="${r.approved_quantity??''}"></div><div class="mini-field"><label>單價</label><input data-svc-price type="number" step="0.01" value="${r.unit_price??''}"></div><div class="mini-field"><label>小計</label><input data-svc-subtotal type="number" step="0.01" value="${r.subtotal??''}"></div><button class="btn sm" type="button" data-del-service="${i}">刪除</button>
+    </div>`).join('')}</div><div style="margin-top:7px"><button id="htmlAddService" class="btn sm" type="button">＋ 新增服務</button></div>`;
+  }
+  function htmlReadServices(){return [...document.querySelectorAll('[data-service-row]')].map(r=>({service_group:r.querySelector('[data-svc-group]').value.trim(),service_code:r.querySelector('[data-svc-code]').value.trim().toUpperCase(),service_name:r.querySelector('[data-svc-name]').value.trim(),approved_quantity:r.querySelector('[data-svc-qty]').value,unit_price:r.querySelector('[data-svc-price]').value,subtotal:r.querySelector('[data-svc-subtotal]').value,valid_from:'',valid_to:''})).filter(x=>x.service_code);}
+  function htmlBudgetEditor(rows){
+    const list=rows||[];
+    const body=list.map(function(r){
+      return '<div class="budget-row" data-budget-row>'+
+        '<div class="mini-field"><label>類別</label><input data-budget-category value="'+escapeHTML(r.category||'')+'"></div>'+
+        '<div class="mini-field"><label>給付額度</label><input data-budget-limit type="number" step="0.01" value="'+(r.benefit_limit??'')+'"></div>'+
+        '<div class="mini-field"><label>擬定總計</label><input data-budget-planned type="number" step="0.01" value="'+(r.planned_total??'')+'"></div>'+
+        '<div class="mini-field"><label>剩餘額度</label><input data-budget-remaining type="number" step="0.01" value="'+(r.remaining_amount??'')+'"></div>'+
+        '<button class="btn sm" type="button" data-del-budget>刪除</button></div>';
+    }).join('');
+    return '<div id="htmlBudgetEditor" class="budget-editor">'+body+'</div><div style="margin-top:7px"><button id="htmlAddBudget" class="btn sm" type="button">＋ 新增額度</button></div>';
+  }
+  function htmlReadBudgets(){
+    return [...document.querySelectorAll('[data-budget-row]')].map(function(r){
+      return {category:r.querySelector('[data-budget-category]').value.trim().toUpperCase(),benefit_limit:r.querySelector('[data-budget-limit]').value,planned_total:r.querySelector('[data-budget-planned]').value,remaining_amount:r.querySelector('[data-budget-remaining]').value,valid_from:'',valid_to:''};
+    }).filter(function(x){return x.category;});
+  }
+  function htmlBindBudgetEditControls(){
+    function bindDelete(){
+      document.querySelectorAll('[data-del-budget]').forEach(function(b){
+        if(b.dataset.bound)return;
+        b.dataset.bound='1';
+        b.addEventListener('click',function(){var row=b.closest('[data-budget-row]');if(row)row.remove();});
+      });
+    }
+    var add=$('htmlAddBudget');
+    if(add&&!add.dataset.bound){
+      add.dataset.bound='1';
+      add.addEventListener('click',function(){
+        var host=$('htmlBudgetEditor');
+        if(host)host.insertAdjacentHTML('beforeend','<div class="budget-row" data-budget-row><div class="mini-field"><label>類別</label><input data-budget-category></div><div class="mini-field"><label>給付額度</label><input data-budget-limit type="number" step="0.01"></div><div class="mini-field"><label>擬定總計</label><input data-budget-planned type="number" step="0.01"></div><div class="mini-field"><label>剩餘額度</label><input data-budget-remaining type="number" step="0.01"></div><button class="btn sm" type="button" data-del-budget>刪除</button></div>');
+        bindDelete();
+      });
+    }
+    bindDelete();
+  }
+
+  function htmlDiffDisplay(v){
+    if(v===null||v===undefined||v==='')return '—';
+    return String(v);
+  }
+  function htmlDiffPlanDate(v){
+    return v?rocDate(v+'T00:00:00'):'—';
+  }
+  function htmlBuildImportDiff(d){
+    const ex=d._existing;
+    if(!ex||!ex.caseData)return '<div class="diff-empty">尚未選擇要更新的既有個案。</div>';
+    const old=ex.caseData, rows=[];
+    const add=function(label,a,b,allowEmpty){
+      if(!allowEmpty&&(b===null||b===undefined||String(b).trim()===''))return;
+      if(String(a??'')===String(b??''))return;
+      rows.push({label:label,oldValue:htmlDiffDisplay(a),newValue:htmlDiffDisplay(b)});
+    };
+    add('姓名',old.case_name,d.case_name);
+    add('出生日期',old.birth_date,d.birth_date);
+    add('性別',old.gender,d.gender);
+    add('電話',old.phone,d.phone);
+    add('地址',old.address,d.address);
+    add('CMS',old.cms_level,d.cms_level);
+    add('身分類別',old.identity_type,d.identity_type);
+    add('是否身障',old.has_disability===true?'是':old.has_disability===false?'否':'',d.has_disability===true?'是':d.has_disability===false?'否':'');
+    add('是否原住民',old.is_indigenous===true?'是':old.is_indigenous===false?'否':'',d.is_indigenous===true?'是':d.is_indigenous===false?'否':'');
+    add('原住民族別',old.indigenous_group,d.indigenous_group);
+    add('長照福利身分',old.welfare_identity,d.welfare_identity);
+    add('自負擔比例',old.copay_rate!=null?old.copay_rate+'%':'',d.copay_rate!=null?d.copay_rate+'%':'');
+    add('A單位',old.a_unit_name,d.a_unit_name);
+    add('A個管',old.case_manager_name,d.case_manager_name);
+    add('A個管電話',old.case_manager_phone,d.case_manager_phone);
+    add('照專／評估人員',old.assessor_name,d.assessor_name);
+
+    const oldDate=ex.plan&&ex.plan.plan_date?ex.plan.plan_date:'';
+    const newDate=d.care_plan&&d.care_plan.plan_date?d.care_plan.plan_date:'';
+    if(oldDate!==newDate&&(oldDate||newDate))rows.push({label:'計畫日期',oldValue:htmlDiffPlanDate(oldDate),newValue:htmlDiffPlanDate(newDate)});
+
+    const oldSvc=new Map((ex.services||[]).map(function(x){return [String(x.service_code||'').toUpperCase(),x];}));
+    const newSvc=new Map((d.services||[]).map(function(x){return [String(x.service_code||'').toUpperCase(),x];}));
+    const svcCodes=new Set([].concat([...oldSvc.keys()],[...newSvc.keys()]));
+    svcCodes.forEach(function(code){
+      const a=oldSvc.get(code),b=newSvc.get(code);
+      const fmt=function(x){if(!x)return '未核定';return '數量 '+htmlDiffDisplay(x.approved_quantity)+'／單價 '+htmlDiffDisplay(x.unit_price);};
+      if(!a||!b||String(a.approved_quantity??'')!==String(b.approved_quantity??'')||String(a.unit_price??'')!==String(b.unit_price??'')){
+        rows.push({label:'服務 '+code,oldValue:fmt(a),newValue:fmt(b)});
+      }
+    });
+
+    const oldBud=new Map((ex.budgets||[]).map(function(x){return [String(x.category||'').toUpperCase(),x];}));
+    const newBud=new Map((d.budgets||[]).map(function(x){return [String(x.category||'').toUpperCase(),x];}));
+    const budCats=new Set([].concat([...oldBud.keys()],[...newBud.keys()]));
+    budCats.forEach(function(cat){
+      const a=oldBud.get(cat),b=newBud.get(cat);
+      const fmt=function(x){if(!x)return '無';return '額度 '+htmlDiffDisplay(x.benefit_limit)+'／擬定 '+htmlDiffDisplay(x.planned_total)+'／剩餘 '+htmlDiffDisplay(x.remaining_amount);};
+      if(!a||!b||String(a.benefit_limit??'')!==String(b.benefit_limit??'')||String(a.planned_total??'')!==String(b.planned_total??'')||String(a.remaining_amount??'')!==String(b.remaining_amount??'')){
+        rows.push({label:'額度 '+cat,oldValue:fmt(a),newValue:fmt(b)});
+      }
+    });
+
+    let note='';
+    if(oldDate&&newDate&&newDate<oldDate)note='<div class="import-warning">本次照管平台照顧計畫日期早於目前使用版本。確認匯入後會保存為歷史版本，不會取代目前使用版本。</div>';
+    else if(oldDate&&newDate&&newDate>oldDate)note='<div class="html-import-status" style="margin-bottom:8px">本次照管平台照顧計畫日期較新；確認匯入後將成為目前使用版本。</div>';
+    if(!rows.length)return note+'<div class="diff-empty">與目前資料相比，未偵測到主要欄位差異。</div>';
+    return note+'<div class="html-import-status" style="margin:0 0 8px">左側為目前使用資料，右側為本次 HTML 辨識資料。</div><div class="import-diff">'+rows.map(function(r){return '<div class="diff-row"><div class="diff-label">'+escapeHTML(r.label)+'</div><div class="diff-value">'+escapeHTML(r.oldValue)+'</div><div class="diff-arrow">→</div><div class="diff-value">'+escapeHTML(r.newValue)+'</div></div>';}).join('')+'</div>';
+  }
+  function htmlPlanPreview(plan){const entries=Object.entries(plan?.sections||{});return `<div class="html-plan-preview">${entries.length?entries.map(([k,v])=>`<details><summary>${escapeHTML(k)}</summary><pre>${escapeHTML(v)}</pre></details>`).join(''):'<div class="html-import-status">未辨識到照管平台照顧計畫文字區塊。</div>'}</div>`;}
+  function htmlOpenPreview(d){
+    const exact=d._match; const potential=!exact?(d._potential||[]):[];
+    let warning='';
+    if(exact)warning=`<div class="import-warning">系統找到既有個案：${escapeHTML(exact.case_no||'未編號')}｜${escapeHTML(exact.case_name)}。確認後將更新 HTML 來源資料，家訪、電訪、班表、服務狀態與內部紀錄不會被覆蓋。</div>`;
+    else if(potential.length)warning=`<div class="import-warning">找到姓名＋生日相同的可能個案。請在下方決定是否更新既有個案；若確定是不同人，可建立新個案。</div>`;
+    const me=state.profile?.role==='supervisor';
+    openModal({title:'確認 HTML 匯入資料',large:true,confirmText:'確認匯入',html:`${warning}
+      ${(exact||potential.length)?`<div class="import-section">變更預覽</div><div id="hiDiffBox">${exact?htmlBuildImportDiff(d):'<div class="diff-empty">請先選擇要更新的既有個案，系統會顯示差異。</div>'}</div>`:''}
+      <div class="import-section">機構管理資料</div><div class="import-preview-grid"><div class="field"><label>個案編號 *</label><input id="hiCaseNo" value="${escapeHTML(d.case_no||'')}"></div><div class="field"><label>負責督導 *</label><select id="hiSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions(d.supervisor_id||'')}</select></div>${potential.length?`<div class="field full"><label>可能相同個案</label><select id="hiPotentialMatch"><option value="">建立為新個案</option>${potential.map(x=>`<option value="${x.id}">更新：${escapeHTML(x.case_no||'未編號')}｜${escapeHTML(x.case_name)}</option>`).join('')}</select></div>`:''}</div>
+      <div class="import-section">基本資料</div><div class="import-preview-grid"><div class="field"><label>姓名 *</label><input id="hiName" value="${escapeHTML(d.case_name||'')}"></div><div class="field"><label>身分證字號</label><input id="hiNational" value="${escapeHTML(d.national_id||'')}"></div><div class="field"><label>出生日期</label><input id="hiBirth" type="date" value="${escapeHTML(d.birth_date||'')}"></div><div class="field"><label>性別</label><select id="hiGender"><option value="">未辨識</option><option value="男" ${d.gender==='男'?'selected':''}>男</option><option value="女" ${d.gender==='女'?'selected':''}>女</option></select></div><div class="field full"><label>地址</label><input id="hiAddress" value="${escapeHTML(d.address||'')}"></div><div class="field"><label>個案電話</label><input id="hiPhone" value="${escapeHTML(d.phone||'')}"></div><div class="field"><label>CMS</label><input id="hiCms" value="${escapeHTML(d.cms_level||'')}"></div><div class="field"><label>身分類別／長照資格</label><input id="hiIdentity" value="${escapeHTML(d.identity_type||'')}"></div><div class="field"><label>是否身障</label><select id="hiDisability"><option value="">未辨識</option><option value="true" ${d.has_disability===true?'selected':''}>是</option><option value="false" ${d.has_disability===false?'selected':''}>否</option></select></div><div class="field"><label>是否原住民</label><select id="hiIndigenous"><option value="">未辨識</option><option value="true" ${d.is_indigenous===true?'selected':''}>是</option><option value="false" ${d.is_indigenous===false?'selected':''}>否</option></select></div><div class="field"><label>原住民族別</label><input id="hiIndigenousGroup" value="${escapeHTML(d.indigenous_group||'')}"></div><div class="field"><label>長照福利身分</label><select id="hiWelfareIdentity">${htmlWelfareOptions(d.welfare_identity||'')}</select></div><div class="field"><label>自負擔比例（%）</label><input id="hiCopayRate" type="number" readonly value="${d.copay_rate??''}"><div class="help">依長照福利身分自動帶入</div></div><div class="field"><label>A單位</label><input id="hiAUnit" value="${escapeHTML(d.a_unit_name||'')}"></div><div class="field"><label>A個管</label><input id="hiManager" value="${escapeHTML(d.case_manager_name||'')}"></div><div class="field"><label>A個管電話</label><input id="hiManagerPhone" value="${escapeHTML(d.case_manager_phone||'')}"></div><div class="field"><label>照專／評估人員</label><input id="hiAssessor" value="${escapeHTML(d.assessor_name||'')}"></div></div>
+      <div class="import-section">聯絡人／照顧者</div>${htmlContactsEditor(d.contacts||[])}
+      <div class="import-section">核定服務</div>${htmlServiceEditor(d.services||[])}
+      <div class="import-section">額度資料</div>${htmlBudgetEditor(d.budgets||[])}
+      <div class="import-section">照管平台照顧計畫</div><div class="html-import-status">計畫日期：${d.care_plan?.plan_date?rocDate(d.care_plan.plan_date+'T00:00:00'):'未辨識'}　家訪：${d.care_plan?.home_visit_date?rocDate(d.care_plan.home_visit_date+'T00:00:00'):'—'}　電聯：${d.care_plan?.phone_contact_date?rocDate(d.care_plan.phone_contact_date+'T00:00:00'):'—'}</div>${htmlPlanPreview(d.care_plan)}`,
+      onConfirm:()=>htmlSavePreview(d,exact?.id||null)});
+    htmlBindCaseNoInput('hiCaseNo');
+    htmlBindContactEditControls();
+    htmlBindServiceEditControls();
+    htmlBindBudgetEditControls();
+    htmlBindWelfareCopay('hiWelfareIdentity','hiCopayRate');
+    htmlBindIndigenousGroup('hiIndigenous','hiIndigenousGroup');
+    const potentialSelect=$('hiPotentialMatch');
+    if(potentialSelect){
+      potentialSelect.addEventListener('change',async function(e){
+        const box=$('hiDiffBox');
+        if(!box)return;
+        if(!e.target.value){
+          d._existing=null;
+          box.innerHTML='<div class="diff-empty">請先選擇要更新的既有個案，系統會顯示差異。</div>';
+          return;
+        }
+        box.innerHTML='<div class="diff-empty">正在讀取既有資料…</div>';
+        try{
+          d._existing=await htmlLoadExistingSnapshot(e.target.value);
+          box.innerHTML=htmlBuildImportDiff(d);
+        }catch(err){
+          box.innerHTML='<div class="import-warning">差異資料讀取失敗，請重新選擇或重新開啟匯入畫面。</div>';
+        }
+      });
+    }
+  }
+
+  async function htmlSavePreview(d,exactMatchId){
+    const caseNo=htmlNormalizeCaseNo($('hiCaseNo').value), name=$('hiName').value.trim(); $('hiCaseNo').value=caseNo; const supervisor=state.profile?.role==='supervisor'?state.profile.id:$('hiSupervisor').value;
+    const usageType=d.service_usage_type||'', paymentMethod=d.payment_method||'';
+    if(!caseNo||!name||!supervisor||!usageType){toast('個案編號、姓名、負責督導與服務類別為必填','warn');return false;}
+    const potential=$('hiPotentialMatch')?.value||''; const matchId=exactMatchId||potential||'';
+    const file=d._file; showLoading(true); let path='';
+    try{
+      const safeNo=caseNo.replace(/[^A-Za-z0-9_-]/g,'_'); const ext=/\.htm$/i.test(file.name)?'htm':'html'; path=`${safeNo}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const up=await db.storage.from(CASE_HTML_BUCKET).upload(path,file,{contentType:'text/html',upsert:false}); if(up.error)throw up.error;
+      const payload={case_no:caseNo,case_name:name,national_id:$('hiNational').value.trim().toUpperCase(),birth_date:$('hiBirth').value,gender:$('hiGender').value,address:$('hiAddress').value.trim(),phone:$('hiPhone').value.trim(),cms_level:$('hiCms').value.trim(),identity_type:$('hiIdentity').value.trim(),has_disability:$('hiDisability').value,is_indigenous:$('hiIndigenous').value,indigenous_group:$('hiIndigenousGroup').value.trim(),welfare_identity:$('hiWelfareIdentity').value.trim(),copay_rate:$('hiCopayRate').value,assessment_date:d.assessment_date||'',plan_approval_date:d.plan_approval_date||'',a_unit_name:$('hiAUnit').value.trim(),case_manager_name:$('hiManager').value.trim(),case_manager_phone:$('hiManagerPhone').value.trim(),assessor_name:$('hiAssessor').value.trim(),supervisor_id:supervisor,service_usage_type:usageType,payment_method:paymentMethod||'',contacts:htmlReadContacts(),services:htmlReadServices(),budgets:htmlReadBudgets(),care_plan:d.care_plan||{},source_ca110_id:d.source_ca110_id||'',source_hash:d.source_hash||'',file_name:file.name,storage_path:path,warnings:d.warnings||[],match_case_id:matchId};
+      if(d.lives_alone!==null)payload.lives_alone=d.lives_alone;
+      const r=await db.rpc('import_case_html_data',{payload}); if(r.error)throw r.error;
+      if(r.data?.action==='duplicate'){await db.storage.from(CASE_HTML_BUCKET).remove([path]);closeModal();toast('這份 HTML 已經匯入過，未重複建立資料。','warn');navigate('cases');return true;}
+      closeModal();toast(r.data?.action==='updated'?(r.data?.care_plan_id&&!r.data?.plan_is_current?'既有個案已更新；本次照管平台照顧計畫已保存為歷史版本':'既有個案已更新'):'個案已建立','success');navigate('cases');return true;
+    }catch(err){if(path)try{await db.storage.from(CASE_HTML_BUCKET).remove([path]);}catch(_){ }console.error(err);toast('HTML 匯入失敗：'+(err?.message||err),'error');return false;}finally{showLoading(false);}
+  }
+  function htmlOpenManualModal(){
+    const me=state.profile?.role==='supervisor';
+    openModal({title:'手動建立個案',confirmText:'建立個案',large:true,html:`<div class="import-preview-grid"><div class="field"><label>個案編號 *</label><input id="hmCaseNo" placeholder="例如：115C00001"></div><div class="field"><label>負責督導 *</label><select id="hmSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions('')}</select></div><div class="field"><label>服務類別 *</label><select id="hmUsageType"><option value="">請選擇</option><option value="居家">居家</option><option value="喘息">喘息</option><option value="居家+喘息">居家+喘息</option></select></div><div class="field"><label>繳款方式</label><select id="hmPaymentMethod"><option value="">未設定</option><option value="銀行匯款">銀行匯款</option><option value="超商繳款">超商繳款</option><option value="現金繳費">現金繳費</option><option value="不收費">不收費</option></select><div class="help">非必填</div></div><div class="field"><label>姓名 *</label><input id="hmName"></div><div class="field"><label>身分證字號</label><input id="hmNational"></div><div class="field"><label>出生日期</label><input id="hmBirth" type="date"></div><div class="field"><label>性別</label><select id="hmGender"><option value=""></option><option>男</option><option>女</option></select></div><div class="field full"><label>地址</label><input id="hmAddress"></div><div class="field"><label>電話</label><input id="hmPhone"></div><div class="field"><label>CMS</label><input id="hmCms"></div><div class="field"><label>是否身障</label><select id="hmDisability"><option value="">未設定</option><option value="true">是</option><option value="false">否</option></select></div><div class="field"><label>是否原住民</label><select id="hmIndigenous"><option value="">未設定</option><option value="true">是</option><option value="false">否</option></select></div><div class="field"><label>原住民族別</label><input id="hmIndigenousGroup"></div><div class="field"><label>長照福利身分</label><select id="hmWelfareIdentity">${htmlWelfareOptions('')}</select></div><div class="field"><label>自負擔比例（%）</label><input id="hmCopayRate" type="number" readonly><div class="help">依長照福利身分自動帶入</div></div></div>`,onConfirm:async()=>{
+      const caseNo=htmlNormalizeCaseNo($('hmCaseNo').value),name=$('hmName').value.trim(),supervisor=me?state.profile.id:$('hmSupervisor').value,usageType=$('hmUsageType').value,paymentMethod=$('hmPaymentMethod').value;$('hmCaseNo').value=caseNo;if(!caseNo||!name||!supervisor||!usageType){toast('個案編號、姓名、負責督導與服務類別為必填','warn');return false;}
+      showLoading(true);try{const r=await db.from('care_cases').insert({case_no:caseNo,case_name:name,supervisor_id:supervisor,national_id:$('hmNational').value.trim().toUpperCase()||null,birth_date:$('hmBirth').value||null,gender:$('hmGender').value||null,address:$('hmAddress').value.trim()||null,phone:$('hmPhone').value.trim()||null,cms_level:$('hmCms').value.trim()||null,has_disability:$('hmDisability').value===''?null:$('hmDisability').value==='true',is_indigenous:$('hmIndigenous').value===''?null:$('hmIndigenous').value==='true',indigenous_group:$('hmIndigenousGroup').value.trim()||null,welfare_identity:$('hmWelfareIdentity').value.trim()||null,copay_rate:$('hmCopayRate').value===''?null:Number($('hmCopayRate').value),service_usage_type:usageType,payment_method:paymentMethod||null,service_status:'active',created_by:state.user.id}).select('id').single();if(r.error)throw r.error;const a=await db.from('case_supervisor_assignments').insert({case_id:r.data.id,supervisor_id:supervisor,assigned_from:new Date().toISOString().slice(0,10),is_current:true,created_by:state.user.id});if(a.error)throw a.error;closeModal();toast('個案已建立','success');navigate('cases');return true;}catch(err){toast('建立個案失敗：'+(err?.message||err),'error');return false;}finally{showLoading(false);}
+    }});
+    htmlBindCaseNoInput('hmCaseNo');
+    htmlBindWelfareCopay('hmWelfareIdentity','hmCopayRate');
+    htmlBindIndigenousGroup('hmIndigenous','hmIndigenousGroup');
+  }
+  async function htmlViewOriginal(path,fileName){
+    showLoading(true);try{const r=await db.storage.from(CASE_HTML_BUCKET).download(path);if(r.error)throw r.error;const text=await r.data.text();const blob=new Blob([text],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);window.open(url,'_blank','noopener');setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(err){toast('讀取原始 HTML 失敗：'+(err?.message||err),'error');}finally{showLoading(false);}
+  }
+  function htmlCanEditCase(c){
+    var role=state.profile && state.profile.role;
+    return ['business_manager','organization_manager','admin'].includes(role) || (role==='supervisor' && c && c.supervisor_id===state.profile.id);
+  }
+
+  function htmlSelected(value,current){
+    return value===current?' selected':'';
+  }
+
+  async function htmlReturnToCaseList(message,type){
+    if(window.currentCaseDetailId&&typeof htmlOpenCaseDetailPage==='function'){
+      return htmlRefreshCaseDetail(window.currentCaseDetailId,message,type,window.currentCaseDetailTab||'overview');
+    }
+    if(message) toast(message,type||'success');
+    closeModal();
+    await htmlGetCaseVisitsApi().loadCaseVisitData(true);
+    navigate('cases');
+  }
+
+  function htmlBindContactEditControls(){
+    function bindDelete(){
+      document.querySelectorAll('[data-del-contact]').forEach(function(b){
+        if(b.dataset.bound)return;
+        b.dataset.bound='1';
+        b.addEventListener('click',function(){ var row=b.closest('[data-contact-row]'); if(row)row.remove(); });
+      });
+    }
+    var add=$('htmlAddContact');
+    if(add) add.addEventListener('click',function(){
+      var host=$('htmlContactEditor');
+      if(host) host.insertAdjacentHTML('beforeend',htmlContactRow({}));
+      bindDelete();
+    });
+    bindDelete();
+  }
+
+  function htmlBindServiceEditControls(){
+    function bindDelete(){
+      document.querySelectorAll('[data-del-service]').forEach(function(b){
+        if(b.dataset.bound)return;
+        b.dataset.bound='1';
+        b.addEventListener('click',function(){ var row=b.closest('[data-service-row]'); if(row)row.remove(); });
+      });
+    }
+    var add=$('htmlAddService');
+    if(add && !add.dataset.bound){
+      add.dataset.bound='1';
+      add.addEventListener('click',function(){
+        var host=$('htmlServiceEditor');
+        if(host) host.insertAdjacentHTML('beforeend',
+          '<div class="service-row" data-service-row>'+
+          '<div class="mini-field"><label>類別</label><input data-svc-group></div>'+
+          '<div class="mini-field"><label>服務碼</label><input data-svc-code></div>'+
+          '<div class="mini-field wide"><label>服務名稱</label><input data-svc-name></div>'+
+          '<div class="mini-field"><label>核定量</label><input data-svc-qty type="number" step="0.01"></div>'+
+          '<div class="mini-field"><label>單價</label><input data-svc-price type="number" step="0.01"></div>'+
+          '<div class="mini-field"><label>小計</label><input data-svc-subtotal type="number" step="0.01"></div>'+
+          '<button class="btn sm" type="button" data-del-service>刪除</button></div>'
+        );
+        bindDelete();
+      });
+    }
+    bindDelete();
+  }
+
+  async function htmlOpenCaseEdit(caseId){
+    showLoading(true);
+    try{
+      var results=await Promise.all([
+        db.from('care_cases').select('*').eq('id',caseId).maybeSingle(),
+        db.from('case_contacts').select('*').eq('case_id',caseId).order('is_primary_contact',{ascending:false}).order('created_at')
+      ]);
+      var cRes=results[0], ctRes=results[1];
+      if(cRes.error)throw cRes.error;
+      if(ctRes.error)throw ctRes.error;
+      var c=cRes.data;
+      if(!c)return;
+      var lockSupervisor=state.profile && state.profile.role==='supervisor';
+      var html=[
+        '<div class="import-section">機構管理資料</div>',
+        '<div class="import-preview-grid">',
+          '<div class="field"><label>個案編號 *</label><input id="editCaseNo" value="'+escapeHTML(c.case_no||'')+'"></div>',
+          '<div class="field"><label>負責督導 *</label><select id="editSupervisor" '+(lockSupervisor?'disabled':'')+'>'+htmlSupervisorOptions(c.supervisor_id||'')+'</select></div>',
+          '<div class="field"><label>服務類別 *</label><select id="editUsage">',
+            '<option value="">請選擇</option>',
+            '<option value="居家"'+htmlSelected('居家',c.service_usage_type)+'>居家</option>',
+            '<option value="喘息"'+htmlSelected('喘息',c.service_usage_type)+'>喘息</option>',
+            '<option value="居家+喘息"'+htmlSelected('居家+喘息',c.service_usage_type)+'>居家+喘息</option>',
+          '</select></div>',
+          '<div class="field"><label>繳款方式</label><select id="editPayment">',
+            '<option value=""'+htmlSelected('',c.payment_method||'')+'>未設定</option>',
+            '<option value="銀行匯款"'+htmlSelected('銀行匯款',c.payment_method)+'>銀行匯款</option>',
+            '<option value="超商繳款"'+htmlSelected('超商繳款',c.payment_method)+'>超商繳款</option>',
+            '<option value="現金繳費"'+htmlSelected('現金繳費',c.payment_method)+'>現金繳費</option>',
+            '<option value="不收費"'+htmlSelected('不收費',c.payment_method)+'>不收費</option>',
+          '</select></div>',
+          '<div class="field"><label>服務狀態</label><select id="editStatus">',
+            '<option value="active"'+htmlSelected('active',c.service_status||'active')+'>服務中</option>',
+            '<option value="suspended"'+htmlSelected('suspended',c.service_status)+'>暫停</option>',
+            '<option value="closed"'+htmlSelected('closed',c.service_status)+'>已結案</option>',
+          '</select></div>',
+        '</div>',
+        '<div class="import-section">基本資料</div>',
+        '<div class="import-preview-grid">',
+          '<div class="field"><label>姓名 *</label><input id="editName" value="'+escapeHTML(c.case_name||'')+'"></div>',
+          '<div class="field"><label>身分證字號</label><input id="editNational" value="'+escapeHTML(c.national_id||'')+'"></div>',
+          '<div class="field"><label>出生日期</label><input id="editBirth" type="date" value="'+escapeHTML(c.birth_date||'')+'"></div>',
+          '<div class="field"><label>性別</label><select id="editGender"><option value=""></option><option value="男"'+htmlSelected('男',c.gender)+'>男</option><option value="女"'+htmlSelected('女',c.gender)+'>女</option></select></div>',
+          '<div class="field"><label>電話</label><input id="editPhone" value="'+escapeHTML(c.phone||'')+'"></div>',
+          '<div class="field"><label>CMS</label><input id="editCms" value="'+escapeHTML(c.cms_level||'')+'"></div>',
+          '<div class="field full"><label>地址</label><input id="editAddress" value="'+escapeHTML(c.address||'')+'"></div>',
+          '<div class="field"><label>身分類別／長照資格</label><input id="editIdentity" value="'+escapeHTML(c.identity_type||'')+'"></div>',
+          '<div class="field"><label>是否身障</label><select id="editDisability"><option value="">未設定</option><option value="true"'+htmlSelected('true',c.has_disability===true?'true':c.has_disability===false?'false':'')+'>是</option><option value="false"'+htmlSelected('false',c.has_disability===true?'true':c.has_disability===false?'false':'')+'>否</option></select></div>',
+          '<div class="field"><label>是否原住民</label><select id="editIndigenous"><option value="">未設定</option><option value="true"'+htmlSelected('true',c.is_indigenous===true?'true':c.is_indigenous===false?'false':'')+'>是</option><option value="false"'+htmlSelected('false',c.is_indigenous===true?'true':c.is_indigenous===false?'false':'')+'>否</option></select></div>',
+          '<div class="field"><label>原住民族別</label><input id="editIndigenousGroup" value="'+escapeHTML(c.indigenous_group||'')+'"></div>',
+          '<div class="field"><label>長照福利身分</label><select id="editWelfareIdentity">'+htmlWelfareOptions(c.welfare_identity||'')+'</select></div>',
+          '<div class="field"><label>自負擔比例（%）</label><input id="editCopayRate" type="number" readonly value="'+(c.copay_rate??'')+'"><div class="help">依長照福利身分自動帶入</div></div>',
+          '<div class="field"><label>A單位</label><input id="editAUnit" value="'+escapeHTML(c.a_unit_name||'')+'"></div>',
+          '<div class="field"><label>A個管</label><input id="editManager" value="'+escapeHTML(c.case_manager_name||'')+'"></div>',
+          '<div class="field"><label>A個管電話</label><input id="editManagerPhone" value="'+escapeHTML(c.case_manager_phone||'')+'"></div>',
+          '<div class="field"><label>照專／評估人員</label><input id="editAssessor" value="'+escapeHTML(c.assessor_name||'')+'"></div>',
+          '<div class="field full"><label>備註</label><textarea id="editNotes">'+escapeHTML(c.notes||'')+'</textarea></div>',
+        '</div>',
+        '<div class="import-section">聯絡人／照顧者</div>',
+        htmlContactsEditor(ctRes.data||[])
+      ].join('');
+
+      openModal({title:'編輯個案資料',confirmText:'儲存',large:true,html:html,onConfirm:async function(){
+        var caseNo=htmlNormalizeCaseNo($('editCaseNo').value);
+        $('editCaseNo').value=caseNo;
+        var payload={
+          case_id:caseId,case_no:caseNo,case_name:$('editName').value.trim(),
+          supervisor_id:lockSupervisor?c.supervisor_id:$('editSupervisor').value,
+          service_usage_type:$('editUsage').value,payment_method:$('editPayment').value,
+          service_status:$('editStatus').value,national_id:$('editNational').value.trim().toUpperCase(),
+          birth_date:$('editBirth').value,gender:$('editGender').value,address:$('editAddress').value.trim(),
+          phone:$('editPhone').value.trim(),cms_level:$('editCms').value.trim(),
+          identity_type:$('editIdentity').value.trim(),has_disability:$('editDisability').value,is_indigenous:$('editIndigenous').value,indigenous_group:$('editIndigenousGroup').value.trim(),welfare_identity:$('editWelfareIdentity').value.trim(),copay_rate:$('editCopayRate').value,a_unit_name:$('editAUnit').value.trim(),
+          case_manager_name:$('editManager').value.trim(),case_manager_phone:$('editManagerPhone').value.trim(),
+          assessor_name:$('editAssessor').value.trim(),notes:$('editNotes').value.trim(),
+          contacts:htmlReadContacts()
+        };
+        if(!payload.case_no||!payload.case_name||!payload.supervisor_id||!payload.service_usage_type){
+          toast('個案編號、姓名、負責督導與服務類別為必填','warn');return false;
+        }
+        showLoading(true);
+        try{
+          var r=await db.rpc('update_case_profile',{payload:payload});
+          if(r.error)throw r.error;
+          await htmlReturnToCaseList('個案資料已更新','success');
+          return true;
+        }catch(err){
+          toast('更新個案失敗：'+(err&&err.message?err.message:err),'error');return false;
+        }finally{showLoading(false);}
+      }});
+      htmlBindCaseNoInput('editCaseNo');
+      htmlBindWelfareCopay('editWelfareIdentity','editCopayRate');
+      htmlBindIndigenousGroup('editIndigenous','editIndigenousGroup');
+      htmlBindContactEditControls();
+    }catch(err){
+      toast('讀取個案資料失敗：'+(err&&err.message?err.message:err),'error');
+    }finally{showLoading(false);}
+  }
+
+
+  async function htmlOpenPlanEdit(planId){
+    showLoading(true);
+    try{
+      var results=await Promise.all([
+        db.from('care_plans').select('*').eq('id',planId).maybeSingle(),
+        db.from('case_approved_services').select('*').eq('care_plan_id',planId).order('service_group').order('service_code'),
+        db.from('service_budgets').select('*').eq('care_plan_id',planId).order('category')
+      ]);
+      var pRes=results[0], sRes=results[1], bRes=results[2];
+      if(pRes.error)throw pRes.error;
+      if(sRes.error)throw sRes.error;
+      if(bRes.error)throw bRes.error;
+      var p=pRes.data;
+      if(!p)return;
+      if(p.is_voided){toast('此照管平台照顧計畫版本已作廢，僅能查看，不能再編輯。','warn');return;}
+      var sections=Object.assign({},p.sections||{});
+      if(!Object.keys(sections).length){
+        ['計畫簡述','計畫目標','計畫執行規劃','其他備註'].forEach(function(k){sections[k]='';});
+      }
+      var sectionHtml=Object.keys(sections).map(function(k){
+        return '<div class="field full"><label>'+escapeHTML(k)+'</label><textarea data-plan-section-key="'+escapeHTML(k)+'" style="min-height:110px">'+escapeHTML(sections[k]||'')+'</textarea></div>';
+      }).join('');
+      var html=[
+        '<div class="html-import-note">修改的是系統整理後的照管平台照顧計畫版本；原始 HTML 來源檔不會被更動。若修改「計畫日期」，系統會重新判斷哪一版是目前最新版本。</div>',
+        '<div class="import-preview-grid">',
+          '<div class="field"><label>計畫日期</label><input id="editPlanDate" type="date" value="'+escapeHTML(p.plan_date||'')+'"></div>',
+          '<div class="field"><label>偕同訪視者</label><input id="editVisitWith" value="'+escapeHTML(p.visit_with||'')+'"></div>',
+          '<div class="field"><label>電聯日期</label><input id="editPhoneDate" type="date" value="'+escapeHTML(p.phone_contact_date||'')+'"></div>',
+          '<div class="field"><label>家訪日期</label><input id="editHomeDate" type="date" value="'+escapeHTML(p.home_visit_date||'')+'"></div>',
+          sectionHtml,
+        '</div>',
+        '<div class="import-section">此版本核定服務</div>',
+        htmlServiceEditor(sRes.data||[]),
+        '<div class="import-section">此版本額度資料</div>',
+        htmlBudgetEditor(bRes.data||[])
+      ].join('');
+
+      openModal({title:'編輯照管平台照顧計畫版本',confirmText:'儲存版本',large:true,html:html,onConfirm:async function(){
+        var sec={};
+        document.querySelectorAll('[data-plan-section-key]').forEach(function(el){sec[el.dataset.planSectionKey]=el.value.trim();});
+        var raw=Object.keys(sec).filter(function(k){return sec[k];}).map(function(k){return k+'\n'+sec[k];}).join('\n\n');
+        var payload={
+          plan_id:planId,
+          plan_date:$('editPlanDate').value,
+          phone_contact_date:$('editPhoneDate').value,
+          home_visit_date:$('editHomeDate').value,
+          visit_with:$('editVisitWith').value.trim(),
+          sections:sec,
+          raw_plan_text:raw,
+          services:htmlReadServices(),
+          budgets:htmlReadBudgets()
+        };
+        showLoading(true);
+        try{
+          var r=await db.rpc('update_care_plan_version',{payload:payload});
+          if(r.error)throw r.error;
+          await htmlReturnToCaseList(r.data&&r.data.is_current?'照管平台照顧計畫已更新，這一版目前為最新版本':'照管平台照顧計畫版本已更新','success');
+          return true;
+        }catch(err){
+          toast('更新照管平台照顧計畫失敗：'+(err&&err.message?err.message:err),'error');return false;
+        }finally{showLoading(false);}
+      }});
+      htmlBindServiceEditControls();
+      htmlBindBudgetEditControls();
+    }catch(err){
+      toast('讀取照管平台照顧計畫失敗：'+(err&&err.message?err.message:err),'error');
+    }finally{showLoading(false);}
+  }
+
+
+  async function htmlOpenPlanVoid(planId){
+    var data=htmlCaseDetailState.data;
+    var p=data&&data.plans?data.plans.find(function(x){return x.id===planId;}):null;
+    if(!p){toast('找不到照管平台照顧計畫版本','error');return;}
+    if(p.is_voided){toast('此版本已作廢','warn');return;}
+    openModal({
+      title:'作廢照管平台照顧計畫',
+      confirmText:'確認作廢',
+      large:false,
+      html:[
+        '<div class="import-warning">作廢後不會刪除原始 HTML、核定服務、額度及版本紀錄；此版本將不再參與「目前使用」判斷。</div>',
+        '<div class="field"><label>計畫日期</label><input value="'+escapeHTML(htmlFormatPlanDate(p.plan_date))+'" disabled></div>',
+        '<div class="field"><label>作廢原因 *</label><textarea id="voidPlanReason" style="min-height:100px" placeholder="例如：誤上傳、重複版本、資料版本錯誤"></textarea></div>'
+      ].join(''),
+      onConfirm:async function(){
+        var reason=$('voidPlanReason').value.trim();
+        if(!reason){toast('請填寫作廢原因','warn');return false;}
+        showLoading(true);
+        try{
+          var r=await db.rpc('void_care_plan_version',{payload:{plan_id:planId,reason:reason}});
+          if(r.error)throw r.error;
+          htmlCaseDetailState.selectedPlanId=planId;
+          await htmlRefreshCaseDetail(p.case_id,'照管平台照顧計畫版本已作廢','success','platform-plan');
+          return true;
+        }catch(err){
+          toast('作廢失敗：'+(err&&err.message?err.message:err),'error');
+          return false;
+        }finally{showLoading(false);}
+      }
+    });
+  }
+
+  async function htmlOpenExistingPlanUpload(caseId){
+    showLoading(true);
+    try{
+      var r=await db.from('care_cases').select('*').eq('id',caseId).maybeSingle();
+      if(r.error)throw r.error;
+      var c=r.data;
+      if(!c)return;
+      if(!c.service_usage_type){
+        toast('請先編輯個案並設定服務類別，再上傳照管平台照顧計畫版本。','warn');return;
+      }
+      var html=[
+        '<div class="html-import-note">個案：<strong>'+escapeHTML(c.case_no||'—')+'　'+escapeHTML(c.case_name||'')+'</strong><br>可補上傳新、舊版本。系統以「計畫日期」判斷最新版本，不以上傳先後順序判斷。</div>',
+        '<div class="field"><label>照管平台照顧計畫 HTML *</label><div class="file-drop case-html-file-drop">',
+        '<input id="planVersionFile" type="file" accept=".html,.htm,text/html,application/xhtml+xml">',
+        '<div class="help">僅接受 HTML／HTM，單檔上限 10 MB。</div></div></div>',
+        '<div style="display:flex;justify-content:flex-end;margin-top:12px"><button id="parsePlanVersion" class="btn primary" type="button">解析並預覽</button></div>',
+        '<div id="planVersionStatus" class="html-import-status">尚未開始解析。</div>'
+      ].join('');
+      openModal({title:'上傳照管平台照顧計畫版本',showConfirm:false,large:true,html:html});
+      $('parsePlanVersion').addEventListener('click',async function(){
+        var file=$('planVersionFile').files[0];
+        if(!file){toast('請選擇 HTML 檔案','warn');return;}
+        if(!/\.html?$/i.test(file.name)){toast('檔案格式必須是 HTML 或 HTM','warn');return;}
+        if(file.size>10*1024*1024){toast('HTML 檔案不可超過 10 MB','warn');return;}
+        var status=$('planVersionStatus');
+        try{
+          status.textContent='正在解析 HTML…';
+          var source=await file.text();
+          var d=htmlParseDocument(source);
+          if(c.national_id&&d.national_id&&c.national_id.toUpperCase()!==d.national_id.toUpperCase()){
+            status.textContent='身分證字號與目前個案不一致，已停止匯入。';
+            toast('此 HTML 似乎不是這位個案的資料','error');return;
+          }
+          d._file=file;
+          d._source=source;
+          d.source_hash=await htmlSha256(file);
+          d.file_name=file.name;
+          d._existing=await htmlLoadExistingSnapshot(c.id);
+          htmlOpenExistingPlanPreview(c,d);
+        }catch(err){
+          status.textContent='解析失敗。';
+          toast('HTML 解析失敗：'+(err&&err.message?err.message:err),'error');
+        }
+      });
+    }catch(err){
+      toast('讀取個案資料失敗：'+(err&&err.message?err.message:err),'error');
+    }finally{showLoading(false);}
+  }
+
+  function htmlOpenExistingPlanPreview(c,d){
+    var planDate=d.care_plan&&d.care_plan.plan_date;
+    var warn=planDate?'':'<div class="import-warning">這份 HTML 未辨識到計畫日期；若個案已有含日期的版本，本次上傳不會取代目前版本。</div>';
+    var serviceHtml=(d.services||[]).length
+      ?(d.services||[]).map(function(x){return '<span class="approved-chip">'+escapeHTML(x.service_code)+(x.approved_quantity!=null?' ×'+escapeHTML(x.approved_quantity):'')+'</span>';}).join('')
+      :'<span style="font-size:11px;color:#667085">未辨識到核定服務</span>';
+    var html=[
+      warn,
+      '<div class="import-section">變更預覽</div>',
+      htmlBuildImportDiff(d),
+      '<div class="import-detail-grid">',
+        '<div class="import-detail-cell"><label>個案</label><div>'+escapeHTML(c.case_no||'—')+'　'+escapeHTML(c.case_name||'')+'</div></div>',
+        '<div class="import-detail-cell"><label>計畫日期</label><div>'+(planDate?rocDate(planDate+'T00:00:00'):'未辨識')+'</div></div>',
+        '<div class="import-detail-cell"><label>辨識服務數</label><div>'+String((d.services||[]).length)+' 項</div></div>',
+      '</div>',
+      '<div class="import-section">核定服務</div><div class="approved-chip-wrap">'+serviceHtml+'</div>',
+      '<div class="import-section">照管平台照顧計畫內容</div>',
+      htmlPlanPreview(d.care_plan)
+    ].join('');
+    openModal({title:'確認照管平台照顧計畫版本',confirmText:'確認上傳',large:true,html:html,onConfirm:function(){
+      return htmlSaveExistingPlanVersion(c,d);
+    }});
+  }
+
+  async function htmlSaveExistingPlanVersion(c,d){
+    var file=d._file;
+    var path='';
+    showLoading(true);
+    try{
+      var safeNo=htmlNormalizeCaseNo(c.case_no||c.id);
+      var ext=/\.htm$/i.test(file.name)?'htm':'html';
+      path=safeNo+'/plans/'+Date.now()+'-'+crypto.randomUUID()+'.'+ext;
+      var up=await db.storage.from(CASE_HTML_BUCKET).upload(path,file,{contentType:'text/html',upsert:false});
+      if(up.error)throw up.error;
+      var payload={
+        case_no:c.case_no,
+        case_name:d.case_name||c.case_name,
+        national_id:d.national_id||c.national_id||'',
+        birth_date:d.birth_date||c.birth_date||'',
+        gender:d.gender||c.gender||'',
+        address:d.address||c.address||'',
+        phone:d.phone||c.phone||'',
+        cms_level:d.cms_level||c.cms_level||'',
+        identity_type:d.identity_type||c.identity_type||'',
+        has_disability:d.has_disability!==null&&d.has_disability!==undefined?d.has_disability:c.has_disability,
+        is_indigenous:d.is_indigenous!==null&&d.is_indigenous!==undefined?d.is_indigenous:c.is_indigenous,
+        indigenous_group:d.indigenous_group||c.indigenous_group||'',
+        welfare_identity:d.welfare_identity||c.welfare_identity||'',
+        copay_rate:d.copay_rate!==null&&d.copay_rate!==undefined?d.copay_rate:(c.copay_rate??''),
+        assessment_date:d.assessment_date||'',
+        plan_approval_date:d.plan_approval_date||'',
+        a_unit_name:d.a_unit_name||c.a_unit_name||'',
+        case_manager_name:d.case_manager_name||c.case_manager_name||'',
+        case_manager_phone:d.case_manager_phone||c.case_manager_phone||'',
+        assessor_name:d.assessor_name||c.assessor_name||'',
+        supervisor_id:c.supervisor_id,
+        service_usage_type:c.service_usage_type,
+        payment_method:c.payment_method||'',
+        contacts:d.contacts||[],
+        services:d.services||[],
+        budgets:d.budgets||[],
+        care_plan:d.care_plan||{},
+        source_ca110_id:d.source_ca110_id||'',
+        source_hash:d.source_hash||'',
+        file_name:file.name,
+        storage_path:path,
+        warnings:d.warnings||[],
+        match_case_id:c.id
+      };
+      if(d.lives_alone!==null)payload.lives_alone=d.lives_alone;
+      var r=await db.rpc('import_case_html_data',{payload:payload});
+      if(r.error)throw r.error;
+      if(r.data&&r.data.action==='duplicate'){
+        await db.storage.from(CASE_HTML_BUCKET).remove([path]);
+        await htmlReturnToCaseList('這份 HTML 已經上傳過，未重複建立版本。','warn');
+      }else{
+        await htmlReturnToCaseList(r.data&&r.data.plan_is_current?'照管平台照顧計畫已上傳，系統判定此版為目前最新版本':'照管平台照顧計畫已上傳並保存為歷史版本，目前最新版本不變','success');
+      }
+      return true;
+    }catch(err){
+      if(path){try{await db.storage.from(CASE_HTML_BUCKET).remove([path]);}catch(_e){}}
+      toast('上傳照管平台照顧計畫失敗：'+(err&&err.message?err.message:err),'error');
+      return false;
+    }finally{showLoading(false);}
+  }
+
+  var htmlCaseDetailState={caseId:null,tab:'overview',selectedPlanId:null,data:null};
+  function htmlGetCaseVisitsApi(){
+    var api=window.caseVisitsApi;
+    if(!api)throw new Error('個案訪視模組尚未載入，請重新整理頁面後再試。');
+    return api;
+  }
+
+  function htmlCaseServiceStatus(c){
+    var key=c&&c.service_status?c.service_status:'active';
+    if(key==='suspended')return {key:'due',text:'暫停'};
+    if(key==='closed')return {key:'overdue',text:'已結案'};
+    return {key:'normal',text:'服務中'};
+  }
+
+  function htmlCaseField(label,value,wide){
+    var v=(value===null||value===undefined||value==='')?'—':value;
+    return '<div class="case-data-item'+(wide?' wide':'')+'"><label>'+escapeHTML(label)+'</label><div>'+escapeHTML(String(v))+'</div></div>';
+  }
+
+  function htmlCaseEmpty(text){
+    return '<div class="case-empty-inline">'+escapeHTML(text)+'</div>';
+  }
+
+  function htmlFormatPlanDate(value){
+    return value?rocDate(value+'T00:00:00'):'日期未辨識';
+  }
+
+  async function htmlLoadCaseDetailData(caseId){
+    var results=await Promise.all([
+      db.from('care_cases').select('*').eq('id',caseId).maybeSingle(),
+      db.from('case_contacts').select('*').eq('case_id',caseId).order('is_primary_contact',{ascending:false}).order('created_at'),
+      db.from('case_approved_services').select('*').eq('case_id',caseId).order('is_current',{ascending:false}).order('service_group').order('service_code'),
+      db.from('care_plans').select('*').eq('case_id',caseId).order('plan_date',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}),
+      db.from('service_budgets').select('*').eq('case_id',caseId).order('is_current',{ascending:false}).order('category'),
+      db.from('case_imports').select('*').eq('case_id',caseId).order('imported_at',{ascending:false}),
+      db.from('case_visits').select('*').eq('case_id',caseId).order('visit_date',{ascending:false}).order('created_at',{ascending:false})
+    ]);
+    var err=results.find(function(x){return x.error;});
+    if(err&&err.error)throw err.error;
+    var data={
+      c:results[0].data,contacts:results[1].data||[],services:results[2].data||[],plans:results[3].data||[],
+      budgets:results[4].data||[],imports:results[5].data||[],visits:results[6].data||[]
+    };
+    if(!data.c)throw new Error('找不到個案資料');
+    state.caseVisits=(state.caseVisits||[]).filter(function(v){return v.case_id!==caseId;}).concat(data.visits);
+    return data;
+  }
+
+  function htmlBuildCaseTimeline(data){
+    var items=[];
+    var c=data.c;
+    if(c.created_at)items.push({date:c.created_at,title:'建立個案',text:'個案主檔建立於系統。',sort:new Date(c.created_at).getTime()});
+    (data.imports||[]).forEach(function(x){
+      items.push({date:x.imported_at,title:x.import_type==='new_case'?'HTML 建立個案':'匯入照管平台資料',text:x.file_name||'HTML 匯入',sort:new Date(x.imported_at).getTime()});
+    });
+    (data.plans||[]).forEach(function(p){
+      var d=p.plan_date?p.plan_date+'T12:00:00':p.created_at;
+      items.push({date:d,title:'照管平台照顧計畫'+(p.is_current?'（目前使用）':p.is_voided?'（已作廢）':''),text:(p.plan_date?'計畫日期 '+htmlFormatPlanDate(p.plan_date):'未辨識計畫日期')+(p.is_voided&&p.void_reason?'｜作廢原因：'+p.void_reason:''),sort:new Date(d||0).getTime()});
+      if(p.is_voided&&p.voided_at)items.push({date:p.voided_at,title:'作廢照管平台照顧計畫',text:'版本 '+htmlFormatPlanDate(p.plan_date)+'｜原因：'+(p.void_reason||'未填寫')+(p.voided_by_staff_id?'｜作廢者：'+htmlGetCaseVisitsApi().caseStaffName(p.voided_by_staff_id):''),sort:new Date(p.voided_at).getTime()});
+    });
+    (data.visits||[]).forEach(function(v){
+      var d=(v.visit_date||'1970-01-01')+'T12:00:00';
+      items.push({date:d,title:htmlGetCaseVisitsApi().caseTypeLabel(v.visit_type),text:v.summary||v.follow_up_item||'訪視紀錄',sort:new Date(d).getTime()});
+    });
+    return items.sort(function(a,b){return b.sort-a.sort;});
+  }
+
+  function htmlRenderOverviewTab(data){
+    var c=data.c, currentPlan=data.plans.find(function(p){return p.is_current;})||null;
+    var currentServices=data.services.filter(function(x){return x.is_current;});
+    var currentBudgets=data.budgets.filter(function(x){return x.is_current;});
+    var latest=data.visits[0]||null;
+    var pending=htmlGetCaseVisitsApi().pendingFollowUpsFor(c.id);
+    var visitStatus=htmlGetCaseVisitsApi().caseStatusInfo(c);
+    var serviceStatus=htmlCaseServiceStatus(c);
+    var contact=data.contacts.find(function(x){return x.is_primary_contact;})||data.contacts[0]||null;
+    var serviceText=currentServices.length?currentServices.map(function(x){return x.service_code+(x.approved_quantity!=null?' ×'+x.approved_quantity:'');}).join('、'):'—';
+    var budgetText=currentBudgets.length?currentBudgets.map(function(x){return x.category+' 剩餘 '+(x.remaining_amount??'—');}).join('、'):'—';
+    return [
+      '<div class="case-overview-grid">',
+        '<div class="case-overview-card"><label>服務狀態</label><strong>'+escapeHTML(serviceStatus.text)+'</strong><small>服務類別：'+escapeHTML(c.service_usage_type||'—')+'</small></div>',
+        '<div class="case-overview-card"><label>CMS</label><strong>'+escapeHTML(c.cms_level||'—')+'</strong><small>目前照管平台計畫：'+escapeHTML(currentPlan?htmlFormatPlanDate(currentPlan.plan_date):'尚無')+'</small></div>',
+        '<div class="case-overview-card"><label>負責督導</label><strong>'+escapeHTML(htmlGetCaseVisitsApi().caseStaffName(c.supervisor_id))+'</strong><small>'+escapeHTML(c.a_unit_name||'A單位未設定')+'</small></div>',
+        '<div class="case-overview-card"><label>訪視／追蹤</label><strong>'+escapeHTML(visitStatus.text)+'</strong><small>待追蹤 '+pending.length+' 項</small></div>',
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>目前核定服務</strong><button class="btn sm" data-case-tab-jump="services">查看服務核定</button></div>',
+        currentServices.length?'<div class="approved-chip-wrap">'+currentServices.map(function(x){return '<span class="approved-chip">'+escapeHTML(x.service_code)+(x.service_name?' '+escapeHTML(x.service_name):'')+(x.approved_quantity!=null?' ×'+escapeHTML(x.approved_quantity):'')+'</span>';}).join('')+'</div>':htmlCaseEmpty('尚無目前核定服務'),
+        '<div class="case-panel-note" style="margin-top:9px">額度：'+escapeHTML(budgetText)+'</div>',
+      '</div>',
+      '<div class="case-overview-grid">',
+        '<div class="case-panel-card" style="grid-column:span 2"><div class="case-panel-head"><strong>最近訪視</strong><button class="btn sm" data-case-tab-jump="visits">查看家訪／電訪</button></div>',
+          latest?'<div><strong>'+rocDate(latest.visit_date+'T00:00:00')+'　'+escapeHTML(htmlGetCaseVisitsApi().caseTypeLabel(latest.visit_type))+'</strong><div class="case-panel-note" style="margin-top:6px">'+escapeHTML(latest.summary||'未填摘要')+'</div></div>':htmlCaseEmpty('尚無訪視紀錄'),
+        '</div>',
+        '<div class="case-panel-card" style="grid-column:span 2"><div class="case-panel-head"><strong>主要聯絡資訊</strong><button class="btn sm" data-case-tab-jump="basic">查看基本資料</button></div>',
+          contact?'<div><strong>'+escapeHTML(contact.contact_name)+(contact.relationship?'・'+escapeHTML(contact.relationship):'')+'</strong><div class="case-panel-note" style="margin-top:6px">'+escapeHTML(contact.phone||'未填電話')+(contact.is_primary_caregiver?'｜主要照顧者':'')+'</div></div>':htmlCaseEmpty('尚無聯絡人資料'),
+        '</div>',
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>目前照管平台照顧計畫</strong><button class="btn sm" data-case-tab-jump="platform-plan">查看版本</button></div>',
+        currentPlan?'<div class="case-data-grid">'+htmlCaseField('計畫日期',htmlFormatPlanDate(currentPlan.plan_date))+htmlCaseField('A單位',currentPlan.a_unit_name||c.a_unit_name)+htmlCaseField('A個管',currentPlan.case_manager_name||c.case_manager_name)+htmlCaseField('核定服務',serviceText,true)+'</div>':htmlCaseEmpty('尚無照管平台照顧計畫'),
+      '</div>'
+    ].join('');
+  }
+
+  function htmlRenderBasicTab(data){
+    var c=data.c;
+    var status=htmlCaseServiceStatus(c);
+    var contacts=data.contacts.length?data.contacts.map(function(x){
+      return '<tr><td>'+escapeHTML(x.contact_name)+'</td><td>'+escapeHTML(x.relationship||'—')+'</td><td>'+escapeHTML(x.phone||'—')+'</td><td>'+[x.is_primary_contact?'主要聯絡人':'',x.is_primary_caregiver?'主要照顧者':'',x.is_secondary_caregiver?'次要照顧者':''].filter(Boolean).join('、')+'</td></tr>';
+    }).join(''):'<tr><td colspan="4">尚無聯絡人資料</td></tr>';
+    return [
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>基本資料</strong>'+(htmlCanEditCase(c)?'<button id="caseEditProfile" class="btn sm primary">編輯個案</button>':'')+'</div>',
+        '<div class="case-data-grid">',
+          htmlCaseField('個案編號',c.case_no),htmlCaseField('姓名',c.case_name),htmlCaseField('身分證字號',c.national_id),
+          htmlCaseField('出生日期',c.birth_date?rocDate(c.birth_date+'T00:00:00'):'—'),htmlCaseField('性別',c.gender),htmlCaseField('CMS',c.cms_level),
+          htmlCaseField('電話',c.phone),htmlCaseField('服務狀態',status.text),htmlCaseField('服務類別',c.service_usage_type),
+          htmlCaseField('繳款方式',c.payment_method||'未設定'),htmlCaseField('負責督導',htmlGetCaseVisitsApi().caseStaffName(c.supervisor_id)),htmlCaseField('身分類別／長照資格',c.identity_type),
+          htmlCaseField('是否身障',c.has_disability===true?'是':c.has_disability===false?'否':'—'),htmlCaseField('是否原住民',c.is_indigenous===true?'是':c.is_indigenous===false?'否':'—'),htmlCaseField('原住民族別',c.indigenous_group),
+          htmlCaseField('長照福利身分',c.welfare_identity),htmlCaseField('自負擔比例',c.copay_rate!=null?c.copay_rate+'%':'—'),
+          htmlCaseField('地址',c.address,true),htmlCaseField('A單位',c.a_unit_name),htmlCaseField('A個管',c.case_manager_name),htmlCaseField('A個管電話',c.case_manager_phone),
+          htmlCaseField('照專／評估人員',c.assessor_name),htmlCaseField('備註',c.notes,true),
+        '</div>',
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>聯絡人／照顧者</strong></div><div style="overflow-x:auto"><table class="case-table-simple"><thead><tr><th>姓名</th><th>關係</th><th>電話</th><th>角色</th></tr></thead><tbody>'+contacts+'</tbody></table></div></div>'
+    ].join('');
+  }
+
+  function htmlRenderPlatformPlanTab(data){
+    var c=data.c;
+    var current=data.plans.find(function(p){return p.is_current;})||null;
+    var firstValid=data.plans.find(function(p){return !p.is_voided;})||null;
+    var selected=data.plans.find(function(p){return p.id===htmlCaseDetailState.selectedPlanId;})||current||firstValid||data.plans[0]||null;
+    if(selected)htmlCaseDetailState.selectedPlanId=selected.id;
+    var nav=data.plans.length?data.plans.map(function(p){
+      var src=data.imports.find(function(x){return x.id===p.source_import_id;});
+      var status=p.is_current?'　目前使用':p.is_voided?'　已作廢':'';
+      return '<button class="case-version-btn '+(selected&&selected.id===p.id?'active ':'')+(p.is_voided?'voided':'')+'" data-plan-select="'+p.id+'"><strong>'+escapeHTML(htmlFormatPlanDate(p.plan_date))+status+'</strong><small>'+(src&&src.file_name?'來源：'+escapeHTML(src.file_name):'系統版本')+(p.is_voided&&p.void_reason?'｜作廢：'+escapeHTML(p.void_reason):'')+'</small></button>';
+    }).join(''):htmlCaseEmpty('尚無照管平台照顧計畫版本');
+    var actions='';
+    if(selected&&htmlCanEditCase(c)&&!selected.is_voided){
+      actions='<div class="section-actions"><button class="btn sm" data-edit-plan="'+selected.id+'">編輯此版本</button><button class="btn sm" data-void-plan="'+selected.id+'">作廢此版本</button></div>';
+    }
+    var voidInfo=selected&&selected.is_voided
+      ?'<div class="import-warning" style="margin-top:10px"><strong>此版本已作廢</strong><br>原因：'+escapeHTML(selected.void_reason||'未填寫')+(selected.voided_at?'<br>作廢時間：'+escapeHTML(rocDate(selected.voided_at)):'')+(selected.voided_by_staff_id?'<br>作廢者：'+escapeHTML(htmlGetCaseVisitsApi().caseStaffName(selected.voided_by_staff_id)):'')+'</div>'
+      :'';
+    var detail=selected?[
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>'+escapeHTML(htmlFormatPlanDate(selected.plan_date))+(selected.is_current?'　<span class="plan-current-badge">目前使用</span>':selected.is_voided?'　<span class="plan-void-badge">已作廢</span>':'')+'</strong>'+actions+'</div>',
+        '<div class="case-data-grid">'+htmlCaseField('計畫日期',htmlFormatPlanDate(selected.plan_date))+htmlCaseField('電聯日期',selected.phone_contact_date?rocDate(selected.phone_contact_date+'T00:00:00'):'—')+htmlCaseField('家訪日期',selected.home_visit_date?rocDate(selected.home_visit_date+'T00:00:00'):'—')+htmlCaseField('偕同訪視者',selected.visit_with,true)+'</div>',
+        voidInfo,
+        '<div style="margin-top:12px">'+htmlPlanPreview(selected)+'</div>',
+      '</div>'
+    ].join(''):htmlCaseEmpty('尚無照管平台照顧計畫');
+    return [
+      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>照管平台照顧計畫版本</strong><div class="case-panel-note">版本依計畫日期判斷目前使用；已作廢版本保留供追溯，但不參與目前版本判斷。</div></div>'+(htmlCanEditCase(c)?'<button id="caseUploadPlan" class="btn sm primary">＋ 上傳照管平台照顧計畫 HTML</button>':'')+'</div></div>',
+      '<div class="case-version-grid"><div class="case-version-nav">'+nav+'</div><div>'+detail+'</div></div>'
+    ].join('');
+  }
+
+  function htmlRenderServicesTab(data){
+    var c=data.c,current=data.plans.find(function(p){return p.is_current;})||null;
+    var services=current?data.services.filter(function(x){return x.care_plan_id===current.id;}):data.services.filter(function(x){return x.is_current;});
+    var budgets=current?data.budgets.filter(function(x){return x.care_plan_id===current.id;}):data.budgets.filter(function(x){return x.is_current;});
+    var serviceRows=services.length?services.map(function(x){return '<tr><td>'+escapeHTML(x.service_group||'—')+'</td><td><strong>'+escapeHTML(x.service_code||'')+'</strong></td><td>'+escapeHTML(x.service_name||'—')+'</td><td>'+escapeHTML(x.approved_quantity??'—')+'</td><td>'+escapeHTML(x.unit_price??'—')+'</td><td>'+escapeHTML(x.subtotal??'—')+'</td></tr>';}).join(''):'<tr><td colspan="6">尚無核定服務</td></tr>';
+    var budgetRows=budgets.length?budgets.map(function(x){return '<tr><td><strong>'+escapeHTML(x.category||'')+'</strong></td><td>'+escapeHTML(x.benefit_limit??'—')+'</td><td>'+escapeHTML(x.planned_total??'—')+'</td><td>'+escapeHTML(x.remaining_amount??'—')+'</td></tr>';}).join(''):'<tr><td colspan="4">尚無額度資料</td></tr>';
+    return [
+      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>目前服務核定</strong><div class="case-panel-note">'+(current?'對應 '+escapeHTML(htmlFormatPlanDate(current.plan_date))+' 的目前照管平台照顧計畫':'尚無目前照管平台照顧計畫')+'</div></div>'+(current&&htmlCanEditCase(c)?'<button class="btn sm" data-edit-plan="'+current.id+'">編輯核定內容</button>':'')+'</div>',
+        '<div style="overflow-x:auto"><table class="case-table-simple"><thead><tr><th>類別</th><th>服務碼</th><th>服務名稱</th><th>核定量</th><th>單價</th><th>小計</th></tr></thead><tbody>'+serviceRows+'</tbody></table></div>',
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>額度資料</strong></div><div style="overflow-x:auto"><table class="case-table-simple"><thead><tr><th>類別</th><th>給付額度</th><th>擬定總計</th><th>剩餘額度</th></tr></thead><tbody>'+budgetRows+'</tbody></table></div></div>'
+    ].join('');
+  }
+
+  function htmlRenderVisitsTab(data){
+    var c=data.c,pending=htmlGetCaseVisitsApi().pendingFollowUpsFor(c.id);
+    var rows=data.visits.length?data.visits.map(function(v){
+      var resolved=htmlGetCaseVisitsApi().isFollowUpResolved(v.id);
+      return '<div class="visit-item"><div class="visit-item-top"><div><strong>'+rocDate(v.visit_date+'T00:00:00')+'　'+escapeHTML(htmlGetCaseVisitsApi().caseTypeLabel(v.visit_type))+'</strong><div class="visit-item-sub">訪視人員：'+escapeHTML(htmlGetCaseVisitsApi().caseStaffName(v.visitor_staff_id))+(v.contact_person?'　聯絡／在場：'+escapeHTML(v.contact_person):'')+'</div></div>'+(v.follow_up_needed?'<span class="case-status '+(resolved?'normal':'followup')+'">'+(resolved?'已追蹤':'待追蹤')+'</span>':'')+'</div>'+(v.summary?'<div class="visit-summary">'+escapeHTML(v.summary)+'</div>':'')+(v.follow_up_needed?'<div class="followup-box">追蹤事項：'+escapeHTML(v.follow_up_item||'—')+'<br>預計追蹤：'+(v.follow_up_date?rocDate(v.follow_up_date+'T00:00:00'):'未設定')+'</div>':'')+'</div>';
+    }).join(''):htmlCaseEmpty('尚無家訪／電訪紀錄');
+    return [
+      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>家訪／電訪</strong><div class="case-panel-note">待追蹤 '+pending.length+' 項</div></div><div class="section-actions">'+(htmlCanEditCase(c)?'<button class="btn sm" data-add-visit="home">＋ 新增家訪</button><button class="btn sm primary" data-add-visit="phone">＋ 新增電訪</button>':'')+'</div></div>',
+        pending.length?'<div class="prior-followup" style="margin-bottom:10px"><strong>目前待追蹤 '+pending.length+' 項</strong><span>'+pending.map(function(v){return (v.follow_up_date?rocDate(v.follow_up_date+'T00:00:00'):'未排日期')+'｜'+escapeHTML(v.follow_up_item||'未填內容');}).join('<br>')+'</span></div>':'',
+        '<div class="visit-history">'+rows+'</div>',
+      '</div>'
+    ].join('');
+  }
+
+  function htmlRenderHistoryTab(data){
+    var timeline=htmlBuildCaseTimeline(data);
+    var rows=timeline.length?timeline.map(function(x){
+      var label=x.date?rocDate(x.date):'—';
+      return '<div class="case-timeline-item"><span class="case-timeline-dot"></span><div class="case-timeline-date">'+escapeHTML(label)+'</div><div class="case-timeline-title">'+escapeHTML(x.title)+'</div><div class="case-timeline-text">'+escapeHTML(x.text||'')+'</div></div>';
+    }).join(''):htmlCaseEmpty('尚無個案歷程');
+    return '<div class="case-panel-card"><div class="case-panel-head"><div><strong>個案歷程</strong><div class="case-panel-note">目前整合個案建立、HTML 匯入、照管平台照顧計畫版本與家訪／電訪。</div></div></div><div class="case-timeline">'+rows+'</div></div>';
+  }
+
+  function htmlRenderDocumentsTab(data){
+    var rows=data.imports.length?data.imports.map(function(x,i){
+      return '<div class="import-history-row"><div><strong>'+escapeHTML(x.file_name)+'</strong><small>'+rocDate(x.imported_at)+'・'+(x.import_type==='new_case'?'建立個案':'更新個案')+(x.detected_plan_date?'・計畫 '+htmlFormatPlanDate(x.detected_plan_date):'')+'</small></div><button class="btn sm" data-document-index="'+i+'">查看原始 HTML</button></div>';
+    }).join(''):htmlCaseEmpty('尚無原始 HTML 文件');
+    return '<div class="case-panel-card"><div class="case-panel-head"><div><strong>文件</strong><div class="case-panel-note">目前此頁收錄照管平台匯入的原始 HTML；機構其他文件仍維持既有文件流程。</div></div></div><div class="import-history">'+rows+'</div></div>';
+  }
+
+  function htmlRenderCaseDetailPanel(){
+    var data=htmlCaseDetailState.data;
+    if(!data)return;
+    var panel=$('caseDetailPanel');
+    if(!panel)return;
+    var tab=htmlCaseDetailState.tab;
+    if(tab==='basic')panel.innerHTML=htmlRenderBasicTab(data);
+    else if(tab==='platform-plan')panel.innerHTML=htmlRenderPlatformPlanTab(data);
+    else if(tab==='services')panel.innerHTML=htmlRenderServicesTab(data);
+    else if(tab==='visits')panel.innerHTML=htmlRenderVisitsTab(data);
+    else if(tab==='history')panel.innerHTML=htmlRenderHistoryTab(data);
+    else if(tab==='documents')panel.innerHTML=htmlRenderDocumentsTab(data);
+    else panel.innerHTML=htmlRenderOverviewTab(data);
+
+    document.querySelectorAll('[data-case-tab-jump]').forEach(function(btn){btn.addEventListener('click',function(){htmlSetCaseDetailTab(btn.dataset.caseTabJump);});});
+    var edit=$('caseEditProfile');if(edit)edit.addEventListener('click',function(){htmlOpenCaseEdit(data.c.id);});
+    var upload=$('caseUploadPlan');if(upload)upload.addEventListener('click',function(){htmlOpenExistingPlanUpload(data.c.id);});
+    document.querySelectorAll('[data-plan-select]').forEach(function(btn){btn.addEventListener('click',function(){htmlCaseDetailState.selectedPlanId=btn.dataset.planSelect;htmlRenderCaseDetailPanel();});});
+    document.querySelectorAll('[data-edit-plan]').forEach(function(btn){btn.addEventListener('click',function(){htmlOpenPlanEdit(btn.dataset.editPlan);});});
+    document.querySelectorAll('[data-void-plan]').forEach(function(btn){btn.addEventListener('click',function(){htmlOpenPlanVoid(btn.dataset.voidPlan);});});
+    document.querySelectorAll('[data-add-visit]').forEach(function(btn){btn.addEventListener('click',function(){htmlGetCaseVisitsApi().openVisitModal(data.c);setTimeout(function(){var sel=$('visitType');if(sel)sel.value=btn.dataset.addVisit;},0);});});
+    document.querySelectorAll('[data-document-index]').forEach(function(btn){btn.addEventListener('click',function(){var x=data.imports[Number(btn.dataset.documentIndex)];if(x)htmlViewOriginal(x.storage_path,x.file_name);});});
+  }
+
+  function htmlSetCaseDetailTab(tab){
+    htmlCaseDetailState.tab=tab||'overview';
+    window.currentCaseDetailTab=htmlCaseDetailState.tab;
+    document.querySelectorAll('.case-detail-tab').forEach(function(btn){btn.classList.toggle('active',btn.dataset.caseTab===htmlCaseDetailState.tab);});
+    htmlRenderCaseDetailPanel();
+  }
+
+  async function htmlOpenCaseDetailPage(caseId,tab,refresh){
+    window.currentCaseDetailId=caseId;
+    htmlCaseDetailState.caseId=caseId;
+    htmlCaseDetailState.tab=tab||window.currentCaseDetailTab||'overview';
+    window.currentCaseDetailTab=htmlCaseDetailState.tab;
+    state.page='cases';
+    $('topTitle').textContent='個案管理';
+    $('crumb').textContent='個案管理 / 個案資料';
+    if(!refresh)$('content').innerHTML='<div class="empty compact"><div class="icon">👤</div><h3>正在載入個案資料</h3><p>請稍候。</p></div>';
+    showLoading(true);
+    try{
+      await htmlGetCaseVisitsApi().loadCaseVisitData(true);
+      var data=await htmlLoadCaseDetailData(caseId);
+      htmlCaseDetailState.data=data;
+      var c=data.c,status=htmlCaseServiceStatus(c);
+      var current=data.plans.find(function(p){return p.is_current;})||null;
+      var firstValid=data.plans.find(function(p){return !p.is_voided;})||null;
+      if(!htmlCaseDetailState.selectedPlanId||!data.plans.some(function(p){return p.id===htmlCaseDetailState.selectedPlanId;}))htmlCaseDetailState.selectedPlanId=current?current.id:firstValid?firstValid.id:data.plans[0]?data.plans[0].id:null;
+      var tabs=[['overview','總覽'],['basic','基本資料'],['platform-plan','照管平台照顧計畫'],['services','服務核定'],['visits','家訪／電訪'],['history','個案歷程'],['documents','文件']];
+      $('crumb').textContent='個案管理 / '+c.case_name;
+      $('content').innerHTML=[
+        '<div class="case-page">',
+          '<div class="case-page-head">',
+            '<div class="case-page-title-wrap"><button id="caseBackToList" class="btn case-back-btn">← 返回</button><div><div class="case-page-title">'+escapeHTML(c.case_name||'未命名個案')+'</div><div class="case-page-sub">',
+              '<span class="case-meta-chip primary">'+escapeHTML(c.case_no||'未編號')+'</span>',
+              '<span class="case-meta-chip">'+escapeHTML(status.text)+'</span>',
+              '<span class="case-meta-chip">CMS '+escapeHTML(c.cms_level||'—')+'</span>',
+              '<span class="case-meta-chip">督導 '+escapeHTML(htmlGetCaseVisitsApi().caseStaffName(c.supervisor_id))+'</span>',
+              '<span class="case-meta-chip">'+escapeHTML(c.service_usage_type||'服務類別未設定')+'</span>',
+            '</div></div></div>',
+            '<div class="case-page-actions">'+(htmlCanEditCase(c)?'<button id="caseHeaderEdit" class="btn">編輯個案</button><button id="caseHeaderUpload" class="btn primary">＋ 上傳照管平台照顧計畫</button>':'')+'</div>',
+          '</div>',
+          '<div class="case-detail-tabs">'+tabs.map(function(t){return '<button class="case-detail-tab '+(htmlCaseDetailState.tab===t[0]?'active':'')+'" data-case-tab="'+t[0]+'">'+t[1]+'</button>';}).join('')+'</div>',
+          '<div id="caseDetailPanel" class="case-tab-panel"></div>',
+        '</div>'
+      ].join('');
+      $('caseBackToList').addEventListener('click',function(){window.currentCaseDetailId=null;window.currentCaseDetailTab=null;htmlCaseDetailState.data=null;navigate('cases');});
+      var headEdit=$('caseHeaderEdit');if(headEdit)headEdit.addEventListener('click',function(){htmlOpenCaseEdit(c.id);});
+      var headUpload=$('caseHeaderUpload');if(headUpload)headUpload.addEventListener('click',function(){htmlOpenExistingPlanUpload(c.id);});
+      document.querySelectorAll('[data-case-tab]').forEach(function(btn){btn.addEventListener('click',function(){htmlSetCaseDetailTab(btn.dataset.caseTab);});});
+      htmlRenderCaseDetailPanel();
+      window.scrollTo({top:0,behavior:'auto'});
+    }catch(err){
+      console.error(err);
+      $('content').innerHTML='<div class="empty"><div class="icon">⚠️</div><h3>個案資料載入失敗</h3><p>'+escapeHTML(err&&err.message?err.message:String(err))+'</p><button class="btn" onclick="navigate(\'cases\')">返回個案列表</button></div>';
+    }finally{showLoading(false);}
+  }
+
+  async function htmlRefreshCaseDetail(caseId,message,type,tab){
+    if(message)toast(message,type||'success');
+    closeModal();
+    return htmlOpenCaseDetailPage(caseId,tab||window.currentCaseDetailTab||'overview',true);
+  }
+  // 提供個案管理主模組使用的明確掛勾。
+  window.openCaseCreateFlow = htmlOpenFileModal;
+  window.openCaseDetailPage = htmlOpenCaseDetailPage;
+  window.refreshCaseDetailPage = htmlRefreshCaseDetail;
