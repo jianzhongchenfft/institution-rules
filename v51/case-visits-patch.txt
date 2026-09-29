@@ -20,10 +20,6 @@
     .case-status.overdue{background:#fef3f2;color:#b42318}
     .case-status.followup{background:#eff8ff;color:#175cd3}
     .case-status.unplanned{background:#f2f4f7;color:#667085}
-    .case-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:16px}
-    .case-detail-item{border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:#fafcfb;min-width:0}
-    .case-detail-label{font-size:10px;color:var(--muted);font-weight:800;margin-bottom:4px}
-    .case-detail-value{font-size:12.5px;font-weight:900;color:#344054;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .case-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:16px 0 9px}
     .case-section-title strong{font-size:13px}
     .visit-history{display:grid;gap:8px}
@@ -42,16 +38,15 @@
     .inline-check input{width:auto}
     .summary-tools{display:flex;justify-content:flex-end;margin-top:7px}
     .empty.compact{padding:30px 16px}
-    @media(max-width:1000px){.case-detail-grid{grid-template-columns:repeat(2,1fr)}}
-    @media(max-width:820px){.case-stats{grid-template-columns:repeat(2,1fr)}}
-    @media(max-width:560px){.case-toolbar>*{width:100%}.case-toolbar .searchbox{min-width:0}.case-stats{grid-template-columns:1fr 1fr}.case-detail-grid{grid-template-columns:1fr 1fr}}
+        @media(max-width:820px){.case-stats{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:560px){.case-toolbar>*{width:100%}.case-toolbar .searchbox{min-width:0}.case-stats{grid-template-columns:1fr 1fr}}
   `;
   document.head.appendChild(caseVisitStyle);
 
   const caseModule = modules.find(m=>m.id==='cases');
   if(caseModule){
     caseModule.ready = true;
-    caseModule.crumb = '個案家訪與電訪追蹤';
+    caseModule.crumb = '個案管理';
   }
 
   Object.assign(state, {
@@ -128,8 +123,8 @@
   }
 
   function currentCaseScope(){
-    let list = state.cases.filter(c=>c.service_status!=='closed');
-    const filter = state.caseSupervisorFilter || (state.profile?.role==='supervisor'?'mine':'all');
+    let list = [...state.cases];
+    const filter = state.caseSupervisorFilter || (state.profile?.can_supervise?'mine':'all');
     if(filter==='mine') list = list.filter(c=>c.supervisor_id===state.profile?.id);
     else if(filter!=='all') list = list.filter(c=>c.supervisor_id===filter);
     return list;
@@ -139,18 +134,21 @@
     if(!canUseCases()) return;
     if(!silent) showLoading(true);
     try{
-      const [staffRes,casesRes,visitsRes] = await Promise.all([
+      const [staffRes,casesRes,visitsRes,servicesRes] = await Promise.all([
         db.rpc('get_case_staff_directory'),
-        db.from('care_cases').select('id,case_name,supervisor_id,care_worker_name,open_date,cms_level,service_status,notes,created_at').order('case_name'),
-        db.from('case_visits').select('*').order('visit_date',{ascending:false}).order('created_at',{ascending:false})
+        db.from('care_cases').select('id,case_no,case_name,national_id,birth_date,gender,address,phone,supervisor_id,care_worker_name,open_date,cms_level,service_status,service_usage_type,payment_method,notes,created_at').order('case_no',{ascending:true,nullsFirst:false}).order('case_name'),
+        db.from('case_visits').select('*').order('visit_date',{ascending:false}).order('created_at',{ascending:false}),
+        db.from('case_approved_services').select('case_id,service_group,service_code,service_name,approved_quantity').eq('is_current',true).order('service_code')
       ]);
       if(staffRes.error) throw staffRes.error;
       if(casesRes.error) throw casesRes.error;
       if(visitsRes.error) throw visitsRes.error;
+      if(servicesRes.error) throw servicesRes.error;
       state.caseStaff = staffRes.data || [];
       state.cases = casesRes.data || [];
       state.caseVisits = visitsRes.data || [];
-      if(!state.caseSupervisorFilter) state.caseSupervisorFilter = state.profile?.role==='supervisor' ? 'mine' : 'all';
+      state.caseServices = servicesRes.data || [];
+      if(!state.caseSupervisorFilter) state.caseSupervisorFilter = state.profile?.can_supervise ? 'mine' : 'all';
       state.caseDataLoaded = true;
     }catch(err){
       console.error(err);
@@ -163,6 +161,8 @@
   const baseNavigateForCases = navigate;
   navigate = function(id){
     if(id!=='cases') return baseNavigateForCases(id);
+    window.currentCaseDetailId=null;
+    window.currentCaseDetailTab=null;
     const m = modules.find(x=>x.id==='cases') || modules[0];
     state.page = 'cases';
     renderNav();
@@ -178,13 +178,39 @@
     loadCaseVisitData().then(renderCaseVisitsPage);
   };
 
+  function currentServiceSummary(caseId){
+    const items=(state.caseServices||[]).filter(x=>x.case_id===caseId);
+    if(!items.length) return '—';
+    return items.map(x=>{
+      const qty=x.approved_quantity;
+      const qtyText=qty===null||qty===undefined||qty===''?'':` ×${Number(qty)%1===0?Number(qty):qty}`;
+      return `${x.service_code}${qtyText}`;
+    }).join('、');
+  }
+
+  function caseServiceStatusInfo(c){
+    const key=c.service_status||'active';
+    if(key==='suspended') return {key:'due',text:'暫停'};
+    if(key==='closed') return {key:'overdue',text:'已結案'};
+    return {key:'normal',text:'服務中'};
+  }
+
   function renderCaseVisitsPage(){
     if(state.page!=='cases') return;
-    const supervisors = state.caseStaff.filter(s=>s.role==='supervisor');
+    const supervisors = state.caseStaff.filter(s=>s.can_supervise||s.role==='supervisor');
     const scope = currentCaseScope();
+    const validServiceFilters=['all','active','suspended','closed'];
+    if(!validServiceFilters.includes(state.caseStatusFilter)) state.caseStatusFilter='all';
     const q = state.caseQuery.trim().toLowerCase();
-    let rows = scope.filter(c=>!q || c.case_name.toLowerCase().includes(q) || (c.care_worker_name||'').toLowerCase().includes(q) || caseStaffName(c.supervisor_id).toLowerCase().includes(q));
-    if(state.caseStatusFilter!=='all') rows = rows.filter(c=>caseStatusInfo(c).key===state.caseStatusFilter);
+    let rows = scope.filter(c=>{
+      if(!q) return true;
+      const services=(state.caseServices||[]).filter(x=>x.case_id===c.id).map(x=>`${x.service_code||''} ${x.service_name||''}`).join(' ');
+      return [
+        c.case_no,c.case_name,c.national_id,c.address,
+        caseStaffName(c.supervisor_id),services
+      ].some(v=>String(v||'').toLowerCase().includes(q));
+    });
+    if(state.caseStatusFilter!=='all') rows = rows.filter(c=>(c.service_status||'active')===state.caseStatusFilter);
 
     const now = new Date();
     const year = now.getFullYear(), month = now.getMonth();
@@ -194,118 +220,85 @@
 
     $('content').innerHTML = `
       <div class="page-head">
-        <div><h1>👤 個案家訪／電訪</h1><p>優先顯示自己的個案，也可切換查閱其他督導的個案與歷次訪視紀錄。</p></div>
+        <div><h1>👤 個案管理</h1><p>督導優先顯示自己的個案，也可切換查閱其他督導個案；可由照管平台 HTML 建立或更新個案資料。</p></div>
         <div class="actions"><button id="addCaseBtn" class="btn primary">＋ 新增個案</button></div>
       </div>
       <section class="case-stats">
-        <article class="stat-card"><div class="stat-head"><span>個案數</span><span class="stat-icon">👤</span></div><div class="stat-value">${scope.length}</div><div class="stat-foot">目前篩選督導的服務中個案</div></article>
+        <article class="stat-card"><div class="stat-head"><span>個案數</span><span class="stat-icon">👤</span></div><div class="stat-value">${scope.length}</div><div class="stat-foot">目前篩選範圍內的個案</div></article>
         <article class="stat-card"><div class="stat-head"><span>本月待訪</span><span class="stat-icon">📅</span></div><div class="stat-value">${monthDue}</div><div class="stat-foot">依紀錄設定的下次訪視日期</div></article>
         <article class="stat-card"><div class="stat-head"><span>待追蹤</span><span class="stat-icon">🔎</span></div><div class="stat-value">${followCount}</div><div class="stat-foot">尚未完成的追蹤事項</div></article>
-        <article class="stat-card"><div class="stat-head"><span>逾期</span><span class="stat-icon">⚠️</span></div><div class="stat-value">${overdueCount}</div><div class="stat-foot">訪視或追蹤日期已超過</div></article>
+        <article class="stat-card"><div class="stat-head"><span>訪視逾期</span><span class="stat-icon">⚠️</span></div><div class="stat-value">${overdueCount}</div><div class="stat-foot">訪視或追蹤日期已超過</div></article>
       </section>
       <div class="case-toolbar">
         <span class="case-filter-label">督導</span>
         <select id="caseSupervisorFilter">
-          ${state.profile?.role==='supervisor'?`<option value="mine" ${state.caseSupervisorFilter==='mine'?'selected':''}>我的個案</option>`:''}
+          ${state.profile?.can_supervise?`<option value="mine" ${state.caseSupervisorFilter==='mine'?'selected':''}>我的個案</option>`:''}
           <option value="all" ${state.caseSupervisorFilter==='all'?'selected':''}>全部個案</option>
           ${supervisors.map(s=>`<option value="${s.id}" ${state.caseSupervisorFilter===s.id?'selected':''}>${escapeHTML(s.display_name)}</option>`).join('')}
         </select>
-        <div class="searchbox"><input id="caseSearch" placeholder="搜尋個案、居服員或督導" value="${escapeHTML(state.caseQuery)}"></div>
+        <div class="searchbox"><input id="caseSearch" placeholder="搜尋個案編號、姓名、身分證、地址、督導或服務碼" value="${escapeHTML(state.caseQuery)}"></div>
         <select id="caseStatusFilter">
           <option value="all" ${state.caseStatusFilter==='all'?'selected':''}>全部狀態</option>
-          <option value="followup" ${state.caseStatusFilter==='followup'?'selected':''}>待追蹤</option>
-          <option value="due" ${state.caseStatusFilter==='due'?'selected':''}>即將到期</option>
-          <option value="overdue" ${state.caseStatusFilter==='overdue'?'selected':''}>逾期</option>
-          <option value="normal" ${state.caseStatusFilter==='normal'?'selected':''}>正常</option>
-          <option value="unplanned" ${state.caseStatusFilter==='unplanned'?'selected':''}>未排定</option>
+          <option value="active" ${state.caseStatusFilter==='active'?'selected':''}>服務中</option>
+          <option value="suspended" ${state.caseStatusFilter==='suspended'?'selected':''}>暫停</option>
+          <option value="closed" ${state.caseStatusFilter==='closed'?'selected':''}>已結案</option>
         </select>
         <button id="reloadCases" class="btn">↻ 重新整理</button>
       </div>
       <div id="caseList"></div>`;
 
     $('caseSupervisorFilter').addEventListener('change',e=>{state.caseSupervisorFilter=e.target.value;renderCaseVisitsPage();});
-    $('caseSearch').addEventListener('input',e=>{const pos=e.target.selectionStart;state.caseQuery=e.target.value;renderCaseVisitsPage();const i=$('caseSearch');if(i){i.focus();try{i.setSelectionRange(pos,pos);}catch(_){}}});
+    const caseSearchInput=$('caseSearch');
+    let caseSearchComposing=false;
+    const applyCaseSearch=(target)=>{
+      const pos=target.selectionStart;
+      state.caseQuery=target.value;
+      renderCaseVisitsPage();
+      const i=$('caseSearch');
+      if(i){
+        i.focus();
+        try{i.setSelectionRange(pos,pos);}catch(_){}
+      }
+    };
+    caseSearchInput.addEventListener('compositionstart',()=>{caseSearchComposing=true;});
+    caseSearchInput.addEventListener('compositionend',e=>{caseSearchComposing=false;applyCaseSearch(e.target);});
+    caseSearchInput.addEventListener('input',e=>{
+      if(caseSearchComposing || e.isComposing) return;
+      applyCaseSearch(e.target);
+    });
     $('caseStatusFilter').addEventListener('change',e=>{state.caseStatusFilter=e.target.value;renderCaseVisitsPage();});
     $('reloadCases').addEventListener('click',async()=>{await loadCaseVisitData();renderCaseVisitsPage();toast('已重新整理個案資料','success');});
-    $('addCaseBtn').addEventListener('click',openCaseModal);
+    $('addCaseBtn').addEventListener('click',()=>{
+      if(typeof window.openCaseCreateFlow==='function') window.openCaseCreateFlow();
+      else toast('新增個案模組尚未載入，請重新整理頁面後再試。','error');
+    });
 
     const list = $('caseList');
     if(!rows.length){
-      const extra = state.cases.length ? '請調整督導、狀態或搜尋條件。' : '目前尚未建立個案資料，可先新增個案後開始記錄家訪與電訪。';
+      const extra = state.cases.length ? '請調整督導、狀態或搜尋條件。' : '目前尚未建立個案資料，可由 HTML 匯入或手動建立個案。';
       list.innerHTML = `<div class="empty"><div class="icon">👤</div><h3>目前沒有可顯示的個案</h3><p>${extra}</p></div>`;
       return;
     }
 
-    list.innerHTML = `<div class="case-table-shell"><table class="case-table"><thead><tr><th>個案姓名</th><th>負責督導</th><th>最近訪視</th><th>類型</th><th>下次追蹤／訪視</th><th>狀態</th></tr></thead><tbody>${rows.map(c=>{
-      const latest=latestVisitFor(c.id);
-      const pending=pendingFollowUpsFor(c.id)[0];
-      const next=nextVisitFor(c.id);
-      const s=caseStatusInfo(c);
-      const nextText=pending ? `${pending.follow_up_date?rocDate(pending.follow_up_date+'T00:00:00'):'未排日期'}・${escapeHTML(pending.follow_up_item||'追蹤事項')}` : (next?rocDate(next+'T00:00:00'):'—');
-      return `<tr><td><button class="case-name-btn" data-case-id="${c.id}">${escapeHTML(c.case_name)}</button></td><td>${escapeHTML(caseStaffName(c.supervisor_id))}</td><td>${latest?rocDate(latest.visit_date+'T00:00:00'):'—'}</td><td>${latest?caseTypeLabel(latest.visit_type):'—'}</td><td>${nextText}</td><td><span class="case-status ${s.key}">${s.text}</span></td></tr>`;
+    list.innerHTML = `<div class="case-table-shell"><table class="case-table"><thead><tr><th>個案編號</th><th>個案姓名</th><th>CMS</th><th>負責督導</th><th>主要服務</th><th>狀態</th></tr></thead><tbody>${rows.map(c=>{
+      const svc=currentServiceSummary(c.id);
+      const status=caseServiceStatusInfo(c);
+      const cms=c.cms_level ? (/^\d+$/.test(String(c.cms_level))?`${c.cms_level}級`:String(c.cms_level)) : '—';
+      return `<tr><td>${escapeHTML(c.case_no||'—')}</td><td><button class="case-name-btn" data-case-id="${c.id}">${escapeHTML(c.case_name)}</button></td><td>${escapeHTML(cms)}</td><td>${escapeHTML(caseStaffName(c.supervisor_id))}</td><td>${escapeHTML(svc)}</td><td><span class="case-status ${status.key}">${status.text}</span></td></tr>`;
     }).join('')}</tbody></table></div>`;
-    list.querySelectorAll('[data-case-id]').forEach(btn=>btn.addEventListener('click',()=>openCaseDetail(state.cases.find(c=>c.id===btn.dataset.caseId))));
+    list.querySelectorAll('[data-case-id]').forEach(btn=>btn.addEventListener('click',()=>{
+      const c=state.cases.find(x=>x.id===btn.dataset.caseId);
+      openCaseDetail(c);
+    }));
   }
 
-  function openCaseModal(){
-    const supervisors = state.caseStaff.filter(s=>s.role==='supervisor');
-    const defaultSupervisor = state.profile?.role==='supervisor' ? state.profile.id : '';
-    openModal({title:'新增個案',confirmText:'建立個案',html:`
-      <div class="form-grid">
-        <div class="field"><label>個案姓名 *</label><input id="caseName" placeholder="請輸入個案姓名"></div>
-        <div class="field"><label>負責督導</label><select id="caseSupervisor"><option value="">尚未指派</option>${supervisors.map(s=>`<option value="${s.id}" ${s.id===defaultSupervisor?'selected':''}>${escapeHTML(s.display_name)}</option>`).join('')}</select></div>
-        <div class="field"><label>居服員</label><input id="caseWorker" placeholder="可稍後補填"></div>
-        <div class="field"><label>開案日</label><input id="caseOpenDate" type="date"></div>
-        <div class="field"><label>CMS 等級</label><input id="caseCms" placeholder="例如：4"></div>
-        <div class="field full"><label>備註</label><textarea id="caseNotes" placeholder="僅填必要的基本備註"></textarea></div>
-      </div>`,onConfirm:saveCase});
-  }
-
-  async function saveCase(){
-    const caseName=$('caseName').value.trim();
-    if(!caseName){toast('請輸入個案姓名','warn');return false;}
-    showLoading(true);
-    try{
-      const {error}=await db.from('care_cases').insert({
-        case_name:caseName,
-        supervisor_id:$('caseSupervisor').value||null,
-        care_worker_name:$('caseWorker').value.trim()||null,
-        open_date:$('caseOpenDate').value||null,
-        cms_level:$('caseCms').value.trim()||null,
-        notes:$('caseNotes').value.trim()||null,
-        created_by:state.user.id
-      });
-      if(error) throw error;
-      closeModal();
-      await loadCaseVisitData(true);
-      renderCaseVisitsPage();
-      toast('個案已建立','success');
-      return true;
-    }catch(err){toast('新增個案失敗：'+(err?.message||err),'error');return false;}
-    finally{showLoading(false);}
-  }
 
   function openCaseDetail(c){
-    if(!c) return;
-    const visits = visitListFor(c.id);
-    const pending = pendingFollowUpsFor(c.id);
-    const status = caseStatusInfo(c);
-    const html = `
-      <div class="case-detail-grid">
-        <div class="case-detail-item"><div class="case-detail-label">負責督導</div><div class="case-detail-value">${escapeHTML(caseStaffName(c.supervisor_id))}</div></div>
-        <div class="case-detail-item"><div class="case-detail-label">居服員</div><div class="case-detail-value">${escapeHTML(c.care_worker_name||'—')}</div></div>
-        <div class="case-detail-item"><div class="case-detail-label">開案日</div><div class="case-detail-value">${c.open_date?rocDate(c.open_date+'T00:00:00'):'—'}</div></div>
-        <div class="case-detail-item"><div class="case-detail-label">CMS</div><div class="case-detail-value">${escapeHTML(c.cms_level||'—')}</div></div>
-      </div>
-      <div class="case-section-title"><strong>訪視歷程</strong><button id="addVisitFromDetail" class="btn sm primary">＋ 新增訪視紀錄</button></div>
-      ${pending.length?`<div class="prior-followup"><strong>目前待追蹤 ${pending.length} 項</strong><span>${pending.map(v=>`${v.follow_up_date?rocDate(v.follow_up_date+'T00:00:00'):'未排日期'}｜${escapeHTML(v.follow_up_item||'未填內容')}`).join('<br>')}</span></div>`:''}
-      <div class="visit-history">${visits.length?visits.map(v=>{
-        const assisted = c.supervisor_id && v.visitor_staff_id!==c.supervisor_id;
-        const resolvedByLater = isFollowUpResolved(v.id);
-        return `<div class="visit-item"><div class="visit-item-top"><div><strong>${rocDate(v.visit_date+'T00:00:00')}　${caseTypeLabel(v.visit_type)}</strong><div class="visit-item-sub">訪視人員：${escapeHTML(caseStaffName(v.visitor_staff_id))}${assisted?'（協助訪視）':''}${v.contact_person?`　聯絡／在場：${escapeHTML(v.contact_person)}`:''}</div></div>${v.follow_up_needed?`<span class="case-status ${resolvedByLater?'normal':'followup'}">${resolvedByLater?'已追蹤':'待追蹤'}</span>`:''}</div>${v.summary?`<div class="visit-summary">${escapeHTML(v.summary)}</div>`:''}${v.follow_up_needed?`<div class="followup-box">追蹤事項：${escapeHTML(v.follow_up_item||'—')}<br>預計追蹤：${v.follow_up_date?rocDate(v.follow_up_date+'T00:00:00'):'未設定'}${resolvedByLater?'<br>後續已於下一筆紀錄完成追蹤。':''}</div>`:''}${v.previous_follow_up_result?`<div class="visit-item-sub" style="margin-top:8px">前次追蹤結果：${resultLabel(v.previous_follow_up_result)}</div>`:''}</div>`;
-      }).join(''):'<div class="empty compact"><h3>尚無訪視紀錄</h3><p>可新增第一筆家訪或電訪紀錄。</p></div>'}</div>`;
-    openModal({title:`${c.case_name}｜${status.text}`,html,large:true,showConfirm:false});
-    $('addVisitFromDetail')?.addEventListener('click',()=>openVisitModal(c));
+    if(!c)return;
+    if(typeof window.openCaseDetailPage==='function'){
+      return window.openCaseDetailPage(c.id,'overview');
+    }
+    toast('個案詳細頁模組尚未載入，請重新整理頁面後再試。','error');
   }
 
   function openVisitModal(c){
@@ -400,9 +393,26 @@
       if(error) throw error;
       closeModal();
       await loadCaseVisitData(true);
-      renderCaseVisitsPage();
-      toast('訪視紀錄已儲存','success');
+      if(window.currentCaseDetailId===c.id && typeof window.openCaseDetailPage==='function'){
+        toast('訪視紀錄已儲存','success');
+        await window.openCaseDetailPage(c.id,'visits',true);
+      }else{
+        renderCaseVisitsPage();
+        toast('訪視紀錄已儲存','success');
+      }
       return true;
     }catch(err){toast('儲存訪視紀錄失敗：'+(err?.message||err),'error');return false;}
     finally{showLoading(false);}
   }
+  // 個案詳細頁等其他模組透過此介面使用訪視功能，避免跨 eval 直接引用內部函式。
+  window.caseVisitsApi = {
+    loadCaseVisitData,
+    pendingFollowUpsFor,
+    caseStatusInfo,
+    caseTypeLabel,
+    caseStaffName,
+    isFollowUpResolved,
+    openVisitModal,
+    renderCaseVisitsPage
+  };
+
