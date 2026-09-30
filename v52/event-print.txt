@@ -1,0 +1,387 @@
+const EVENT_PRINT_ORG_NAME='桃園市私立劉信子居家長照機構';
+
+const PRINT_STATUS_LABELS={draft:'草稿',pending_followup:'待追蹤',tracking:'追蹤中',pending_close:'待結報',closed:'已結案',voided:'作廢'};
+const PRINT_FOLLOWUP_METHOD_LABELS={phone:'電話',official_line:'官方 LINE',home_visit:'家訪',interview:'面談',care_worker_report:'居服員回報',case_manager_contact:'個管師／照專聯繫',other:'其他'};
+const PRINT_IDENTITY_LABELS={staff:'工作人員',service_recipient:'服務對象',family:'家屬',third_party:'第三人'};
+const PRINT_REPORT_STATUS_LABELS={not_assessed:'尚未判定',not_required:'無需外部通報',required_pending:'需外部通報－尚未完成',reported:'已完成外部通報'};
+const PRINT_REPORT_METHOD_LABELS={online:'線上系統',phone:'電話',paper:'紙本／公文',other:'其他'};
+
+const printGetInitialReport=id=>(state.ei||[]).find(item=>item.event_id===id);
+const printGetFollowups=id=>(state.ef||[]).filter(item=>item.event_id===id);
+const printGetClosures=id=>(state.ec||[]).filter(item=>item.event_id===id);
+const printGetSensitiveDetails=id=>(state.esd||[]).find(item=>item.event_id===id);
+const printGetAttachments=id=>(state.ea||[]).filter(item=>item.event_id===id);
+
+const printStaffName=id=>(state.es||[]).find(item=>item.id===id)?.display_name||'—';
+const printCaseName=id=>(state.eca||[]).find(item=>item.id===id)?.case_name||'';
+const printWorkerName=id=>(state.ew||[]).find(item=>item.id===id)?.worker_name||'';
+const printIsSensitiveCategory=category=>category==='性騷擾'||category==='性侵害';
+const printSensitiveRelation=detail=>detail
+  ?`${PRINT_IDENTITY_LABELS[detail.victim_identity_type]||'—'}－${PRINT_IDENTITY_LABELS[detail.actor_identity_type]||'—'}`
+  :'—';
+
+const printText=value=>{
+  const text=value===null||value===undefined||value===''?'—':String(value);
+  return escapeHTML(text).replace(/\n/g,'<br>');
+};
+
+const printDate=value=>value?rocDate(value+'T00:00:00'):'—';
+const printTime=value=>value?String(value).slice(0,5):'—';
+const printDateTime=value=>{
+  if(!value)return '—';
+  try{
+    const d=new Date(value);
+    if(Number.isNaN(d.getTime()))return String(value);
+    const date=rocDate(isoDate(d)+'T00:00:00');
+    const time=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    return `${date} ${time}`;
+  }catch{
+    return String(value);
+  }
+};
+const shortEventId=id=>id?String(id).replace(/-/g,'').slice(0,10).toUpperCase():'—';
+
+const printAttachmentList=(eventId,type,recordId)=>{
+  return state.ea.filter(file=>
+    file.event_id===eventId&&
+    file.record_type===type&&
+    (type==='initial'||file.record_id===recordId)
+  );
+};
+
+const printAttachmentNames=files=>files.length
+  ?files.map(file=>printText(file.file_name)).join('、')
+  :'無';
+
+const firstInitialNextFollowupDate=(event,followups)=>{
+  const first=[...followups].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)))[0];
+  return first?.prior_next_followup_date||event.next_followup_date||null;
+};
+
+const printSection=(title,body)=>`
+  <section class="section">
+    <h2>${title}</h2>
+    ${body}
+  </section>
+`;
+
+const printNarrativeBlock=(label,value)=>`
+  <div class="narrative-block">
+    <h3>${label}</h3>
+    <div class="narrative-text">${printText(value)}</div>
+  </div>
+`;
+
+function buildEventPrintHtml(eventId){
+  const event=state.ev.find(item=>item.id===eventId);
+  if(!event)throw new Error('找不到事件資料');
+
+  const initial=printGetInitialReport(eventId);
+  const followups=printGetFollowups(eventId);
+  const closures=printGetClosures(eventId);
+  const sensitive=printGetSensitiveDetails(eventId);
+  const isSensitive=printIsSensitiveCategory(event.category);
+  const today=rocDate(isoDate(new Date())+'T00:00:00');
+
+  const basicRows=[
+    ['事件發生日期',printDate(event.event_date),'事件發生時間',printTime(event.event_time)],
+    ['事件類別',printText(event.category),'目前狀態',printText(PRINT_STATUS_LABELS[event.status]||event.status)],
+    ['主旨',printText(event.subject),'負責追蹤人',printText(printStaffName(event.responsible_staff_id))],
+    ['個案',printText(printCaseName(event.case_id)||'—'),'居服員',printText(printWorkerName(event.care_worker_id)||'—')],
+    ['通報人身分',printText(event.reporter_type||'—'),'通報人姓名',printText(event.reporter_name||'—')]
+  ];
+
+  const basicTable=`
+    <table class="info-table">
+      <tbody>
+        ${basicRows.map(row=>`
+          <tr>
+            <th>${row[0]}</th><td>${row[1]}</td>
+            <th>${row[2]}</th><td>${row[3]}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  let sensitiveHtml='';
+  if(isSensitive&&sensitive){
+    const actorLabel=event.category==='性侵害'?'疑似加害人':'疑似行為人';
+    const reportingRows=[
+      ['事件關係',printText(printSensitiveRelation(sensitive))],
+      ['疑似被害人',printText(`${sensitive.victim_name||'—'}（${PRINT_IDENTITY_LABELS[sensitive.victim_identity_type]||'—'}）`)],
+      [actorLabel,printText(`${sensitive.actor_name||'—'}（${PRINT_IDENTITY_LABELS[sensitive.actor_identity_type]||'—'}）`)],
+      ['外部通報狀態',printText(PRINT_REPORT_STATUS_LABELS[sensitive.external_reporting_status]||'尚未判定')]
+    ];
+
+    if(sensitive.external_reporting_status==='reported'){
+      reportingRows.push(
+        ['外部通報時間',printText(printDateTime(sensitive.external_reported_at))],
+        ['外部通報單位',printText(sensitive.external_reporting_agency||'—')],
+        ['外部通報方式',printText(PRINT_REPORT_METHOD_LABELS[sensitive.external_reporting_method]||'—')],
+        ['外部通報備註',printText(sensitive.external_reporting_note||'—')]
+      );
+    }
+
+    sensitiveHtml=printSection(
+      '敏感事件資料',
+      `
+        <table class="info-table two-col">
+          <tbody>
+            ${reportingRows.map(row=>`<tr><th>${row[0]}</th><td>${row[1]}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        ${printNarrativeBlock('立即保護／隔離措施',sensitive.immediate_protection_actions)}
+      `
+    );
+  }
+
+  let initialHtml='';
+  if(initial){
+    const initialFiles=printAttachmentList(eventId,'initial',initial.id);
+    const nextDate=firstInitialNextFollowupDate(event,followups);
+
+    initialHtml=printSection(
+      '一、初報',
+      `
+        <table class="meta-table">
+          <tbody>
+            <tr>
+              <th>初報登錄人</th><td>${printText(printStaffName(initial.submitted_by_staff_id||event.registered_by_staff_id))}</td>
+              <th>初報時間</th><td>${printText(printDateTime(initial.submitted_at||initial.created_at))}</td>
+            </tr>
+            <tr>
+              <th>下次追蹤日期</th><td>${printDate(nextDate)}</td>
+              <th>附件</th><td>${printAttachmentNames(initialFiles)}</td>
+            </tr>
+          </tbody>
+        </table>
+        ${printNarrativeBlock('（一）事件說明',initial.event_description)}
+        ${printNarrativeBlock('（二）已完成處置',initial.completed_actions)}
+        ${printNarrativeBlock('（三）後續待辦',initial.pending_tasks)}
+      `
+    );
+  }
+
+  let followupHtml='';
+  if(followups.length){
+    const ordered=[...followups].sort((a,b)=>
+      String(a.followup_date||'').localeCompare(String(b.followup_date||''))||
+      String(a.created_at||'').localeCompare(String(b.created_at||''))
+    );
+
+    followupHtml=printSection(
+      '二、續報紀錄',
+      ordered.map((followup,index)=>{
+        const files=printAttachmentList(eventId,'followup',followup.id);
+        const voidInfo=followup.is_voided
+          ?`<div class="void-box"><strong>本次續報已作廢</strong><br>作廢人：${printText(printStaffName(followup.voided_by_staff_id))}<br>作廢時間：${printText(printDateTime(followup.voided_at))}<br>作廢原因：${printText(followup.void_reason||'—')}</div>`
+          :'';
+
+        return `
+          <div class="record ${followup.is_voided?'voided':''}">
+            <h3 class="record-title">第${index+1}次續報${followup.is_voided?'【已作廢】':''}</h3>
+            <table class="meta-table">
+              <tbody>
+                <tr>
+                  <th>追蹤日期</th><td>${printDate(followup.followup_date)}</td>
+                  <th>追蹤時間</th><td>${printTime(followup.followup_time)}</td>
+                </tr>
+                <tr>
+                  <th>追蹤方式</th><td>${printText(PRINT_FOLLOWUP_METHOD_LABELS[followup.followup_method]||followup.followup_method||'—')}</td>
+                  <th>追蹤人</th><td>${printText(printStaffName(followup.submitted_by_staff_id))}</td>
+                </tr>
+                <tr>
+                  <th>下次追蹤日期</th><td>${printDate(followup.next_followup_date)}</td>
+                  <th>附件</th><td>${printAttachmentNames(files)}</td>
+                </tr>
+              </tbody>
+            </table>
+            ${printNarrativeBlock('最新狀況',followup.latest_status)}
+            ${printNarrativeBlock('本次已完成處置',followup.completed_actions)}
+            ${printNarrativeBlock('後續待辦',followup.pending_tasks)}
+            ${voidInfo}
+          </div>
+        `;
+      }).join('')
+    );
+  }
+
+  let closureHtml='';
+  if(closures.length){
+    const ordered=[...closures].sort((a,b)=>
+      String(a.close_date||'').localeCompare(String(b.close_date||''))||
+      String(a.created_at||'').localeCompare(String(b.created_at||''))
+    );
+
+    closureHtml=printSection(
+      '三、結報',
+      ordered.map((closure,index)=>{
+        const files=printAttachmentList(eventId,'closure',closure.id);
+        return `
+          <div class="record">
+            ${ordered.length>1?`<h3 class="record-title">第${index+1}次結報</h3>`:''}
+            <table class="meta-table">
+              <tbody>
+                <tr>
+                  <th>結報日期</th><td>${printDate(closure.close_date)}</td>
+                  <th>結報人</th><td>${printText(printStaffName(closure.closed_by_staff_id))}</td>
+                </tr>
+                <tr>
+                  <th>附件</th><td colspan="3">${printAttachmentNames(files)}</td>
+                </tr>
+              </tbody>
+            </table>
+            ${printNarrativeBlock('（一）最終狀況',closure.final_status)}
+            ${printNarrativeBlock('（二）結案判定',closure.closure_decision)}
+          </div>
+        `;
+      }).join('')
+    );
+  }
+
+  const allAttachments=printGetAttachments(eventId);
+  const attachmentHtml=printSection(
+    '四、附件紀錄',
+    allAttachments.length
+      ?`<ol class="attachment-list">${allAttachments.map(file=>{
+          let source='其他';
+          if(file.record_type==='initial')source='初報';
+          if(file.record_type==='followup'){
+            const index=followups.findIndex(item=>item.id===file.record_id);
+            source=index>=0?`第${index+1}次續報`:'續報';
+          }
+          if(file.record_type==='closure')source='結報';
+          return `<li>${printText(source)}：${printText(file.file_name)}</li>`;
+        }).join('')}</ol>`
+      :'<div class="empty-print">無附件</div>'
+  );
+
+  const voidBanner=event.status==='voided'
+    ?`<div class="void-event-banner">本事件已作廢｜作廢人：${printText(printStaffName(event.voided_by_staff_id))}｜作廢時間：${printText(printDateTime(event.voided_at))}｜原因：${printText(event.void_reason||'—')}</div>`
+    :'';
+
+  return `<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>${printText(event.subject)}｜事件追蹤紀錄表</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#f3f4f6;color:#111}
+  body{font-family:"DFKai-SB","BiauKai","標楷體",serif;font-size:12.5pt;line-height:1.55}
+  .toolbar{position:sticky;top:0;z-index:20;display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;background:#fff;border-bottom:1px solid #ddd}
+  .toolbar button{border:1px solid #bbb;border-radius:7px;background:#fff;padding:7px 14px;font-size:14px;cursor:pointer}
+  .toolbar button.primary{background:#e9855c;color:#fff;border-color:#e9855c}
+  .paper{width:210mm;min-height:297mm;margin:14px auto;padding:12mm 13mm 15mm;background:#fff;box-shadow:0 3px 18px rgba(0,0,0,.12)}
+  .doc-header{text-align:center;position:relative;margin-bottom:14px}
+  .org{font-size:16pt;font-weight:700}
+  .title{font-size:22pt;font-weight:700;margin-top:4px}
+  .doc-meta{position:absolute;right:0;top:0;text-align:right;font-size:9.5pt;line-height:1.55}
+  .confidential{display:inline-block;margin-top:8px;border:2px solid #8b0000;color:#8b0000;padding:3px 12px;font-weight:700;letter-spacing:.15em}
+  .void-event-banner{border:2px solid #777;background:#f3f3f3;padding:8px 10px;margin:10px 0;font-weight:700}
+  .section{margin-top:16px}
+  .section>h2{font-size:15pt;margin:0 0 8px;padding-bottom:4px;border-bottom:2px solid #333}
+  .record{margin-top:12px}
+  .record+.record{margin-top:18px;padding-top:14px;border-top:1px dashed #999}
+  .record-title{font-size:13.5pt;margin:0 0 7px}
+  .record.voided{color:#555;background:#fafafa;padding:8px;border:1px dashed #aaa}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  .info-table th,.info-table td,.meta-table th,.meta-table td{border:1px solid #555;padding:6px 7px;vertical-align:top;word-break:break-word}
+  .info-table th,.meta-table th{width:17%;background:#f3f3f3;font-weight:700;text-align:center}
+  .info-table td{width:33%}
+  .two-col th{width:24%}.two-col td{width:76%}
+  .narrative-block{border:1px solid #555;border-top:0;padding:0}
+  .narrative-block:first-of-type{border-top:1px solid #555;margin-top:8px}
+  .narrative-block h3{font-size:12.5pt;margin:0;padding:6px 8px;background:#f3f3f3;border-bottom:1px solid #777}
+  .narrative-text{padding:9px 10px;min-height:42px;white-space:normal;word-break:break-word}
+  .void-box{margin-top:8px;padding:8px;border:1px solid #888;background:#eee;line-height:1.6}
+  .attachment-list{margin:8px 0 0 24px;padding:0}.attachment-list li{margin:4px 0}
+  .empty-print{border:1px solid #777;padding:8px}
+  .signatures{margin-top:22px}
+  .signature-table th,.signature-table td{border:1px solid #555;text-align:center}
+  .signature-table th{background:#f3f3f3;padding:6px}
+  .signature-table td{height:60px;vertical-align:bottom;padding:6px;font-size:10.5pt}
+  .footer{margin-top:18px;padding-top:6px;border-top:1px solid #999;font-size:9pt;color:#555;display:flex;justify-content:space-between;gap:10px}
+  @page{
+    size:A4 portrait;
+    margin:18mm 10mm 18mm;
+    @top-center{
+      content:"桃園市私立劉信子居家長照機構｜事件追蹤紀錄表｜${shortEventId(event.id)}";
+      font-family:"DFKai-SB","BiauKai","標楷體",serif;
+      font-size:9pt;
+    }
+    @bottom-center{
+      content:"第 " counter(page) " 頁／共 " counter(pages) " 頁";
+      font-family:"DFKai-SB","BiauKai","標楷體",serif;
+      font-size:9pt;
+    }
+  }
+  @media print{
+    html,body{background:#fff}
+    .toolbar{display:none!important}
+    .paper{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
+    .section>h2,.record-title{break-after:avoid-page}
+    table{break-inside:avoid-page}
+    .signatures{break-inside:avoid-page}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.close()">關閉預覽</button>
+    <button class="primary" onclick="window.print()">列印／另存 PDF</button>
+  </div>
+
+  <main class="paper">
+    <header class="doc-header">
+      <div class="org">${EVENT_PRINT_ORG_NAME}</div>
+      <div class="title">事件追蹤紀錄表</div>
+      <div class="doc-meta">
+        系統事件識別碼：${shortEventId(event.id)}<br>
+        列印日期：${today}
+      </div>
+      ${isSensitive?'<div class="confidential">機密文件</div>':''}
+    </header>
+
+    ${voidBanner}
+    ${basicTable}
+    ${sensitiveHtml}
+    ${initialHtml}
+    ${followupHtml}
+    ${closureHtml}
+    ${attachmentHtml}
+
+    <section class="signatures">
+      <h2>紙本核章</h2>
+      <table class="signature-table">
+        <thead><tr><th>督導</th><th>業務負責人</th></tr></thead>
+        <tbody><tr><td>日期：</td><td>日期：</td></tr></tbody>
+      </table>
+    </section>
+
+    <footer class="footer">
+      <span>${EVENT_PRINT_ORG_NAME}｜事件追蹤紀錄表</span>
+      <span>${printText(event.subject)}</span>
+    </footer>
+  </main>
+</body>
+</html>`;
+}
+
+function openEventPrintPreview(eventId){
+  try{
+    const html=buildEventPrintHtml(eventId);
+    const printWindow=window.open('','_blank');
+    if(!printWindow){
+      toast('瀏覽器阻擋了列印預覽視窗，請允許此網站開啟彈出式視窗。','warn');
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }catch(error){
+    console.error(error);
+    toast('建立列印預覽失敗：'+(error?.message||error),'error');
+  }
+}
