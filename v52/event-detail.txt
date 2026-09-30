@@ -1,0 +1,181 @@
+const getInitialReport=id=>state.ei.find(x=>x.event_id===id),
+getFollowups=id=>state.ef.filter(x=>x.event_id===id),
+getActiveFollowups=id=>state.ef.filter(x=>x.event_id===id&&!x.is_voided),
+getClosures=id=>state.ec.filter(x=>x.event_id===id),
+getAttachments=id=>state.ea.filter(x=>x.event_id===id),getSensitiveDetails=id=>state.esd.find(x=>x.event_id===id),getEventHistory=id=>state.eh.filter(x=>x.event_id===id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+
+const SIT={staff:'工作人員',service_recipient:'服務對象',family:'家屬',third_party:'第三人'};
+const relText=s=>s?`${SIT[s.victim_identity_type]||'—'}－${SIT[s.actor_identity_type]||'—'}`:'—';
+const sensitiveActorLabel=e=>e?.category==='性侵害'?'疑似加害人':'疑似行為人';
+const sensitiveKindTitle=e=>e?.category==='性侵害'?'性侵害事件資料':'性騷擾事件資料';
+const SRS={not_assessed:'尚未判定',not_required:'無需外部通報',required_pending:'需外部通報－尚未完成',reported:'已完成外部通報'};
+const SRM={online:'線上系統',phone:'電話',paper:'紙本／公文',other:'其他'};
+function renderInfoPanel(items){
+  return `<div class="panel" style="margin-top:8px;padding:18px 20px">${items.map((x,i)=>`<div style="${i?'margin-top:18px;padding-top:16px;border-top:1px solid var(--line)':''}"><b style="display:block;margin-bottom:8px">${escapeHTML(x[0])}</b><div style="white-space:pre-wrap;line-height:1.75;padding:0 2px 2px">${escapeHTML(x[1]||'—')}</div></div>`).join('')}</div>`;
+}
+
+const renderAttachmentGroup=(eventId,type,recordId)=>{
+  const files=state.ea.filter(a=>a.event_id===eventId&&a.record_type===type&&(type==='initial'||a.record_id===recordId));
+  if(!files.length)return '';
+  return `<div class="panel" style="margin-top:8px;padding:14px 18px"><b>附件</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${files.map(a=>`<button class="btn sm" data-att="${a.id}">📎 ${escapeHTML(a.file_name)}</button>`).join('')}</div></div>`;
+};
+
+const HACT={
+  created:'建立事件',
+  status_changed:'狀態變更',
+  initial_submitted:'送出初報',
+  followup_added:'新增續報',
+  closure_added:'完成結報',
+  reopened:'重新開啟事件',
+  voided:'作廢整件事件',
+  followup_voided:'作廢單次續報',
+  restored:'恢復事件'
+};
+const HLINE=h=>{
+  const label=HACT[h.action_type]||h.action_type;
+  const status=h.action_type==='status_changed'?`：${EVENT_STATUS_LABELS[h.from_status]||h.from_status||'—'} → ${EVENT_STATUS_LABELS[h.to_status]||h.to_status||'—'}`:'';
+  const note=h.note?`｜${escapeHTML(h.note)}`:'';
+  return `<div style="padding:10px 0;border-bottom:1px solid var(--line);line-height:1.6"><b>${escapeHTML(label)}</b>${escapeHTML(status)}<div style="margin-top:4px">${escapeHTML(showTs(h.created_at))}　${escapeHTML(h.actor_name_snapshot||staffName(h.actor_staff_id))}${note}</div></div>`;
+};
+
+const canVoidFU=x=>!x.is_voided&&(
+  x.submitted_by_staff_id===state.profile.id ||
+  canManageEvents()
+);
+
+const showTs=v=>{
+  if(!v)return '—';
+  try{return new Date(v).toLocaleString('zh-TW',{hour12:false})}catch{return v}
+};
+
+function renderEventDetail(id){
+  let e=state.ev.find(x=>x.id===id),i=getInitialReport(id),f=getFollowups(id),c=getClosures(id),ats=getAttachments(id),sd=getSensitiveDetails(id),hist=getEventHistory(id),z=[];
+
+  if(sd&&isSensitiveCategory(e.category)){
+    const reporting=[
+      ['事件關係',relText(sd)],
+      ['疑似被害人',`${sd.victim_name||'—'}（${SIT[sd.victim_identity_type]||'—'}）`],
+      [sensitiveActorLabel(e),`${sd.actor_name||'—'}（${SIT[sd.actor_identity_type]||'—'}）`],
+      ['立即保護／隔離措施',sd.immediate_protection_actions||'—'],
+      ['外部通報狀態',SRS[sd.external_reporting_status]||'尚未判定']
+    ];
+    if(sd.external_reporting_status==='reported'){
+      reporting.push(
+        ['外部通報時間',showTs(sd.external_reported_at)],
+        ['外部通報單位',sd.external_reporting_agency||'—'],
+        ['外部通報方式',SRM[sd.external_reporting_method]||'—'],
+        ['外部通報備註',sd.external_reporting_note||'—']
+      );
+    }
+    z.push(`<h3>${sensitiveKindTitle(e)}</h3>${renderInfoPanel(reporting)}`);
+  }
+
+  if(i){
+    z.push(`<h3>初報</h3>${renderInfoPanel([
+      ['事件說明',i.event_description],
+      ['已完成處置',i.completed_actions],
+      ['後續待辦',i.pending_tasks]
+    ])}${renderAttachmentGroup(e.id,'initial',i.id)}`);
+  }
+
+  f.forEach((x,n)=>{
+    const voidedBadge=x.is_voided?' <span class="pill">已作廢</span>':'';
+    const voidBtn=canVoidFU(x)&&!['closed','voided'].includes(e.status)
+      ?`<button class="btn sm" data-void-fu="${x.id}">作廢本次續報</button>`
+      :'';
+    const voidInfo=x.is_voided
+      ?[['作廢紀錄',`作廢人：${staffName(x.voided_by_staff_id)}\n作廢時間：${showTs(x.voided_at)}\n作廢原因：${x.void_reason||'—'}`]]
+      :[];
+
+    z.push(`
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px">
+        <h3 style="margin:0">續報 ${n+1}${voidedBadge}</h3>
+        ${voidBtn}
+      </div>
+      ${renderInfoPanel([
+        ['最新狀況',x.latest_status],
+        ['本次已完成處置',x.completed_actions],
+        ['後續待辦',x.pending_tasks],
+        ...voidInfo
+      ])}
+      ${renderAttachmentGroup(e.id,'followup',x.id)}
+    `);
+  });
+
+  c.forEach(x=>z.push(`<h3>結報</h3>${renderInfoPanel([
+    ['最終狀況',x.final_status],
+    ['結案判定',x.closure_decision]
+  ])}${renderAttachmentGroup(e.id,'closure',x.id)}`));
+
+  if(hist.length){
+    z.push(`<h3>操作歷程</h3><div class="panel" style="padding:8px 18px">${hist.map(HLINE).join('')}</div>`);
+  }
+
+  let A=['<button id="bk" class="btn">←返回</button>','<button id="eventPrint" class="btn">列印／匯出</button>'];
+  if(e.status==='draft')A.push('<button id="ed" class="btn primary">編輯草稿</button>');
+  if(['pending_followup','tracking','pending_close'].includes(e.status))A.push('<button id="fu" class="btn">＋續報</button>');
+  if(e.status==='pending_close')A.push('<button id="cl" class="btn primary">結報</button>');
+  if(e.status==='closed')A.push('<button id="ro" class="btn">重新開啟</button>');
+  if(canManageEvents()&&!['closed','voided'].includes(e.status)){
+    A.push('<button id="vo" class="btn">作廢整件事件</button>');
+  }
+  if(canManageEvents()&&e.status==='voided'){
+    A.push('<button id="restoreEvent" class="btn primary">恢復事件</button>');
+  }
+
+  const voidSummary=e.status==='voided'
+    ?`<div class="panel" style="margin-top:12px;padding:14px 18px"><b>整件事件已作廢</b><div style="margin-top:8px;line-height:1.7">作廢人：${escapeHTML(staffName(e.voided_by_staff_id))}<br>作廢時間：${escapeHTML(showTs(e.voided_at))}<br>作廢原因：${escapeHTML(e.void_reason||'—')}</div></div>`
+    :'';
+
+  $('content').innerHTML=`
+    <div class="page-head">
+      <div><h1>${escapeHTML(e.subject)}</h1><p>${e.category}　${renderEventStatus(e)}</p></div>
+      <div>${A.join(' ')}</div>
+    </div>
+    <div class="panel" style="padding:14px 18px;display:flex;gap:14px 28px;align-items:center;flex-wrap:wrap;line-height:1.6">
+      <span><b>事件發生日期：</b>${displayEventDate(e.event_date)}</span>
+      <span><b>個案／居服員：</b>${escapeHTML([caseName(e.case_id),workerName(e.care_worker_id)].filter(Boolean).join('／')||'—')}</span>
+      <span><b>負責人：</b>${escapeHTML(staffName(e.responsible_staff_id))}</span>
+    </div>
+    ${voidSummary}
+    ${z.join('')}
+  `;
+
+  $('bk').onclick=renderEventList;
+  $('eventPrint')&&($('eventPrint').onclick=()=>openEventPrintPreview(e.id));
+  $('ed')&&($('ed').onclick=()=>openInitialReportForm(e));
+  $('fu')&&($('fu').onclick=()=>openFollowupForm(e));
+  $('cl')&&($('cl').onclick=()=>openClosureForm(e));
+  $('ro')&&($('ro').onclick=()=>reopenEvent(e));
+  $('vo')&&($('vo').onclick=()=>voidWholeEvent(e));
+  $('restoreEvent')&&($('restoreEvent').onclick=()=>restoreEvent(e));
+
+  document.querySelectorAll('[data-void-fu]').forEach(b=>{
+    b.onclick=()=>voidEventFollowup(e,b.dataset.voidFu);
+  });
+
+  document.querySelectorAll('[data-att]').forEach(b=>{
+    b.onclick=()=>openEventAttachment(ats.find(a=>a.id===b.dataset.att));
+  });
+}
+async function uploadEventAttachments(eventId,recordType,recordId,inputId){
+  const input=$(inputId);if(!input?.files?.length)return null;
+  for(const file of input.files){
+    if(file.size>25*1024*1024)throw new Error(file.name+' 超過25MB');
+    const safe=(file.name||'file').replace(/[^a-zA-Z0-9._-]/g,'_');
+    const path=`${eventId}/${recordType}/${recordId||'initial'}/${crypto.randomUUID()}-${safe}`;
+    const up=await db.storage.from('event-files').upload(path,file,{contentType:file.type||undefined,upsert:false});
+    if(up.error)throw up.error;
+    const ins=await db.from('tracking_event_attachments').insert({
+      event_id:eventId,record_type:recordType,record_id:recordId||null,file_path:path,file_name:file.name,
+      file_mime_type:file.type||null,file_size:file.size,uploaded_by_staff_id:state.profile.id
+    });
+    if(ins.error){await db.storage.from('event-files').remove([path]);throw ins.error}
+  }
+  return true
+}
+async function openEventAttachment(a){
+  if(!a)return;const r=await db.storage.from('event-files').createSignedUrl(a.file_path,120);
+  if(r.error)return toast('附件開啟失敗：'+r.error.message,'error');
+  window.open(r.data.signedUrl,'_blank','noopener,noreferrer')
+}
