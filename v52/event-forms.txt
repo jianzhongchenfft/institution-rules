@@ -1,0 +1,468 @@
+function openInitialReportForm(e=null){
+  let i=e?getInitialReport(e.id):null,sd=e?getSensitiveDetails(e.id):null;
+  openModal({
+    title:e?'編輯草稿':'新增事件／初報',
+    large:true,
+    showConfirm:false,
+    html:`<div class="event-form">
+      <div class="event-section-title">事件基本資料</div>
+
+      <div class="event-field">
+        <label>事件發生日期 *</label>
+        <input id="d" type="date" value="${e?.event_date||isoDate(new Date())}">
+      </div>
+      <div class="event-field">
+        <label>事件發生時間</label>
+        <div class="event-time-pair">
+          ${hourSelect('th',e?.event_time?.slice(0,2)||'')}
+          <span>：</span>
+          ${tenMinuteSelect('tmin',e?.event_time?.slice(3,5)||'00')}
+        </div>
+      </div>
+      <div class="event-field">
+        <label>類別 *</label>
+        <select id="cat">${EVENT_CATEGORIES.map(x=>`<option ${e?.category===x?'selected':''}>${x}</option>`).join('')}</select>
+      </div>
+
+      <div class="event-field full">
+        <label>主旨 *</label>
+        <input id="sub" value="${escapeHTML(e?.subject||'')}" placeholder="請簡要描述本次事件主題">
+      </div>
+
+      <div class="event-field half">
+        <label>個案</label>
+        <select id="ca"><option value="">不指定</option>${caseOptions(e?.case_id)}</select>
+      </div>
+      <div class="event-field half">
+        <label>居服員</label>
+        <select id="wo"><option value="">不指定</option>${workerOptions(e?.care_worker_id)}</select>
+      </div>
+
+      <div class="event-field half">
+        <label>通報人身分</label>
+        <select id="rt">
+          <option value="">不指定</option>
+          ${['個案','家屬','居服員','督導','其他'].map(x=>`<option ${e?.reporter_type===x?'selected':''}>${x}</option>`).join('')}
+        </select>
+      </div>
+      <div class="event-field half">
+        <label>通報人姓名</label>
+        <input id="rn" value="${escapeHTML(e?.reporter_name||'')}" placeholder="填寫實際提供本次資訊的人">
+      </div>
+
+      <div class="event-field full">
+        <label>負責追蹤人 *</label>
+        <select id="ow">${responsibleStaffOptions(e?.responsible_staff_id||state.profile.id)}</select>
+      </div>
+
+      ${renderSensitiveEventFieldsHtml(sd)}
+
+      <div class="event-section-title">初報內容</div>
+
+      <div class="event-field full">
+        <label>1　事件說明 *</label>
+        <textarea id="de" class="event-text-long" placeholder="記錄事件發生經過、時間、人物、現場情形及目前狀況等">${escapeHTML(i?.event_description||'')}</textarea>
+      </div>
+
+      <div class="event-field full">
+        <label>2　已完成處置 *</label>
+        <textarea id="dn" class="event-text-short" placeholder="記錄目前已完成的聯繫、處理或協助">${escapeHTML(i?.completed_actions||'')}</textarea>
+      </div>
+
+      <div class="event-field full">
+        <label>3　後續待辦 *</label>
+        <textarea id="td" class="event-text-short" placeholder="記錄後續需追蹤、確認或完成的事項">${escapeHTML(i?.pending_tasks||'')}</textarea>
+      </div>
+
+      <div class="event-option-row">
+        <div class="event-field full">
+          <label>下次追蹤</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="nday" type="number" min="1" step="1" value="${e?.next_followup_date?Math.max(1,Math.round((new Date(e.next_followup_date+'T00:00:00')-new Date(isoDate(new Date())+'T00:00:00'))/86400000)):7}" style="max-width:120px">
+            <span>天後</span>
+          </div>
+        </div>
+        <div class="event-field full">
+          <label class="event-check"><input id="ln" type="checkbox" checked> LINE 通知</label>
+        </div>
+      </div>
+
+      <div class="event-field full event-file">
+        <label>附件</label>
+        <input id="att" type="file" multiple accept="${EVENT_ATTACHMENT_ACCEPT}">
+      </div>
+    </div>
+    <div class="event-actions">
+      <button id="dr" class="btn">儲存草稿</button>
+      <button id="sd" class="btn primary">送出初報</button>
+      <button id="sr" class="btn">送出並準備結報</button>
+    </div>`
+  });
+
+  document.querySelector('#modalRoot .modal')?.classList.add('event-modal');
+
+  bindSensitiveEventFields(sd);
+
+  $('dr').onclick=()=>saveInitialReport(e,'draft');
+  $('sd').onclick=()=>saveInitialReport(e,'pending_followup');
+  $('sr').onclick=()=>saveInitialReport(e,'pending_close');
+}
+const fieldValue=id=>$(id).value.trim();
+async function saveInitialReport(e,a){
+  const eventTime=readOptionalTime('th','tmin');
+  const nextDays=Number(fieldValue('nday'));
+  if(a!=='pending_close'&&(!Number.isInteger(nextDays)||nextDays<1))return toast('請填正確的追蹤天數','warn');
+
+  const cat=fieldValue('cat');
+  const sensitive=isSensitiveCategory(cat);
+  const victim=sensitive?readSensitiveParty('victim'):{identity_type:null,person_kind:null,person_id:null,name:null};
+  const actor=sensitive?readSensitiveParty('actor'):{identity_type:null,person_kind:null,person_id:null,name:null};
+  const reportingStatus=sensitive?fieldValue('srs'):null;
+  let reportedAt=null;
+  if(sensitive&&reportingStatus==='reported'){
+    const rd=fieldValue('srDate'),rh=fieldValue('srHour'),rm=fieldValue('srMin');
+    if(!rd||!rh||!fieldValue('srAgency'))return toast('請填妥外部通報日期、時間與通報單位','warn');
+    reportedAt=new Date(`${rd}T${rh}:${rm||'00'}:00`).toISOString();
+  }
+
+  if(sensitive&&a!=='draft'){
+    if(!victim.identity_type||!victim.name||!actor.identity_type||!actor.name){
+      return toast('請填妥雙方身分與姓名','warn');
+    }
+    if(cat==='性騷擾'&&victim.identity_type!=='staff'&&actor.identity_type!=='staff'){
+      return toast('性騷擾事件至少一方需為本機構工作人員','warn');
+    }
+  }
+
+  const p={
+    event_id:e?.id||null,
+    event_date:fieldValue('d'),
+    event_time:eventTime,
+    category:cat,
+    subject:fieldValue('sub'),
+    case_id:fieldValue('ca')||null,
+    care_worker_id:fieldValue('wo')||null,
+    reporter_type:fieldValue('rt')||null,
+    reporter_name:fieldValue('rn')||null,
+    responsible_staff_id:fieldValue('ow'),
+    event_description:fieldValue('de'),
+    completed_actions:fieldValue('dn'),
+    pending_tasks:fieldValue('td'),
+    requires_followup:a==='pending_followup',
+    next_followup_date:a==='pending_close'?null:addDays(isoDate(new Date()),nextDays),
+    line_notify:$('ln').checked,
+    sensitive_victim_identity_type:victim.identity_type,
+    sensitive_victim_person_kind:victim.person_kind,
+    sensitive_victim_person_id:victim.person_id,
+    sensitive_victim_name:victim.name,
+    sensitive_actor_identity_type:actor.identity_type,
+    sensitive_actor_person_kind:actor.person_kind,
+    sensitive_actor_person_id:actor.person_id,
+    sensitive_actor_name:actor.name,
+    sensitive_immediate_protection_actions:sensitive?fieldValue('sip'):null,
+    sensitive_external_reporting_status:reportingStatus,
+    sensitive_external_reported_at:reportedAt,
+    sensitive_external_reporting_agency:sensitive&&reportingStatus==='reported'?fieldValue('srAgency')||null:null,
+    sensitive_external_reporting_method:sensitive&&reportingStatus==='reported'?fieldValue('srMethod')||null:null,
+    sensitive_external_reporting_note:sensitive&&reportingStatus==='reported'?fieldValue('srNote')||null:null
+  };
+
+  if(!p.subject)return toast('請填主旨','warn');
+  if(a!=='draft'&&(!p.event_description||!p.completed_actions||!p.pending_tasks))return toast('請填妥初報三欄','warn');
+
+  showLoading(true);
+  try{
+    const r=await db.rpc('save_tracking_event_draft',{payload:p});
+    if(r.error)throw r.error;
+    if(a!=='draft'){
+      const q=await db.rpc('submit_tracking_event',{p_event_id:r.data,p_target_status:a,p_line_notify:p.line_notify});
+      if(q.error)throw q.error;
+    }
+    let ae=null;
+    try{await uploadEventAttachments(r.data,'initial',null,'att')}catch(err){ae=err}
+    closeModal();
+    await loadEventData();
+    renderEventDetail(r.data);
+    if(ae)toast('事件已儲存，但附件上傳失敗：'+ae.message,'warn');
+  }catch(x){
+    toast('儲存失敗：'+x.message,'error');
+  }finally{
+    showLoading(false);
+  }
+}
+function openFollowupForm(e){
+  openModal({
+    title:'新增續報',
+    large:true,
+    showConfirm:false,
+    html:`<div class="event-form">
+      <div class="event-section-title">追蹤基本資料</div>
+
+      <div class="event-field">
+        <label>追蹤日期 *</label>
+        <input id="fd" type="date" value="${isoDate(new Date())}">
+      </div>
+
+      <div class="event-field">
+        <label>追蹤時間</label>
+        <div class="event-time-pair">
+          ${hourSelect('fth')}
+          <span>：</span>
+          ${tenMinuteSelect('ftmin','00')}
+        </div>
+      </div>
+
+      <div class="event-field">
+        <label>追蹤方式 *</label>
+        <select id="fm">${Object.entries(FOLLOWUP_METHOD_LABELS).map(([k,x])=>`<option value="${k}">${x}</option>`).join('')}</select>
+      </div>
+
+      <div class="event-section-title">續報內容</div>
+
+      <div class="event-field full">
+        <label>1　最新狀況 *</label>
+        <textarea id="fn" class="event-text-long"></textarea>
+      </div>
+
+      <div class="event-field full">
+        <label>2　本次已完成處置</label>
+        <textarea id="ff" class="event-text-short"></textarea>
+      </div>
+
+      <div class="event-field full">
+        <label>3　後續待辦</label>
+        <textarea id="ft" class="event-text-short"></textarea>
+      </div>
+
+      <div class="event-section-title">追蹤判定</div>
+
+      <div class="event-field half">
+        <label>狀態</label>
+        <select id="fo">
+          <option value="continue">繼續追蹤</option>
+          <option value="ready_to_close">已處理完成（準備結報）</option>
+        </select>
+      </div>
+
+      <div class="event-field half" id="nextFollowField">
+        <label>下次追蹤</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="fday" type="number" min="1" step="1" style="max-width:120px">
+          <span>天後</span>
+        </div>
+      </div>
+
+      <div class="event-field full">
+        <label class="event-check"><input id="fl" type="checkbox" checked> LINE 通知</label>
+      </div>
+
+      <div class="event-field full event-file">
+        <label>附件</label>
+        <input id="fatt" type="file" multiple accept="${EVENT_ATTACHMENT_ACCEPT}">
+      </div>
+    </div>`
+  });
+
+  document.querySelector('#modalRoot .modal')?.classList.add('event-modal');
+  const followFoot=document.querySelector('#modalRoot .modal-foot');
+  const followCancel=$('modalCancel');
+  if(followFoot&&followCancel){
+    const submitBtn=document.createElement('button');
+    submitBtn.id='fs';
+    submitBtn.className='btn primary';
+    submitBtn.textContent='送出續報';
+    followFoot.insertBefore(submitBtn,followCancel.nextSibling);
+  }
+
+  const toggleNext=()=>{
+    const continuing=fieldValue('fo')==='continue';
+    if($('nextFollowField'))$('nextFollowField').style.display=continuing?'block':'none';
+    if(!continuing&&$('fday'))$('fday').value='';
+  };
+  $('fo')?.addEventListener('change',toggleNext);
+  toggleNext();
+
+  $('fs').onclick=async()=>{
+    const followTime=readOptionalTime('fth','ftmin');
+    const days=Number(fieldValue('fday'));
+    if(fieldValue('fo')==='continue'&&(!Number.isInteger(days)||days<1))return toast('請填正確的追蹤天數','warn');
+
+    const p={
+      event_id:e.id,
+      followup_date:fieldValue('fd'),
+      followup_time:followTime,
+      followup_method:fieldValue('fm'),
+      latest_status:fieldValue('fn'),
+      completed_actions:fieldValue('ff'),
+      pending_tasks:fieldValue('ft'),
+      outcome:fieldValue('fo'),
+      next_followup_date:fieldValue('fo')==='continue'?addDays(fieldValue('fd'),days):null,
+      line_notify:$('fl').checked
+    };
+
+    if(!p.latest_status)return toast('請填最新狀況','warn');
+
+    showLoading(true);
+    try{
+      const r=await db.rpc('add_tracking_event_followup',{payload:p});
+      if(r.error)throw r.error;
+      let ae=null;
+      try{await uploadEventAttachments(e.id,'followup',r.data,'fatt')}catch(err){ae=err}
+      closeModal();
+      await loadEventData();
+      renderEventDetail(e.id);
+      if(ae)toast('續報已儲存，但附件上傳失敗：'+ae.message,'warn');
+    }catch(x){
+      toast('續報失敗：'+x.message,'error');
+    }finally{
+      showLoading(false);
+    }
+  };
+}
+function openClosureForm(e){
+  const last=getActiveFollowups(e.id).slice(-1)[0]?.pending_tasks||getInitialReport(e.id)?.pending_tasks||'';
+
+  const warning=last?`
+    <div class="event-field full">
+      <div style="padding:14px 16px;border:1px solid #f5dca8;background:#fff8e8;border-radius:10px;line-height:1.65">
+        <div><b>目前仍有後續待辦：</b>${escapeHTML(last)}</div>
+        <label class="event-check" style="margin-top:10px!important">
+          <input id="ack" type="checkbox">
+          確認上述待辦已完成或不再需要處理
+        </label>
+      </div>
+    </div>`:'';
+
+  openModal({
+    title:'事件結報',
+    large:true,
+    showConfirm:false,
+    html:`<div class="event-form">
+      <div class="event-section-title">結報基本資料</div>
+
+      <div class="event-field">
+        <label>結報日期 *</label>
+        <input id="cd" type="date" value="${isoDate(new Date())}">
+      </div>
+
+      ${warning}
+
+      <div class="event-section-title">結報內容</div>
+
+      <div class="event-field full">
+        <label>1　最終狀況 *</label>
+        <textarea id="cf" class="event-text-long"></textarea>
+      </div>
+
+      <div class="event-field full">
+        <label>2　結案判定 *</label>
+        <select id="cw">
+          <option value="">請選擇</option>
+          <option value="已完成處理，無後續待辦">已完成處理，無後續待辦</option>
+          <option value="狀況已穩定，無需繼續追蹤">狀況已穩定，無需繼續追蹤</option>
+          <option value="近期未再發生類似事件，無需繼續追蹤">近期未再發生類似事件，無需繼續追蹤</option>
+          <option value="已完成轉介／交由其他單位處理">已完成轉介／交由其他單位處理</option>
+          <option value="服務已終止／轉出，無需繼續追蹤">服務已終止／轉出，無需繼續追蹤</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+
+      <div class="event-field full" id="cwOtherField" style="display:none">
+        <label>其他結案判定 *</label>
+        <input id="cwOther">
+      </div>
+
+      <div class="event-field full">
+        <label class="event-check"><input id="cln" type="checkbox" checked> LINE 通知</label>
+      </div>
+
+      <div class="event-field full event-file">
+        <label>附件</label>
+        <input id="catt" type="file" multiple accept="${EVENT_ATTACHMENT_ACCEPT}">
+      </div>
+    </div>`
+  });
+
+  document.querySelector('#modalRoot .modal')?.classList.add('event-modal');
+
+  const closeFoot=document.querySelector('#modalRoot .modal-foot');
+  const closeCancel=$('modalCancel');
+  if(closeFoot&&closeCancel){
+    const submitBtn=document.createElement('button');
+    submitBtn.id='cs';
+    submitBtn.className='btn primary';
+    submitBtn.textContent='完成結報';
+    closeFoot.insertBefore(submitBtn,closeCancel.nextSibling);
+  }
+
+  const toggleOther=()=>{
+    const isOther=fieldValue('cw')==='其他';
+    if($('cwOtherField'))$('cwOtherField').style.display=isOther?'block':'none';
+    if(!isOther&&$('cwOther'))$('cwOther').value='';
+  };
+  $('cw')?.addEventListener('change',toggleOther);
+  toggleOther();
+
+  $('cs').onclick=async()=>{
+    const decision=fieldValue('cw')==='其他'?fieldValue('cwOther'):fieldValue('cw');
+    const p={
+      event_id:e.id,
+      close_date:fieldValue('cd'),
+      final_status:fieldValue('cf'),
+      closure_decision:decision,
+      line_notify:$('cln').checked
+    };
+
+    if(!p.final_status||!p.closure_decision)return toast('請填妥結報內容','warn');
+    if(last&&!$('ack')?.checked)return toast('請先確認尚未完成的後續待辦','warn');
+
+    showLoading(true);
+    try{
+      const r=await db.rpc('close_tracking_event',{payload:p});
+      if(r.error)throw r.error;
+      let ae=null;
+      try{await uploadEventAttachments(e.id,'closure',r.data,'catt')}catch(err){ae=err}
+      closeModal();
+      await loadEventData();
+      renderEventDetail(e.id);
+      if(ae)toast('結報已完成，但附件上傳失敗：'+ae.message,'warn');
+    }catch(x){
+      toast('結報失敗：'+x.message,'error');
+    }finally{
+      showLoading(false);
+    }
+  };
+}
+async function reopenEvent(e){
+  let x=prompt('重新開啟原因');
+  if(!x)return;
+  let r=await db.rpc('reopen_tracking_event',{p_event_id:e.id,p_reason:x});
+  if(r.error)return toast(r.error.message,'error');
+  await loadEventData();renderEventDetail(e.id);
+}
+
+async function voidEventFollowup(e,followupId){
+  let x=prompt('作廢本次續報原因');
+  if(!x)return;
+  let r=await db.rpc('void_tracking_event_followup',{p_followup_id:followupId,p_reason:x});
+  if(r.error)return toast(r.error.message,'error');
+  await loadEventData();renderEventDetail(e.id);
+}
+
+async function voidWholeEvent(e){
+  if(!confirm('這會作廢整件事件，不只是單次續報。確定要繼續嗎？'))return;
+  let x=prompt('作廢整件事件原因');
+  if(!x)return;
+  let r=await db.rpc('void_tracking_event',{p_event_id:e.id,p_reason:x});
+  if(r.error)return toast(r.error.message,'error');
+  await loadEventData();renderEventDetail(e.id);
+}
+
+async function restoreEvent(e){
+  let x=prompt('恢復事件原因');
+  if(!x)return;
+  let r=await db.rpc('restore_tracking_event',{p_event_id:e.id,p_reason:x});
+  if(r.error)return toast(r.error.message,'error');
+  await loadEventData();renderEventDetail(e.id);
+}
+})();
