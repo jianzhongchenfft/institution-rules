@@ -1,0 +1,209 @@
+const sensitiveStaffOptions=(kind,id)=>{
+  const a=state.es.map(x=>`<option value="staff_user:${x.id}" ${kind==='staff_user'&&x.id===id?'selected':''}>${escapeHTML(x.display_name)}（內部人員）</option>`).join('');
+  const b=state.ew.map(x=>`<option value="care_worker:${x.id}" ${kind==='care_worker'&&x.id===id?'selected':''}>${escapeHTML(x.worker_name)}（居服員）</option>`).join('');
+  return '<option value="">請選擇</option>'+a+b;
+};
+const sensitiveCaseOptions=(kind,id)=>'<option value="">請選擇</option>'+state.eca.map(x=>`<option value="care_case:${x.id}" ${kind==='care_case'&&x.id===id?'selected':''}>${escapeHTML(x.case_name)}</option>`).join('');
+function renderSensitiveEventFieldsHtml(sd){
+  return `
+      <div id="sensitiveTitle" class="event-section-title" style="display:none"></div>
+
+      <div id="svTypeField" class="event-field half" style="display:none">
+        <label>疑似被害人身分 *</label>
+        <select id="svType">
+          <option value="">請選擇</option>
+          <option value="staff" ${sd?.victim_identity_type==='staff'?'selected':''}>工作人員</option>
+          <option value="service_recipient" ${sd?.victim_identity_type==='service_recipient'?'selected':''}>服務對象</option>
+          <option value="family" ${sd?.victim_identity_type==='family'?'selected':''}>家屬</option>
+          <option value="third_party" ${sd?.victim_identity_type==='third_party'?'selected':''}>第三人</option>
+        </select>
+      </div>
+      <div id="svPersonField" class="event-field half" style="display:none"></div>
+
+      <div id="saTypeField" class="event-field half" style="display:none">
+        <label id="saTypeLabel">疑似行為人身分 *</label>
+        <select id="saType">
+          <option value="">請選擇</option>
+          <option value="staff" ${sd?.actor_identity_type==='staff'?'selected':''}>工作人員</option>
+          <option value="service_recipient" ${sd?.actor_identity_type==='service_recipient'?'selected':''}>服務對象</option>
+          <option value="family" ${sd?.actor_identity_type==='family'?'selected':''}>家屬</option>
+          <option value="third_party" ${sd?.actor_identity_type==='third_party'?'selected':''}>第三人</option>
+        </select>
+      </div>
+      <div id="saPersonField" class="event-field half" style="display:none"></div>
+
+      <div id="srelField" class="event-field full" style="display:none">
+        <label>事件關係</label>
+        <input id="srel" readonly>
+      </div>
+
+      <div id="sensitiveActionTitle" class="event-section-title" style="display:none">特殊處置／外部通報</div>
+
+      <div id="sipField" class="event-field full" style="display:none">
+        <label>立即保護／隔離措施</label>
+        <textarea id="sip" class="event-text-short">${escapeHTML(sd?.immediate_protection_actions||'')}</textarea>
+      </div>
+
+      <div id="srsField" class="event-field half" style="display:none">
+        <label>外部通報狀態 *</label>
+        <select id="srs">
+          <option value="not_assessed" ${!sd?.external_reporting_status||sd?.external_reporting_status==='not_assessed'?'selected':''}>尚未判定</option>
+          <option value="not_required" ${sd?.external_reporting_status==='not_required'?'selected':''}>無需外部通報</option>
+          <option value="required_pending" ${sd?.external_reporting_status==='required_pending'?'selected':''}>需外部通報－尚未完成</option>
+          <option value="reported" ${sd?.external_reporting_status==='reported'?'selected':''}>已完成外部通報</option>
+        </select>
+      </div>
+
+      <div id="srMethodField" class="event-field half" style="display:none">
+        <label>通報方式</label>
+        <select id="srMethod">
+          <option value="">請選擇</option>
+          <option value="online" ${sd?.external_reporting_method==='online'?'selected':''}>線上系統</option>
+          <option value="phone" ${sd?.external_reporting_method==='phone'?'selected':''}>電話</option>
+          <option value="paper" ${sd?.external_reporting_method==='paper'?'selected':''}>紙本／公文</option>
+          <option value="other" ${sd?.external_reporting_method==='other'?'selected':''}>其他</option>
+        </select>
+      </div>
+
+      <div id="srDateField" class="event-field" style="display:none">
+        <label>通報日期 *</label>
+        <input id="srDate" type="date" value="${sd?.external_reported_at?isoDate(new Date(sd.external_reported_at)):''}">
+      </div>
+
+      <div id="srTimeField" class="event-field" style="display:none">
+        <label>通報時間 *</label>
+        <div class="event-time-pair">
+          ${hourSelect('srHour',sd?.external_reported_at?String(new Date(sd.external_reported_at).getHours()).padStart(2,'0'):'')}
+          <span>：</span>
+          ${tenMinuteSelect('srMin',sd?.external_reported_at?String(Math.floor(new Date(sd.external_reported_at).getMinutes()/10)*10).padStart(2,'0'):'00')}
+        </div>
+      </div>
+
+      <div id="srAgencyField" class="event-field" style="display:none">
+        <label>通報單位 *</label>
+        <input id="srAgency" value="${escapeHTML(sd?.external_reporting_agency||'')}">
+      </div>
+
+      <div id="srNoteField" class="event-field full" style="display:none">
+        <label>通報備註</label>
+        <textarea id="srNote" class="event-text-short">${escapeHTML(sd?.external_reporting_note||'')}</textarea>
+      </div>
+
+
+  `;
+}
+
+
+function renderSensitivePersonField(side,type,detail){
+  const field=$(side==='victim'?'svPersonField':'saPersonField');
+  if(!field)return;
+
+  const label=side==='victim'
+    ?'疑似被害人'
+    :(fieldValue('cat')==='性侵害'?'疑似加害人':'疑似行為人');
+
+  if(type==='staff'){
+    field.innerHTML=`<label>${label} *</label><select id="${side==='victim'?'svPerson':'saPerson'}">${sensitiveStaffOptions(detail?.[side+'_person_kind'],detail?.[side+'_person_id'])}</select>`;
+  }else if(type==='service_recipient'){
+    field.innerHTML=`<label>${label} *</label><select id="${side==='victim'?'svPerson':'saPerson'}">${sensitiveCaseOptions(detail?.[side+'_person_kind'],detail?.[side+'_person_id'])}</select>`;
+  }else if(type==='family'||type==='third_party'){
+    field.innerHTML=`<label>${label} *</label><input id="${side==='victim'?'svName':'saName'}" value="${escapeHTML(detail?.[side+'_name']||'')}">`;
+  }else{
+    field.innerHTML=`<label>${label} *</label><input disabled>`;
+  }
+}
+
+function updateSensitiveRelationField(){
+  const victimType=fieldValue('svType');
+  const actorType=fieldValue('saType');
+  if($('srel')){
+    $('srel').value=(victimType&&actorType)
+      ?`${SIT[victimType]}－${SIT[actorType]}`
+      :'';
+  }
+}
+
+function updateSensitiveReportingFields(){
+  const reported=$('srs')?.value==='reported';
+  ['srMethodField','srDateField','srTimeField','srAgencyField','srNoteField'].forEach(id=>{
+    if($(id))$(id).style.display=reported?'block':'none';
+  });
+}
+
+function bindSensitiveEventFields(initialDetail){
+  let detail=initialDetail;
+
+  const refresh=()=>{
+    const category=fieldValue('cat');
+    const show=isSensitiveCategory(category);
+
+    ['sensitiveTitle','svTypeField','svPersonField','saTypeField','saPersonField','srelField','sensitiveActionTitle','sipField','srsField'].forEach(id=>{
+      if($(id))$(id).style.display=show?(id==='sensitiveTitle'||id==='sensitiveActionTitle'?'flex':'block'):'none';
+    });
+
+    ['srMethodField','srDateField','srTimeField','srAgencyField','srNoteField'].forEach(id=>{
+      if($(id)&&!show)$(id).style.display='none';
+    });
+
+    if(!show)return;
+
+    $('sensitiveTitle').textContent=category==='性侵害'?'性侵害事件資料':'性騷擾事件資料';
+    $('saTypeLabel').textContent=category==='性侵害'?'疑似加害人身分 *':'疑似行為人身分 *';
+
+    renderSensitivePersonField('victim',fieldValue('svType'),detail);
+    renderSensitivePersonField('actor',fieldValue('saType'),detail);
+    updateSensitiveRelationField();
+    updateSensitiveReportingFields();
+  };
+
+  $('cat')?.addEventListener('change',()=>{
+    detail=null;
+    refresh();
+  });
+
+  $('svType')?.addEventListener('change',()=>{
+    renderSensitivePersonField('victim',fieldValue('svType'),null);
+    updateSensitiveRelationField();
+  });
+
+  $('saType')?.addEventListener('change',()=>{
+    renderSensitivePersonField('actor',fieldValue('saType'),null);
+    updateSensitiveRelationField();
+  });
+
+  $('srs')?.addEventListener('change',updateSensitiveReportingFields);
+
+  refresh();
+}
+
+function readSensitiveParty(side){
+  const type=fieldValue(side==='victim'?'svType':'saType');
+  if(!type){
+    return {identity_type:null,person_kind:null,person_id:null,name:null};
+  }
+
+  if(type==='staff'||type==='service_recipient'){
+    const el=$(side==='victim'?'svPerson':'saPerson');
+    const raw=el?.value||'';
+    const [kind,id]=raw.split(':');
+    let name='';
+
+    if(kind==='staff_user')name=staffName(id);
+    else if(kind==='care_worker')name=workerName(id);
+    else if(kind==='care_case')name=caseName(id);
+
+    return {
+      identity_type:type,
+      person_kind:kind||null,
+      person_id:id||null,
+      name:name||null
+    };
+  }
+
+  return {
+    identity_type:type,
+    person_kind:'manual',
+    person_id:null,
+    name:fieldValue(side==='victim'?'svName':'saName')||null
+  };
+}
