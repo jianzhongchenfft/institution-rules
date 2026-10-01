@@ -26,6 +26,9 @@ const HACT={
   initial_submitted:'送出初報',
   followup_added:'新增續報',
   closure_added:'完成結報',
+  initial_edited:'修改初報',
+  followup_edited:'修改續報',
+  closure_edited:'修改結報',
   reopened:'重新開啟事件',
   voided:'作廢整件事件',
   followup_voided:'作廢單次續報',
@@ -71,15 +74,29 @@ function renderEventDetail(id){
   }
 
   if(i){
-    z.push(`<h3>初報</h3>${renderInfoPanel([
-      ['事件說明',i.event_description],
-      ['已完成處置',i.completed_actions],
-      ['後續待辦',i.pending_tasks]
-    ])}${renderAttachmentGroup(e.id,'initial',i.id)}`);
+    const editInitialBtn=e.status!=='draft'&&e.status!=='voided'
+      ?'<button class="btn sm" id="editInitialSubmitted">編輯</button>'
+      :'';
+    z.push(`
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px">
+        <h3 style="margin:0">初報</h3>
+        ${editInitialBtn}
+      </div>
+      ${renderInfoPanel([
+        ['填表時間',showTs(i.form_filled_at||i.submitted_at||i.created_at)],
+        ['事件說明',i.event_description],
+        ['已完成處置',i.completed_actions],
+        ['後續待辦',i.pending_tasks]
+      ])}
+      ${renderAttachmentGroup(e.id,'initial',i.id)}
+    `);
   }
 
   f.forEach((x,n)=>{
     const voidedBadge=x.is_voided?' <span class="pill">已作廢</span>':'';
+    const editBtn=!x.is_voided&&e.status!=='voided'
+      ?`<button class="btn sm" data-edit-fu="${x.id}">編輯</button>`
+      :'';
     const voidBtn=canVoidFU(x)&&!['closed','voided'].includes(e.status)
       ?`<button class="btn sm" data-void-fu="${x.id}">作廢本次續報</button>`
       :'';
@@ -90,9 +107,10 @@ function renderEventDetail(id){
     z.push(`
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px">
         <h3 style="margin:0">續報 ${n+1}${voidedBadge}</h3>
-        ${voidBtn}
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${editBtn}${voidBtn}</div>
       </div>
       ${renderInfoPanel([
+        ['填表時間',showTs(x.form_filled_at||x.created_at)],
         ['最新狀況',x.latest_status],
         ['本次已完成處置',x.completed_actions],
         ['後續待辦',x.pending_tasks],
@@ -102,13 +120,26 @@ function renderEventDetail(id){
     `);
   });
 
-  c.forEach(x=>z.push(`<h3>結報</h3>${renderInfoPanel([
-    ['最終狀況',x.final_status],
-    ['結案判定',x.closure_decision]
-  ])}${renderAttachmentGroup(e.id,'closure',x.id)}`));
+  c.forEach(x=>{
+    const editClosureBtn=e.status!=='voided'
+      ?`<button class="btn sm" data-edit-cl="${x.id}">編輯</button>`
+      :'';
+    z.push(`
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px">
+        <h3 style="margin:0">結報</h3>
+        ${editClosureBtn}
+      </div>
+      ${renderInfoPanel([
+        ['填表時間',showTs(x.form_filled_at||x.created_at)],
+        ['結案判定',x.closure_decision],
+        ['結案說明',x.final_status]
+      ])}
+      ${renderAttachmentGroup(e.id,'closure',x.id)}
+    `);
+  });
 
   if(hist.length){
-    z.push(`<h3>操作歷程</h3><div class="panel" style="padding:8px 18px">${hist.map(HLINE).join('')}</div>`);
+    z.push(`<details class="panel" style="margin-top:22px;padding:12px 18px"><summary style="cursor:pointer;font-weight:850">系統操作紀錄（查詢用）</summary><div style="padding-top:8px">${hist.map(HLINE).join('')}</div></details>`);
   }
 
   let A=['<button id="bk" class="btn">←返回</button>','<button id="eventPrint" class="btn">列印／匯出</button>'];
@@ -144,11 +175,22 @@ function renderEventDetail(id){
   $('bk').onclick=renderEventList;
   $('eventPrint')&&($('eventPrint').onclick=()=>openEventPrintPreview(e.id));
   $('ed')&&($('ed').onclick=()=>openInitialReportForm(e));
+  $('editInitialSubmitted')&&($('editInitialSubmitted').onclick=()=>openInitialReportForm(e));
   $('fu')&&($('fu').onclick=()=>openFollowupForm(e));
   $('cl')&&($('cl').onclick=()=>openClosureForm(e));
   $('ro')&&($('ro').onclick=()=>reopenEvent(e));
   $('vo')&&($('vo').onclick=()=>voidWholeEvent(e));
   $('restoreEvent')&&($('restoreEvent').onclick=()=>restoreEvent(e));
+
+  document.querySelectorAll('[data-edit-fu]').forEach(b=>{
+    const followup=f.find(x=>x.id===b.dataset.editFu);
+    b.onclick=()=>openEditFollowupForm(e,followup);
+  });
+
+  document.querySelectorAll('[data-edit-cl]').forEach(b=>{
+    const closure=c.find(x=>x.id===b.dataset.editCl);
+    b.onclick=()=>openEditClosureForm(e,closure);
+  });
 
   document.querySelectorAll('[data-void-fu]').forEach(b=>{
     b.onclick=()=>voidEventFollowup(e,b.dataset.voidFu);
