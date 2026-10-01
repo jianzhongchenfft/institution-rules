@@ -248,6 +248,38 @@
     const sync=()=>{copay.value=htmlCopayForWelfareIdentity(identity.value);};
     identity.addEventListener('change',sync); sync();
   }
+  function htmlPaymentOptions(current=''){
+    return '<option value="">未設定</option>'+
+      '<option value="銀行匯款" '+(current==='銀行匯款'?'selected':'')+'>銀行匯款</option>'+
+      '<option value="超商繳款" '+(current==='超商繳款'?'selected':'')+'>超商繳款</option>'+
+      '<option value="現金繳費" '+(current==='現金繳費'?'selected':'')+'>現金繳費</option>'+
+      '<option value="不收費" '+(current==='不收費'?'selected':'')+'>不收費</option>';
+  }
+  function htmlNormalizePaymentForWelfare(welfare,payment){
+    if(welfare==='低收入戶')return '不收費';
+    if((welfare==='中低收入戶'||welfare==='一般戶')&&payment==='不收費')return '';
+    return payment||'';
+  }
+  function htmlBindPaymentRules(welfareId,paymentId){
+    const welfare=$(welfareId),payment=$(paymentId); if(!welfare||!payment)return;
+    const sync=()=>{
+      const w=welfare.value;
+      const noFee=[...payment.options].find(o=>o.value==='不收費');
+      if(w==='低收入戶'){
+        const changedToNoFee=payment.value!=='不收費';
+        payment.value='不收費';
+        payment.disabled=true;
+        if(noFee)noFee.disabled=false;
+        if(changedToNoFee)toast('收入別為第一類，付款方式已自動調整為「不收費」。','success');
+      }else{
+        payment.disabled=false;
+        if(noFee)noFee.disabled=(w==='中低收入戶'||w==='一般戶');
+        if(noFee&&noFee.disabled&&payment.value==='不收費')payment.value='';
+      }
+    };
+    welfare.addEventListener('change',sync); sync();
+  }
+
   function htmlBindIndigenousGroup(statusId,groupId){
     const status=$(statusId),group=$(groupId); if(!status||!group)return;
     const sync=()=>{
@@ -271,12 +303,14 @@
   function htmlOpenFileModal(){
     const me=state.profile?.role==='supervisor';
     openModal({title:'確認 HTML 匯入資料',showConfirm:false,large:true,html:`
-      <div class="html-import-note">請上傳「照顧服務管理資訊平臺」下載的 HTML／HTM 檔。解析只讀取檔案內容，不執行檔案中的 JavaScript。個案編號為機構系統編號，需由匯入人手動輸入。</div>
+      <div class="html-import-note">請上傳「照顧服務管理資訊平臺」下載的 HTML／HTM 檔。解析只讀取檔案內容，不執行檔案中的 JavaScript。個案編號、失智及獨居狀態由機構手動設定。</div>
       <div class="form-grid">
         <div class="field"><label>個案編號 *</label><input id="htmlCaseNo" placeholder="例如：115C00001"></div>
         <div class="field"><label>負責督導 *</label><select id="htmlSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions('')}</select></div>
         <div class="field"><label>服務類別 *</label><select id="htmlUsageType"><option value="">請選擇</option><option value="居家">居家</option><option value="喘息">喘息</option><option value="居家+喘息">居家+喘息</option></select></div>
-        <div class="field"><label>繳款方式</label><select id="htmlPaymentMethod"><option value="">未設定</option><option value="銀行匯款">銀行匯款</option><option value="超商繳款">超商繳款</option><option value="現金繳費">現金繳費</option><option value="不收費">不收費</option></select><div class="help">非必填</div></div>
+        <div class="field"><label>繳款方式</label><select id="htmlPaymentMethod">${htmlPaymentOptions('')}</select><div class="help">第一類匯入後會自動設為不收費；第二、三類不可使用不收費。</div></div>
+        <div class="field"><label>失智 *</label><select id="htmlDementia"><option value="">請選擇</option><option value="true">是</option><option value="false">否</option></select></div>
+        <div class="field"><label>獨居 *</label><select id="htmlLivesAlone"><option value="">請選擇</option><option value="true">是</option><option value="false">否</option></select></div>
         <div class="field full"><label>照管平台 HTML *</label><div class="file-drop case-html-file-drop"><input id="htmlCaseFile" type="file" accept=".html,.htm,text/html,application/xhtml+xml"><div class="help">僅接受 HTML／HTM，單檔上限 10 MB。</div></div></div>
         <div class="field full"><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap"><button id="manualCaseFromHtml" class="btn" type="button">手動建立</button><button id="parseCaseHtml" class="btn primary" type="button">解析 HTML 並預覽</button></div></div>
       </div><div id="htmlParseStatus" class="html-import-status">尚未開始解析。</div>`});
@@ -284,16 +318,51 @@
     $('manualCaseFromHtml').addEventListener('click',htmlOpenManualModal);
 
     $('parseCaseHtml').addEventListener('click',async()=>{
-      const caseNo=htmlNormalizeCaseNo($('htmlCaseNo').value); $('htmlCaseNo').value=caseNo; const file=$('htmlCaseFile').files[0]; const supervisor=me?state.profile.id:$('htmlSupervisor').value;
-      const usageType=$('htmlUsageType').value, paymentMethod=$('htmlPaymentMethod').value;
-      if(!caseNo){toast('請輸入個案編號','warn');return;} if(!supervisor){toast('請選擇負責督導','warn');return;} if(!usageType){toast('請選擇服務類別','warn');return;} if(!file){toast('請選擇 HTML 檔案','warn');return;}
-      if(!/\.html?$/i.test(file.name)){toast('檔案格式必須是 HTML 或 HTM','warn');return;} if(file.size>10*1024*1024){toast('HTML 檔案不可超過 10 MB','warn');return;}
+      const caseNo=htmlNormalizeCaseNo($('htmlCaseNo').value); $('htmlCaseNo').value=caseNo;
+      const file=$('htmlCaseFile').files[0];
+      const supervisor=me?state.profile.id:$('htmlSupervisor').value;
+      const usageType=$('htmlUsageType').value;
+      const paymentMethod=$('htmlPaymentMethod').value;
+      const dementia=$('htmlDementia').value;
+      const livesAlone=$('htmlLivesAlone').value;
+      if(!caseNo){toast('請輸入個案編號','warn');return;}
+      if(!supervisor){toast('請選擇負責督導','warn');return;}
+      if(!usageType){toast('請選擇服務類別','warn');return;}
+      if(dementia===''){toast('請選擇是否失智','warn');return;}
+      if(livesAlone===''){toast('請選擇是否獨居','warn');return;}
+      if(!file){toast('請選擇 HTML 檔案','warn');return;}
+      if(!/\.html?$/i.test(file.name)){toast('檔案格式必須是 HTML 或 HTM','warn');return;}
+      if(file.size>10*1024*1024){toast('HTML 檔案不可超過 10 MB','warn');return;}
       const status=$('htmlParseStatus'); $('parseCaseHtml').disabled=true;
-      try{status.textContent='正在讀取 HTML…'; const source=await file.text(); const parsed=htmlParseDocument(source); parsed.case_no=caseNo;parsed.supervisor_id=supervisor;parsed.service_usage_type=usageType;parsed.payment_method=paymentMethod;parsed.file_name=file.name;parsed.source_hash=await htmlSha256(file);parsed._file=file;parsed._source=source;status.textContent='解析完成，正在比對既有個案…'; await htmlResolveMatch(parsed); htmlOpenPreview(parsed);}
-      catch(err){console.error(err);toast('HTML 解析失敗：'+(err?.message||err),'error');status.textContent='解析失敗，請確認檔案是否為照顧服務管理資訊平臺匯出的 HTML。';$('parseCaseHtml').disabled=false;}
+      try{
+        status.textContent='正在讀取 HTML…';
+        const source=await file.text();
+        const parsed=htmlParseDocument(source);
+        parsed.case_no=caseNo;
+        parsed.supervisor_id=supervisor;
+        parsed.service_usage_type=usageType;
+        parsed.has_dementia=dementia==='true';
+        parsed.lives_alone=livesAlone==='true';
+        parsed.payment_method=htmlNormalizePaymentForWelfare(parsed.welfare_identity,paymentMethod);
+        if((parsed.welfare_identity==='中低收入戶'||parsed.welfare_identity==='一般戶')&&paymentMethod==='不收費'){
+          toast('收入別為第二類／第三類，已取消「不收費」，請在預覽重新選擇付款方式。','warn');
+        }
+        parsed.file_name=file.name;
+        parsed.source_hash=await htmlSha256(file);
+        parsed._file=file;
+        parsed._source=source;
+        status.textContent='解析完成，正在比對既有個案…';
+        await htmlResolveMatch(parsed);
+        htmlOpenPreview(parsed);
+      }catch(err){
+        console.error(err);
+        toast('HTML 解析失敗：'+(err?.message||err),'error');
+        status.textContent='解析失敗，請確認檔案是否為照顧服務管理資訊平臺匯出的 HTML。';
+        $('parseCaseHtml').disabled=false;
+      }
     });
   }
-  async function htmlLoadExistingSnapshot(caseId){
+async function htmlLoadExistingSnapshot(caseId){
     const results=await Promise.all([
       db.from('care_cases').select('*').eq('id',caseId).maybeSingle(),
       db.from('case_approved_services').select('service_group,service_code,service_name,unit_price,approved_quantity,subtotal').eq('case_id',caseId).eq('is_current',true).order('service_code'),
@@ -398,6 +467,8 @@
     add('電話',old.phone,d.phone);
     add('地址',old.address,d.address);
     add('CMS',old.cms_level,d.cms_level);
+    add('失智',old.has_dementia===true?'是':old.has_dementia===false?'否':'',d.has_dementia===true?'是':d.has_dementia===false?'否':'');
+    add('獨居',old.lives_alone===true?'是':old.lives_alone===false?'否':'',d.lives_alone===true?'是':d.lives_alone===false?'否':'');
     add('身分類別',old.identity_type,d.identity_type);
     add('是否身障',old.has_disability===true?'是':old.has_disability===false?'否':'',d.has_disability===true?'是':d.has_disability===false?'否':'');
     add('是否原住民',old.is_indigenous===true?'是':old.is_indigenous===false?'否':'',d.is_indigenous===true?'是':d.is_indigenous===false?'否':'');
@@ -450,7 +521,16 @@
     const me=state.profile?.role==='supervisor';
     openModal({title:'確認 HTML 匯入資料',large:true,confirmText:'確認匯入',html:`${warning}
       ${(exact||potential.length)?`<div class="import-section">變更預覽</div><div id="hiDiffBox">${exact?htmlBuildImportDiff(d):'<div class="diff-empty">請先選擇要更新的既有個案，系統會顯示差異。</div>'}</div>`:''}
-      <div class="import-section">機構管理資料</div><div class="import-preview-grid"><div class="field"><label>個案編號 *</label><input id="hiCaseNo" value="${escapeHTML(d.case_no||'')}"></div><div class="field"><label>負責督導 *</label><select id="hiSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions(d.supervisor_id||'')}</select></div>${potential.length?`<div class="field full"><label>可能相同個案</label><select id="hiPotentialMatch"><option value="">建立為新個案</option>${potential.map(x=>`<option value="${x.id}">更新：${escapeHTML(x.case_no||'未編號')}｜${escapeHTML(x.case_name)}</option>`).join('')}</select></div>`:''}</div>
+      <div class="import-section">機構管理資料</div>
+      <div class="import-preview-grid">
+        <div class="field"><label>個案編號 *</label><input id="hiCaseNo" value="${escapeHTML(d.case_no||'')}"></div>
+        <div class="field"><label>負責督導 *</label><select id="hiSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions(d.supervisor_id||'')}</select></div>
+        <div class="field"><label>服務類別 *</label><select id="hiUsageType"><option value="">請選擇</option><option value="居家" ${d.service_usage_type==='居家'?'selected':''}>居家</option><option value="喘息" ${d.service_usage_type==='喘息'?'selected':''}>喘息</option><option value="居家+喘息" ${d.service_usage_type==='居家+喘息'?'selected':''}>居家+喘息</option></select></div>
+        <div class="field"><label>繳款方式</label><select id="hiPaymentMethod">${htmlPaymentOptions(d.payment_method||'')}</select></div>
+        <div class="field"><label>失智 *</label><select id="hiDementia"><option value="">請選擇</option><option value="true" ${d.has_dementia===true?'selected':''}>是</option><option value="false" ${d.has_dementia===false?'selected':''}>否</option></select></div>
+        <div class="field"><label>獨居 *</label><select id="hiLivesAlone"><option value="">請選擇</option><option value="true" ${d.lives_alone===true?'selected':''}>是</option><option value="false" ${d.lives_alone===false?'selected':''}>否</option></select></div>
+        ${potential.length?`<div class="field full"><label>可能相同個案</label><select id="hiPotentialMatch"><option value="">建立為新個案</option>${potential.map(x=>`<option value="${x.id}">更新：${escapeHTML(x.case_no||'未編號')}｜${escapeHTML(x.case_name)}</option>`).join('')}</select></div>`:''}
+      </div>
       <div class="import-section">基本資料</div><div class="import-preview-grid"><div class="field"><label>姓名 *</label><input id="hiName" value="${escapeHTML(d.case_name||'')}"></div><div class="field"><label>身分證字號</label><input id="hiNational" value="${escapeHTML(d.national_id||'')}"></div><div class="field"><label>出生日期</label><input id="hiBirth" type="date" value="${escapeHTML(d.birth_date||'')}"></div><div class="field"><label>性別</label><select id="hiGender"><option value="">未辨識</option><option value="男" ${d.gender==='男'?'selected':''}>男</option><option value="女" ${d.gender==='女'?'selected':''}>女</option></select></div><div class="field full"><label>地址</label><input id="hiAddress" value="${escapeHTML(d.address||'')}"></div><div class="field"><label>個案電話</label><input id="hiPhone" value="${escapeHTML(d.phone||'')}"></div><div class="field"><label>CMS</label><input id="hiCms" value="${escapeHTML(d.cms_level||'')}"></div><div class="field"><label>身分類別／長照資格</label><input id="hiIdentity" value="${escapeHTML(d.identity_type||'')}"></div><div class="field"><label>是否身障</label><select id="hiDisability"><option value="">未辨識</option><option value="true" ${d.has_disability===true?'selected':''}>是</option><option value="false" ${d.has_disability===false?'selected':''}>否</option></select></div><div class="field"><label>是否原住民</label><select id="hiIndigenous"><option value="">未辨識</option><option value="true" ${d.is_indigenous===true?'selected':''}>是</option><option value="false" ${d.is_indigenous===false?'selected':''}>否</option></select></div><div class="field"><label>原住民族別</label><input id="hiIndigenousGroup" value="${escapeHTML(d.indigenous_group||'')}"></div><div class="field"><label>長照福利身分</label><select id="hiWelfareIdentity">${htmlWelfareOptions(d.welfare_identity||'')}</select></div><div class="field"><label>自負擔比例（%）</label><input id="hiCopayRate" type="number" readonly value="${d.copay_rate??''}"><div class="help">依長照福利身分自動帶入</div></div><div class="field"><label>A單位</label><input id="hiAUnit" value="${escapeHTML(d.a_unit_name||'')}"></div><div class="field"><label>A個管</label><input id="hiManager" value="${escapeHTML(d.case_manager_name||'')}"></div><div class="field"><label>A個管電話</label><input id="hiManagerPhone" value="${escapeHTML(d.case_manager_phone||'')}"></div><div class="field"><label>照專／評估人員</label><input id="hiAssessor" value="${escapeHTML(d.assessor_name||'')}"></div></div>
       <div class="import-section">聯絡人／照顧者</div>${htmlContactsEditor(d.contacts||[])}
       <div class="import-section">核定服務</div>${htmlServiceEditor(d.services||[])}
@@ -462,6 +542,7 @@
     htmlBindServiceEditControls();
     htmlBindBudgetEditControls();
     htmlBindWelfareCopay('hiWelfareIdentity','hiCopayRate');
+    htmlBindPaymentRules('hiWelfareIdentity','hiPaymentMethod');
     htmlBindIndigenousGroup('hiIndigenous','hiIndigenousGroup');
     const potentialSelect=$('hiPotentialMatch');
     if(potentialSelect){
@@ -484,33 +565,112 @@
     }
   }
 
-  async function htmlSavePreview(d,exactMatchId){
-    const caseNo=htmlNormalizeCaseNo($('hiCaseNo').value), name=$('hiName').value.trim(); $('hiCaseNo').value=caseNo; const supervisor=state.profile?.role==='supervisor'?state.profile.id:$('hiSupervisor').value;
-    const usageType=d.service_usage_type||'', paymentMethod=d.payment_method||'';
+async function htmlSavePreview(d,exactMatchId){
+    const caseNo=htmlNormalizeCaseNo($('hiCaseNo').value), name=$('hiName').value.trim();
+    $('hiCaseNo').value=caseNo;
+    const supervisor=state.profile?.role==='supervisor'?state.profile.id:$('hiSupervisor').value;
+    const usageType=$('hiUsageType').value;
+    const welfare=$('hiWelfareIdentity').value.trim();
+    const paymentMethod=htmlNormalizePaymentForWelfare(welfare,$('hiPaymentMethod').value);
+    const dementia=$('hiDementia').value;
+    const livesAlone=$('hiLivesAlone').value;
     if(!caseNo||!name||!supervisor||!usageType){toast('個案編號、姓名、負責督導與服務類別為必填','warn');return false;}
-    const potential=$('hiPotentialMatch')?.value||''; const matchId=exactMatchId||potential||'';
+    if(dementia===''||livesAlone===''){toast('失智及獨居狀態為必填','warn');return false;}
+    if((welfare==='中低收入戶'||welfare==='一般戶')&&paymentMethod==='不收費'){toast('第二類／第三類個案不可設定為不收費','warn');return false;}
+    const potential=$('hiPotentialMatch')?.value||'';
+    const matchId=exactMatchId||potential||'';
     const file=d._file; showLoading(true); let path='';
     try{
-      const safeNo=caseNo.replace(/[^A-Za-z0-9_-]/g,'_'); const ext=/\.htm$/i.test(file.name)?'htm':'html'; path=`${safeNo}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const safeNo=caseNo.replace(/[^A-Za-z0-9_-]/g,'_');
+      const ext=/\.htm$/i.test(file.name)?'htm':'html';
+      path=`${safeNo}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
       const up=await db.storage.from(CASE_HTML_BUCKET).upload(path,file,{contentType:'text/html',upsert:false}); if(up.error)throw up.error;
-      const payload={case_no:caseNo,case_name:name,national_id:$('hiNational').value.trim().toUpperCase(),birth_date:$('hiBirth').value,gender:$('hiGender').value,address:$('hiAddress').value.trim(),phone:$('hiPhone').value.trim(),cms_level:$('hiCms').value.trim(),identity_type:$('hiIdentity').value.trim(),has_disability:$('hiDisability').value,is_indigenous:$('hiIndigenous').value,indigenous_group:$('hiIndigenousGroup').value.trim(),welfare_identity:$('hiWelfareIdentity').value.trim(),copay_rate:$('hiCopayRate').value,assessment_date:d.assessment_date||'',plan_approval_date:d.plan_approval_date||'',a_unit_name:$('hiAUnit').value.trim(),case_manager_name:$('hiManager').value.trim(),case_manager_phone:$('hiManagerPhone').value.trim(),assessor_name:$('hiAssessor').value.trim(),supervisor_id:supervisor,service_usage_type:usageType,payment_method:paymentMethod||'',contacts:htmlReadContacts(),services:htmlReadServices(),budgets:htmlReadBudgets(),care_plan:d.care_plan||{},source_ca110_id:d.source_ca110_id||'',source_hash:d.source_hash||'',file_name:file.name,storage_path:path,warnings:d.warnings||[],match_case_id:matchId};
-      if(d.lives_alone!==null)payload.lives_alone=d.lives_alone;
+      const payload={
+        case_no:caseNo,case_name:name,national_id:$('hiNational').value.trim().toUpperCase(),birth_date:$('hiBirth').value,gender:$('hiGender').value,
+        address:$('hiAddress').value.trim(),phone:$('hiPhone').value.trim(),cms_level:$('hiCms').value.trim(),
+        lives_alone:livesAlone==='true',has_dementia:dementia==='true',
+        identity_type:$('hiIdentity').value.trim(),has_disability:$('hiDisability').value,is_indigenous:$('hiIndigenous').value,
+        indigenous_group:$('hiIndigenousGroup').value.trim(),welfare_identity:welfare,copay_rate:$('hiCopayRate').value,
+        assessment_date:d.assessment_date||'',plan_approval_date:d.plan_approval_date||'',a_unit_name:$('hiAUnit').value.trim(),
+        case_manager_name:$('hiManager').value.trim(),case_manager_phone:$('hiManagerPhone').value.trim(),assessor_name:$('hiAssessor').value.trim(),
+        supervisor_id:supervisor,service_usage_type:usageType,payment_method:paymentMethod||'',
+        contacts:htmlReadContacts(),services:htmlReadServices(),budgets:htmlReadBudgets(),care_plan:d.care_plan||{},
+        source_ca110_id:d.source_ca110_id||'',source_hash:d.source_hash||'',file_name:file.name,storage_path:path,warnings:d.warnings||[],match_case_id:matchId
+      };
       const r=await db.rpc('import_case_html_data',{payload}); if(r.error)throw r.error;
-      if(r.data?.action==='duplicate'){await db.storage.from(CASE_HTML_BUCKET).remove([path]);closeModal();toast('這份 HTML 已經匯入過，未重複建立資料。','warn');navigate('cases');return true;}
-      closeModal();toast(r.data?.action==='updated'?(r.data?.care_plan_id&&!r.data?.plan_is_current?'既有個案已更新；本次照管平台照顧計畫已保存為歷史版本':'既有個案已更新'):'個案已建立','success');navigate('cases');return true;
-    }catch(err){if(path)try{await db.storage.from(CASE_HTML_BUCKET).remove([path]);}catch(_){ }console.error(err);toast('HTML 匯入失敗：'+(err?.message||err),'error');return false;}finally{showLoading(false);}
+      if(r.data?.action==='duplicate'){
+        await db.storage.from(CASE_HTML_BUCKET).remove([path]);closeModal();toast('這份 HTML 已經匯入過，未重複建立資料。','warn');navigate('cases');return true;
+      }
+      closeModal();
+      toast(r.data?.action==='updated'?(r.data?.care_plan_id&&!r.data?.plan_is_current?'既有個案已更新；本次照管平台照顧計畫已保存為歷史版本':'既有個案已更新'):'個案已建立','success');
+      navigate('cases');return true;
+    }catch(err){
+      if(path)try{await db.storage.from(CASE_HTML_BUCKET).remove([path]);}catch(_){}
+      console.error(err);toast('HTML 匯入失敗：'+(err?.message||err),'error');return false;
+    }finally{showLoading(false);}
   }
-  function htmlOpenManualModal(){
+
+function htmlOpenManualModal(){
     const me=state.profile?.role==='supervisor';
-    openModal({title:'手動建立個案',confirmText:'建立個案',large:true,html:`<div class="import-preview-grid"><div class="field"><label>個案編號 *</label><input id="hmCaseNo" placeholder="例如：115C00001"></div><div class="field"><label>負責督導 *</label><select id="hmSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions('')}</select></div><div class="field"><label>服務類別 *</label><select id="hmUsageType"><option value="">請選擇</option><option value="居家">居家</option><option value="喘息">喘息</option><option value="居家+喘息">居家+喘息</option></select></div><div class="field"><label>繳款方式</label><select id="hmPaymentMethod"><option value="">未設定</option><option value="銀行匯款">銀行匯款</option><option value="超商繳款">超商繳款</option><option value="現金繳費">現金繳費</option><option value="不收費">不收費</option></select><div class="help">非必填</div></div><div class="field"><label>姓名 *</label><input id="hmName"></div><div class="field"><label>身分證字號</label><input id="hmNational"></div><div class="field"><label>出生日期</label><input id="hmBirth" type="date"></div><div class="field"><label>性別</label><select id="hmGender"><option value=""></option><option>男</option><option>女</option></select></div><div class="field full"><label>地址</label><input id="hmAddress"></div><div class="field"><label>電話</label><input id="hmPhone"></div><div class="field"><label>CMS</label><input id="hmCms"></div><div class="field"><label>是否身障</label><select id="hmDisability"><option value="">未設定</option><option value="true">是</option><option value="false">否</option></select></div><div class="field"><label>是否原住民</label><select id="hmIndigenous"><option value="">未設定</option><option value="true">是</option><option value="false">否</option></select></div><div class="field"><label>原住民族別</label><input id="hmIndigenousGroup"></div><div class="field"><label>長照福利身分</label><select id="hmWelfareIdentity">${htmlWelfareOptions('')}</select></div><div class="field"><label>自負擔比例（%）</label><input id="hmCopayRate" type="number" readonly><div class="help">依長照福利身分自動帶入</div></div></div>`,onConfirm:async()=>{
-      const caseNo=htmlNormalizeCaseNo($('hmCaseNo').value),name=$('hmName').value.trim(),supervisor=me?state.profile.id:$('hmSupervisor').value,usageType=$('hmUsageType').value,paymentMethod=$('hmPaymentMethod').value;$('hmCaseNo').value=caseNo;if(!caseNo||!name||!supervisor||!usageType){toast('個案編號、姓名、負責督導與服務類別為必填','warn');return false;}
-      showLoading(true);try{const r=await db.from('care_cases').insert({case_no:caseNo,case_name:name,supervisor_id:supervisor,national_id:$('hmNational').value.trim().toUpperCase()||null,birth_date:$('hmBirth').value||null,gender:$('hmGender').value||null,address:$('hmAddress').value.trim()||null,phone:$('hmPhone').value.trim()||null,cms_level:$('hmCms').value.trim()||null,has_disability:$('hmDisability').value===''?null:$('hmDisability').value==='true',is_indigenous:$('hmIndigenous').value===''?null:$('hmIndigenous').value==='true',indigenous_group:$('hmIndigenousGroup').value.trim()||null,welfare_identity:$('hmWelfareIdentity').value.trim()||null,copay_rate:$('hmCopayRate').value===''?null:Number($('hmCopayRate').value),service_usage_type:usageType,payment_method:paymentMethod||null,service_status:'active',created_by:state.user.id}).select('id').single();if(r.error)throw r.error;const a=await db.from('case_supervisor_assignments').insert({case_id:r.data.id,supervisor_id:supervisor,assigned_from:new Date().toISOString().slice(0,10),is_current:true,created_by:state.user.id});if(a.error)throw a.error;closeModal();toast('個案已建立','success');navigate('cases');return true;}catch(err){toast('建立個案失敗：'+(err?.message||err),'error');return false;}finally{showLoading(false);}
-    }});
+    openModal({title:'手動建立個案',confirmText:'建立個案',large:true,html:`
+      <div class="import-preview-grid">
+        <div class="field"><label>個案編號 *</label><input id="hmCaseNo" placeholder="例如：115C00001"></div>
+        <div class="field"><label>負責督導 *</label><select id="hmSupervisor" ${me?'disabled':''}>${htmlSupervisorOptions('')}</select></div>
+        <div class="field"><label>服務類別 *</label><select id="hmUsageType"><option value="">請選擇</option><option value="居家">居家</option><option value="喘息">喘息</option><option value="居家+喘息">居家+喘息</option></select></div>
+        <div class="field"><label>繳款方式</label><select id="hmPaymentMethod">${htmlPaymentOptions('')}</select></div>
+        <div class="field"><label>失智 *</label><select id="hmDementia"><option value="">請選擇</option><option value="true">是</option><option value="false">否</option></select></div>
+        <div class="field"><label>獨居 *</label><select id="hmLivesAlone"><option value="">請選擇</option><option value="true">是</option><option value="false">否</option></select></div>
+        <div class="field"><label>姓名 *</label><input id="hmName"></div>
+        <div class="field"><label>身分證字號</label><input id="hmNational"></div>
+        <div class="field"><label>出生日期</label><input id="hmBirth" type="date"></div>
+        <div class="field"><label>性別</label><select id="hmGender"><option value=""></option><option>男</option><option>女</option></select></div>
+        <div class="field full"><label>地址</label><input id="hmAddress"></div>
+        <div class="field"><label>電話</label><input id="hmPhone"></div>
+        <div class="field"><label>CMS</label><input id="hmCms"></div>
+        <div class="field"><label>是否身障</label><select id="hmDisability"><option value="">未設定</option><option value="true">是</option><option value="false">否</option></select></div>
+        <div class="field"><label>是否原住民</label><select id="hmIndigenous"><option value="">未設定</option><option value="true">是</option><option value="false">否</option></select></div>
+        <div class="field"><label>原住民族別</label><input id="hmIndigenousGroup"></div>
+        <div class="field"><label>長照福利身分</label><select id="hmWelfareIdentity">${htmlWelfareOptions('')}</select></div>
+        <div class="field"><label>自負擔比例（%）</label><input id="hmCopayRate" type="number" readonly><div class="help">依長照福利身分自動帶入</div></div>
+      </div>`,
+      onConfirm:async()=>{
+        const caseNo=htmlNormalizeCaseNo($('hmCaseNo').value),name=$('hmName').value.trim();
+        const supervisor=me?state.profile.id:$('hmSupervisor').value;
+        const usageType=$('hmUsageType').value;
+        const welfare=$('hmWelfareIdentity').value.trim();
+        const paymentMethod=htmlNormalizePaymentForWelfare(welfare,$('hmPaymentMethod').value);
+        const dementia=$('hmDementia').value,livesAlone=$('hmLivesAlone').value;
+        $('hmCaseNo').value=caseNo;
+        if(!caseNo||!name||!supervisor||!usageType){toast('個案編號、姓名、負責督導與服務類別為必填','warn');return false;}
+        if(dementia===''||livesAlone===''){toast('失智及獨居狀態為必填','warn');return false;}
+        showLoading(true);
+        try{
+          const r=await db.from('care_cases').insert({
+            case_no:caseNo,case_name:name,supervisor_id:supervisor,
+            national_id:$('hmNational').value.trim().toUpperCase()||null,birth_date:$('hmBirth').value||null,gender:$('hmGender').value||null,
+            address:$('hmAddress').value.trim()||null,phone:$('hmPhone').value.trim()||null,cms_level:$('hmCms').value.trim()||null,
+            lives_alone:livesAlone==='true',has_dementia:dementia==='true',
+            has_disability:$('hmDisability').value===''?null:$('hmDisability').value==='true',
+            is_indigenous:$('hmIndigenous').value===''?null:$('hmIndigenous').value==='true',
+            indigenous_group:$('hmIndigenousGroup').value.trim()||null,
+            welfare_identity:welfare||null,copay_rate:$('hmCopayRate').value===''?null:Number($('hmCopayRate').value),
+            service_usage_type:usageType,payment_method:paymentMethod||null,service_status:'active',created_by:state.user.id
+          }).select('id').single();
+          if(r.error)throw r.error;
+          const a=await db.from('case_supervisor_assignments').insert({case_id:r.data.id,supervisor_id:supervisor,assigned_from:new Date().toISOString().slice(0,10),is_current:true,created_by:state.user.id});
+          if(a.error)throw a.error;
+          closeModal();toast('個案已建立','success');navigate('cases');return true;
+        }catch(err){
+          toast('建立個案失敗：'+(err?.message||err),'error');return false;
+        }finally{showLoading(false);}
+      }});
     htmlBindCaseNoInput('hmCaseNo');
     htmlBindWelfareCopay('hmWelfareIdentity','hmCopayRate');
+    htmlBindPaymentRules('hmWelfareIdentity','hmPaymentMethod');
     htmlBindIndigenousGroup('hmIndigenous','hmIndigenousGroup');
   }
-  async function htmlViewOriginal(path,fileName){
+
+async function htmlViewOriginal(path,fileName){
     showLoading(true);try{const r=await db.storage.from(CASE_HTML_BUCKET).download(path);if(r.error)throw r.error;const text=await r.data.text();const blob=new Blob([text],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);window.open(url,'_blank','noopener');setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(err){toast('讀取原始 HTML 失敗：'+(err?.message||err),'error');}finally{showLoading(false);}
   }
   function htmlCanEditCase(c){
@@ -623,6 +783,8 @@
           '<div class="field"><label>性別</label><select id="editGender"><option value=""></option><option value="男"'+htmlSelected('男',c.gender)+'>男</option><option value="女"'+htmlSelected('女',c.gender)+'>女</option></select></div>',
           '<div class="field"><label>電話</label><input id="editPhone" value="'+escapeHTML(c.phone||'')+'"></div>',
           '<div class="field"><label>CMS</label><input id="editCms" value="'+escapeHTML(c.cms_level||'')+'"></div>',
+          '<div class="field"><label>失智 *</label><select id="editDementia"><option value="">請選擇</option><option value="true"'+htmlSelected('true',c.has_dementia===true?'true':c.has_dementia===false?'false':'')+'>是</option><option value="false"'+htmlSelected('false',c.has_dementia===true?'true':c.has_dementia===false?'false':'')+'>否</option></select></div>',
+          '<div class="field"><label>獨居 *</label><select id="editLivesAlone"><option value="">請選擇</option><option value="true"'+htmlSelected('true',c.lives_alone===true?'true':c.lives_alone===false?'false':'')+'>是</option><option value="false"'+htmlSelected('false',c.lives_alone===true?'true':c.lives_alone===false?'false':'')+'>否</option></select></div>',
           '<div class="field full"><label>地址</label><input id="editAddress" value="'+escapeHTML(c.address||'')+'"></div>',
           '<div class="field"><label>身分類別／長照資格</label><input id="editIdentity" value="'+escapeHTML(c.identity_type||'')+'"></div>',
           '<div class="field"><label>是否身障</label><select id="editDisability"><option value="">未設定</option><option value="true"'+htmlSelected('true',c.has_disability===true?'true':c.has_disability===false?'false':'')+'>是</option><option value="false"'+htmlSelected('false',c.has_disability===true?'true':c.has_disability===false?'false':'')+'>否</option></select></div>',
@@ -650,13 +812,18 @@
           service_status:$('editStatus').value,national_id:$('editNational').value.trim().toUpperCase(),
           birth_date:$('editBirth').value,gender:$('editGender').value,address:$('editAddress').value.trim(),
           phone:$('editPhone').value.trim(),cms_level:$('editCms').value.trim(),
+          lives_alone:$('editLivesAlone').value,has_dementia:$('editDementia').value,
           identity_type:$('editIdentity').value.trim(),has_disability:$('editDisability').value,is_indigenous:$('editIndigenous').value,indigenous_group:$('editIndigenousGroup').value.trim(),welfare_identity:$('editWelfareIdentity').value.trim(),copay_rate:$('editCopayRate').value,a_unit_name:$('editAUnit').value.trim(),
           case_manager_name:$('editManager').value.trim(),case_manager_phone:$('editManagerPhone').value.trim(),
           assessor_name:$('editAssessor').value.trim(),notes:$('editNotes').value.trim(),
           contacts:htmlReadContacts()
         };
+        payload.payment_method=htmlNormalizePaymentForWelfare(payload.welfare_identity,payload.payment_method);
         if(!payload.case_no||!payload.case_name||!payload.supervisor_id||!payload.service_usage_type){
           toast('個案編號、姓名、負責督導與服務類別為必填','warn');return false;
+        }
+        if(payload.has_dementia===''||payload.lives_alone===''){
+          toast('失智及獨居狀態為必填','warn');return false;
         }
         showLoading(true);
         try{
@@ -670,6 +837,7 @@
       }});
       htmlBindCaseNoInput('editCaseNo');
       htmlBindWelfareCopay('editWelfareIdentity','editCopayRate');
+      htmlBindPaymentRules('editWelfareIdentity','editPayment');
       htmlBindIndigenousGroup('editIndigenous','editIndigenousGroup');
       htmlBindContactEditControls();
     }catch(err){
@@ -780,6 +948,21 @@
     });
   }
 
+  async function htmlSetPreferredPlan(planId){
+    var p=htmlCaseDetailState.data&&htmlCaseDetailState.data.plans?htmlCaseDetailState.data.plans.find(function(x){return x.id===planId;}):null;
+    if(!p)return;
+    if(!confirm('確定將此版本設為同一計畫日期的目前使用版本嗎？'))return;
+    showLoading(true);
+    try{
+      var r=await db.rpc('set_preferred_care_plan_version',{p_plan_id:planId});
+      if(r.error)throw r.error;
+      htmlCaseDetailState.selectedPlanId=planId;
+      await htmlRefreshCaseDetail(p.case_id,'已指定此版本為目前使用版本','success','platform-plan');
+    }catch(err){
+      toast('設定目前版本失敗：'+(err&&err.message?err.message:err),'error');
+    }finally{showLoading(false);}
+  }
+
   async function htmlOpenExistingPlanUpload(caseId){
     showLoading(true);
     try{
@@ -791,7 +974,7 @@
         toast('請先編輯個案並設定服務類別，再上傳照管平台照顧計畫版本。','warn');return;
       }
       var html=[
-        '<div class="html-import-note">個案：<strong>'+escapeHTML(c.case_no||'—')+'　'+escapeHTML(c.case_name||'')+'</strong><br>可補上傳新、舊版本。系統以「計畫日期」判斷最新版本，不以上傳先後順序判斷。</div>',
+        '<div class="html-import-note">個案：<strong>'+escapeHTML(c.case_no||'—')+'　'+escapeHTML(c.case_name||'')+'</strong><br>可補上傳新、舊版本。系統先依「計畫日期」判斷；若同一日期有多個版本，預設以後匯入版本為目前使用，也可在版本頁手動指定。</div>',
         '<div class="field"><label>照管平台照顧計畫 HTML *</label><div class="file-drop case-html-file-drop">',
         '<input id="planVersionFile" type="file" accept=".html,.htm,text/html,application/xhtml+xml">',
         '<div class="help">僅接受 HTML／HTM，單檔上限 10 MB。</div></div></div>',
@@ -813,6 +996,8 @@
             status.textContent='身分證字號與目前個案不一致，已停止匯入。';
             toast('此 HTML 似乎不是這位個案的資料','error');return;
           }
+          d.lives_alone=c.lives_alone;
+          d.has_dementia=c.has_dementia;
           d._file=file;
           d._source=source;
           d.source_hash=await htmlSha256(file);
@@ -872,6 +1057,8 @@
         address:d.address||c.address||'',
         phone:d.phone||c.phone||'',
         cms_level:d.cms_level||c.cms_level||'',
+        lives_alone:c.lives_alone,
+        has_dementia:c.has_dementia,
         identity_type:d.identity_type||c.identity_type||'',
         has_disability:d.has_disability!==null&&d.has_disability!==undefined?d.has_disability:c.has_disability,
         is_indigenous:d.is_indigenous!==null&&d.is_indigenous!==undefined?d.is_indigenous:c.is_indigenous,
@@ -886,7 +1073,7 @@
         assessor_name:d.assessor_name||c.assessor_name||'',
         supervisor_id:c.supervisor_id,
         service_usage_type:c.service_usage_type,
-        payment_method:c.payment_method||'',
+        payment_method:htmlNormalizePaymentForWelfare(d.welfare_identity||c.welfare_identity||'',c.payment_method||''),
         contacts:d.contacts||[],
         services:d.services||[],
         budgets:d.budgets||[],
@@ -898,7 +1085,6 @@
         warnings:d.warnings||[],
         match_case_id:c.id
       };
-      if(d.lives_alone!==null)payload.lives_alone=d.lives_alone;
       var r=await db.rpc('import_case_html_data',{payload:payload});
       if(r.error)throw r.error;
       if(r.data&&r.data.action==='duplicate'){
@@ -1029,6 +1215,7 @@
         '<div class="case-data-grid">',
           htmlCaseField('個案編號',c.case_no),htmlCaseField('姓名',c.case_name),htmlCaseField('身分證字號',c.national_id),
           htmlCaseField('出生日期',c.birth_date?rocDate(c.birth_date+'T00:00:00'):'—'),htmlCaseField('性別',c.gender),htmlCaseField('CMS',c.cms_level),
+          htmlCaseField('失智',c.has_dementia===true?'是':c.has_dementia===false?'否':'—'),htmlCaseField('獨居',c.lives_alone===true?'是':c.lives_alone===false?'否':'—'),
           htmlCaseField('電話',c.phone),htmlCaseField('服務狀態',status.text),htmlCaseField('服務類別',c.service_usage_type),
           htmlCaseField('繳款方式',c.payment_method||'未設定'),htmlCaseField('負責督導',htmlGetCaseVisitsApi().caseStaffName(c.supervisor_id)),htmlCaseField('身分類別／長照資格',c.identity_type),
           htmlCaseField('是否身障',c.has_disability===true?'是':c.has_disability===false?'否':'—'),htmlCaseField('是否原住民',c.is_indigenous===true?'是':c.is_indigenous===false?'否':'—'),htmlCaseField('原住民族別',c.indigenous_group),
@@ -1047,32 +1234,46 @@
     var firstValid=data.plans.find(function(p){return !p.is_voided;})||null;
     var selected=data.plans.find(function(p){return p.id===htmlCaseDetailState.selectedPlanId;})||current||firstValid||data.plans[0]||null;
     if(selected)htmlCaseDetailState.selectedPlanId=selected.id;
+    var latestDate=current&&current.plan_date?current.plan_date:(firstValid&&firstValid.plan_date?firstValid.plan_date:null);
+
     var nav=data.plans.length?data.plans.map(function(p){
       var src=data.imports.find(function(x){return x.id===p.source_import_id;});
-      var status=p.is_current?'　目前使用':p.is_voided?'　已作廢':'';
-      return '<button class="case-version-btn '+(selected&&selected.id===p.id?'active ':'')+(p.is_voided?'voided':'')+'" data-plan-select="'+p.id+'"><strong>'+escapeHTML(htmlFormatPlanDate(p.plan_date))+status+'</strong><small>'+(src&&src.file_name?'來源：'+escapeHTML(src.file_name):'系統版本')+(p.is_voided&&p.void_reason?'｜作廢：'+escapeHTML(p.void_reason):'')+'</small></button>';
+      var status=p.is_current?'　目前使用':p.is_voided?'　已作廢':p.is_preferred_version?'　指定優先':'';
+      var sourceText=src&&src.file_name?'來源：'+escapeHTML(src.file_name):'系統版本';
+      if(src&&src.imported_at)sourceText+='｜匯入：'+escapeHTML(rocDate(src.imported_at));
+      return '<button class="case-version-btn '+(selected&&selected.id===p.id?'active ':'')+(p.is_voided?'voided':'')+'" data-plan-select="'+p.id+'"><strong>'+escapeHTML(htmlFormatPlanDate(p.plan_date))+status+'</strong><small>'+sourceText+(p.is_voided&&p.void_reason?'｜作廢：'+escapeHTML(p.void_reason):'')+'</small></button>';
     }).join(''):htmlCaseEmpty('尚無照管平台照顧計畫版本');
+
     var actions='';
     if(selected&&htmlCanEditCase(c)&&!selected.is_voided){
-      actions='<div class="section-actions"><button class="btn sm" data-edit-plan="'+selected.id+'">編輯此版本</button><button class="btn sm" data-void-plan="'+selected.id+'">作廢此版本</button></div>';
+      var canPrefer=!selected.is_current && ((!latestDate&&!selected.plan_date)||(latestDate&&selected.plan_date===latestDate));
+      actions='<div class="section-actions">'+
+        (canPrefer?'<button class="btn sm primary" data-set-current-plan="'+selected.id+'">設為目前版本</button>':'')+
+        '<button class="btn sm" data-edit-plan="'+selected.id+'">編輯此版本</button>'+
+        '<button class="btn sm" data-void-plan="'+selected.id+'">作廢此版本</button></div>';
     }
+
     var voidInfo=selected&&selected.is_voided
       ?'<div class="import-warning" style="margin-top:10px"><strong>此版本已作廢</strong><br>原因：'+escapeHTML(selected.void_reason||'未填寫')+(selected.voided_at?'<br>作廢時間：'+escapeHTML(rocDate(selected.voided_at)):'')+(selected.voided_by_staff_id?'<br>作廢者：'+escapeHTML(htmlGetCaseVisitsApi().caseStaffName(selected.voided_by_staff_id)):'')+'</div>'
       :'';
+
     var detail=selected?[
-      '<div class="case-panel-card"><div class="case-panel-head"><strong>'+escapeHTML(htmlFormatPlanDate(selected.plan_date))+(selected.is_current?'　<span class="plan-current-badge">目前使用</span>':selected.is_voided?'　<span class="plan-void-badge">已作廢</span>':'')+'</strong>'+actions+'</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>'+escapeHTML(htmlFormatPlanDate(selected.plan_date))+
+        (selected.is_current?'　<span class="plan-current-badge">目前使用</span>':selected.is_voided?'　<span class="plan-void-badge">已作廢</span>':selected.is_preferred_version?'　<span class="plan-current-badge">指定優先</span>':'')+
+        '</strong>'+actions+'</div>',
         '<div class="case-data-grid">'+htmlCaseField('計畫日期',htmlFormatPlanDate(selected.plan_date))+htmlCaseField('電聯日期',selected.phone_contact_date?rocDate(selected.phone_contact_date+'T00:00:00'):'—')+htmlCaseField('家訪日期',selected.home_visit_date?rocDate(selected.home_visit_date+'T00:00:00'):'—')+htmlCaseField('偕同訪視者',selected.visit_with,true)+'</div>',
         voidInfo,
         '<div style="margin-top:12px">'+htmlPlanPreview(selected)+'</div>',
       '</div>'
     ].join(''):htmlCaseEmpty('尚無照管平台照顧計畫');
+
     return [
-      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>照管平台照顧計畫版本</strong><div class="case-panel-note">版本依計畫日期判斷目前使用；已作廢版本保留供追溯，但不參與目前版本判斷。</div></div>'+(htmlCanEditCase(c)?'<button id="caseUploadPlan" class="btn sm primary">＋ 上傳照管平台照顧計畫 HTML</button>':'')+'</div></div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>照管平台照顧計畫版本</strong><div class="case-panel-note">先依計畫日期判斷目前使用；同日期若有指定版本，以指定版本優先，否則以後匯入版本為目前使用。已作廢版本不參與判斷。</div></div>'+(htmlCanEditCase(c)?'<button id="caseUploadPlan" class="btn sm primary">＋ 上傳照管平台照顧計畫 HTML</button>':'')+'</div></div>',
       '<div class="case-version-grid"><div class="case-version-nav">'+nav+'</div><div>'+detail+'</div></div>'
     ].join('');
   }
 
-  function htmlRenderServicesTab(data){
+function htmlRenderServicesTab(data){
     var c=data.c,current=data.plans.find(function(p){return p.is_current;})||null;
     var services=current?data.services.filter(function(x){return x.care_plan_id===current.id;}):data.services.filter(function(x){return x.is_current;});
     var budgets=current?data.budgets.filter(function(x){return x.care_plan_id===current.id;}):data.budgets.filter(function(x){return x.is_current;});
@@ -1134,6 +1335,7 @@
     var edit=$('caseEditProfile');if(edit)edit.addEventListener('click',function(){htmlOpenCaseEdit(data.c.id);});
     var upload=$('caseUploadPlan');if(upload)upload.addEventListener('click',function(){htmlOpenExistingPlanUpload(data.c.id);});
     document.querySelectorAll('[data-plan-select]').forEach(function(btn){btn.addEventListener('click',function(){htmlCaseDetailState.selectedPlanId=btn.dataset.planSelect;htmlRenderCaseDetailPanel();});});
+    document.querySelectorAll('[data-set-current-plan]').forEach(function(btn){btn.addEventListener('click',function(){htmlSetPreferredPlan(btn.dataset.setCurrentPlan);});});
     document.querySelectorAll('[data-edit-plan]').forEach(function(btn){btn.addEventListener('click',function(){htmlOpenPlanEdit(btn.dataset.editPlan);});});
     document.querySelectorAll('[data-void-plan]').forEach(function(btn){btn.addEventListener('click',function(){htmlOpenPlanVoid(btn.dataset.voidPlan);});});
     document.querySelectorAll('[data-add-visit]').forEach(function(btn){btn.addEventListener('click',function(){htmlGetCaseVisitsApi().openVisitModal(data.c);setTimeout(function(){var sel=$('visitType');if(sel)sel.value=btn.dataset.addVisit;},0);});});
