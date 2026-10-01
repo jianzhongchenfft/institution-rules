@@ -148,7 +148,7 @@ function buildEventPrintHtml(eventId){
           <tbody>
             <tr>
               <th>初報登錄人</th><td>${printText(printStaffName(initial.submitted_by_staff_id||event.registered_by_staff_id))}</td>
-              <th>初報時間</th><td>${printText(printDateTime(initial.submitted_at||initial.created_at))}</td>
+              <th>填表時間</th><td>${printText(printDateTime(initial.form_filled_at||initial.submitted_at||initial.created_at))}</td>
             </tr>
             <tr>
               <th>下次追蹤日期</th><td>${printDate(nextDate)}</td>
@@ -193,7 +193,10 @@ function buildEventPrintHtml(eventId){
                 </tr>
                 <tr>
                   <th>下次追蹤日期</th><td>${printDate(followup.next_followup_date)}</td>
-                  <th>附件</th><td>${printAttachmentNames(files)}</td>
+                  <th>填表時間</th><td>${printText(printDateTime(followup.form_filled_at||followup.created_at))}</td>
+                </tr>
+                <tr>
+                  <th>附件</th><td colspan="3">${printAttachmentNames(files)}</td>
                 </tr>
               </tbody>
             </table>
@@ -228,12 +231,13 @@ function buildEventPrintHtml(eventId){
                   <th>結報人</th><td>${printText(printStaffName(closure.closed_by_staff_id))}</td>
                 </tr>
                 <tr>
-                  <th>附件</th><td colspan="3">${printAttachmentNames(files)}</td>
+                  <th>填表時間</th><td>${printText(printDateTime(closure.form_filled_at||closure.created_at))}</td>
+                  <th>附件</th><td>${printAttachmentNames(files)}</td>
                 </tr>
               </tbody>
             </table>
-            ${printNarrativeBlock('（一）最終狀況',closure.final_status)}
-            ${printNarrativeBlock('（二）結案判定',closure.closure_decision)}
+            ${printNarrativeBlock('（一）結案判定',closure.closure_decision)}
+            ${printNarrativeBlock('（二）結案說明',closure.final_status)}
           </div>
         `;
       }).join('')
