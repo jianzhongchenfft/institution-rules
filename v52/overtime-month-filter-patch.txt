@@ -38,7 +38,7 @@
   }
 
   function toggleMonthControl(){
-    const show=['mine','usage','payroll'].includes(state.overtimeView);
+    const show=['mine','payroll'].includes(state.overtimeView);
     document.getElementById('otMonth')?.classList.toggle('ot-month-filter-hidden',!show);
     document.querySelector('label[for="otMonth"]')?.classList.toggle('ot-month-filter-hidden',!show);
   }
@@ -48,30 +48,39 @@
   }
 
   function showEmptyNotice(tableShell,view){
-    clearEmptyNotice();
     if(!tableShell)return;
     tableShell.classList.add('ot-month-filter-hidden');
     const month=selectedMonth();
     const [year,mon]=month.split('-').map(Number);
     const label=`民國 ${year-1911} 年 ${mon} 月`;
-    const box=document.createElement('div');
+    const html=`<div class="icon">✓</div><h3>${label}目前沒有資料</h3><p>${view==='usage'?'本月份沒有換休使用紀錄。':'本月份沒有加班／換休申請紀錄。'}</p>`;
+    let box=document.getElementById('otMonthFilterEmpty');
+    if(box){
+      if(box.previousElementSibling!==tableShell){
+        tableShell.insertAdjacentElement('afterend',box);
+      }
+      if(box.innerHTML!==html)box.innerHTML=html;
+      return;
+    }
+    box=document.createElement('div');
     box.id='otMonthFilterEmpty';
     box.className='ot-month-filter-empty';
-    box.innerHTML=`<div class="icon">✓</div><h3>${label}目前沒有資料</h3><p>${view==='usage'?'本月份沒有換休使用紀錄。':'本月份沒有加班／換休申請紀錄。'}</p>`;
+    box.innerHTML=html;
     tableShell.insertAdjacentElement('afterend',box);
   }
 
   function applyTableMonthFilter(){
     if(state.page!=='overtime')return;
     const view=state.overtimeView;
-    if(!['mine','usage'].includes(view)){
+    if(view!=='mine'){
       clearEmptyNotice();
       document.querySelector('#otMain .ot-table-shell')?.classList.remove('ot-month-filter-hidden');
+      document.querySelectorAll('#otMain .ot-table tbody tr').forEach(tr=>tr.classList.remove('ot-month-filter-hidden'));
       return;
     }
 
-    const items=view==='mine'?ownOvertimeRows():ownLeaveRows();
-    const dateKey=view==='mine'?'work_date':'leave_date';
+    const items=ownOvertimeRows();
+    const dateKey='work_date';
     const tableShell=document.querySelector('#otMain .ot-table-shell');
     const domRows=[...document.querySelectorAll('#otMain .ot-table tbody tr')];
     if(!tableShell||!domRows.length){
@@ -121,7 +130,7 @@
   }
 
   function ensureStableStatusRows(){
-    const modal=document.getElementById('otWorkDate')?.closest('.modal');
+    const modal=document.getElementById('otWorkDate')?.closest('.modal,.ot-page-form');
     if(!modal)return;
     const type=document.getElementById('otType')?.value;
     if(type==='holiday_visit_comp'){

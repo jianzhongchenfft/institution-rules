@@ -4,6 +4,8 @@
   overtimeStyle.id = 'v52-overtime-style';
   overtimeStyle.textContent = `
     .ot-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .ot-summary-main{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .ot-summary-action{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;user-select:none}.ot-summary-action:hover{border-color:#dc9479;box-shadow:0 3px 10px rgba(16,24,40,.08)}.ot-summary-action:focus{outline:2px solid rgba(220,148,121,.35);outline-offset:2px}.ot-summary-action.active{border-color:#dc9479;box-shadow:0 0 0 2px rgba(220,148,121,.14);background:#fff8f5}
     .ot-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     .ot-toolbar .spacer{flex:1}
     .ot-tabs{display:flex;gap:7px;flex-wrap:wrap}
@@ -32,6 +34,15 @@
     .ot-rule-highlight{margin-top:12px;border:1px solid #f0ded7;background:#fff8f5;border-radius:10px;padding:10px 12px;color:#7d4b3b;font-size:12px;line-height:1.65}
     .ot-calc{border:1px solid #f0ded7;background:#fff8f5;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:900;color:#7d4b3b;line-height:1.6}
     .ot-readonly{background:#f8fafc!important;color:#475467!important;font-weight:900}
+    .ot-page-form{max-width:1100px;margin:0 auto;padding-bottom:96px}
+    .ot-page-form-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+    .ot-page-form-title{font-size:21px;font-weight:900;color:#344054;line-height:1.3}
+    .ot-page-form-sub{margin-top:5px;color:#667085;font-size:11.5px;line-height:1.55}
+    .ot-page-form-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(16,24,40,.03)}
+    .ot-page-form-footer{position:sticky;bottom:10px;z-index:20;display:flex;align-items:center;gap:8px;margin-top:14px;padding:11px 12px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(16,24,40,.10);backdrop-filter:blur(8px)}
+    .ot-page-form-footer .spacer{flex:1}
+    .ot-page-form-status{font-size:10.5px;font-weight:900;color:#667085}.ot-page-form-status.dirty{color:#b54708}
+    @media(max-width:760px){.ot-page-form-card{padding:12px}.ot-page-form-footer{bottom:6px;flex-wrap:wrap}.ot-page-form-footer .spacer{display:none}}
     .ot-time-pair{display:grid;grid-template-columns:1fr 1fr;gap:7px}
     .ot-time-pair select{width:100%}
     .ot-empty{padding:34px 18px;text-align:center;color:#667085}
@@ -51,7 +62,7 @@
       section:'行政管理',
       id:'overtime',
       icon:'⏱',
-      label:'加班／換休管理',
+      label:'加班休假',
       crumb:'加班申請、換休與審核',
       ready:true
     };
@@ -623,17 +634,15 @@
 
     $('content').innerHTML=`
       <div class="page-head">
-        <div><h1>⏱ 加班／換休管理</h1></div>
+        <div><h1>🗓 加班休假</h1></div>
         <div class="actions">
-          ${canSubmit?'<button id="otAddBtn" class="btn primary">＋ 新增申請</button><button id="clAddBtn" class="btn">＋ 使用換休</button>':''}
+          ${canSubmit?'<button id="otAddBtn" class="btn primary">＋ 申請加班</button><button id="clAddBtn" class="btn">＋ 使用換休</button>':''}
         </div>
       </div>
       ${canSubmit?`
-      <section class="ot-summary">
-        <article class="stat-card"><div class="stat-head"><span>本月我的加班</span><span class="stat-icon">⏱</span></div><div class="stat-value">${overtimeDurationLabel(summary.overtimeMinutes)}</div></article>
-        <article class="stat-card"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div></article>
-        <article class="stat-card"><div class="stat-head"><span>可再申請換休</span><span class="stat-icon">✅</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div></article>
-        <article class="stat-card"><div class="stat-head"><span>${canReview?'全部待審核':'我的待審核'}</span><span class="stat-icon">📄</span></div><div class="stat-value">${canReview?reviewCount:summary.ownPending}</div></article>
+      <section class="ot-summary ot-summary-main">
+        <article class="stat-card ot-summary-action ${state.overtimeView==='mine'?'active':''}" role="button" tabindex="0" data-ot-summary-view="mine"><div class="stat-head"><span>本月我的加班</span><span class="stat-icon">⏱</span></div><div class="stat-value">${overtimeDurationLabel(summary.overtimeMinutes)}</div><div class="stat-foot">點擊查看我的申請</div></article>
+        <article class="stat-card ot-summary-action ${state.overtimeView==='usage'?'active':''}" role="button" tabindex="0" data-ot-summary-view="usage"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div><div class="stat-foot">累計已使用 ${overtimeDurationLabel(summary.balance.used)}・點擊查看紀錄</div></article>
       </section>`:`
       <section class="ot-summary">
         <article class="stat-card"><div class="stat-head"><span>待審核加班／換休</span><span class="stat-icon">⏱</span></div><div class="stat-value">${summary.pendingOvertime}</div></article>
@@ -642,13 +651,12 @@
       <div class="ot-toolbar">
         <div class="ot-tabs">
           ${canSubmit?`<button class="ot-tab ${state.overtimeView==='mine'?'active':''}" data-ot-view="mine">我的申請</button>
-          <button class="ot-tab ${state.overtimeView==='balance'?'active':''}" data-ot-view="balance">我的換休</button>
+          <button class="ot-tab ${state.overtimeView==='balance'?'active':''}" data-ot-view="balance">換休帳本</button>
           <button class="ot-tab ${state.overtimeView==='usage'?'active':''}" data-ot-view="usage">換休使用紀錄</button>`:''}
           ${canReview?`<button class="ot-tab ${state.overtimeView==='review'?'active':''}" data-ot-view="review">待審核 ${reviewCount}</button><button class="ot-tab ${state.overtimeView==='payroll'?'active':''}" data-ot-view="payroll">薪資結算</button>`:''}
         </div>
         <span class="spacer"></span>
-        <label class="schedule-filter-label" for="otMonth">月份</label>
-        <input id="otMonth" type="month" value="${escapeHTML(state.overtimeMonth)}">
+        ${['mine','payroll'].includes(state.overtimeView)?`<label class="schedule-filter-label" for="otMonth">月份</label><input id="otMonth" type="month" value="${escapeHTML(state.overtimeMonth)}">`:''}
         <button id="otReload" class="btn">↻ 重新整理</button>
       </div>
       <div id="otMain">
@@ -659,14 +667,67 @@
           : overtimeRenderTable(own)}
       </div>`;
 
+    document.querySelectorAll('[data-ot-summary-view]').forEach(card=>{
+      const openView=()=>{state.overtimeView=card.dataset.otSummaryView;renderOvertimePage();};
+      card.addEventListener('click',openView);
+      card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openView();}});
+    });
     $('otAddBtn')?.addEventListener('click',()=>openOvertimeModal());
     $('clAddBtn')?.addEventListener('click',()=>openCompLeaveUsageModal());
     document.querySelectorAll('[data-ot-view]').forEach(btn=>btn.addEventListener('click',()=>{state.overtimeView=btn.dataset.otView;renderOvertimePage();}));
-    $('otMonth').addEventListener('change',e=>{state.overtimeMonth=e.target.value||isoDate(new Date()).slice(0,7);renderOvertimePage();});
+    $('otMonth')?.addEventListener('change',e=>{state.overtimeMonth=e.target.value||isoDate(new Date()).slice(0,7);renderOvertimePage();});
     $('otReload').addEventListener('click',async()=>{await loadOvertimeRows();renderOvertimePage();toast('已重新整理加班／換休資料','success');});
     wireOvertimeTableActions();
     wireCompLeaveActions();
     wirePayrollActions();
+  }
+
+  function otFormSetDirty(dirty){
+    state.overtimePageFormDirty=!!dirty;
+    const el=document.getElementById('otPageFormStatus');
+    if(el){
+      el.classList.toggle('dirty',!!dirty);
+      el.textContent=dirty?'尚有未儲存變更':'';
+    }
+  }
+
+  function otFormLeave(){
+    if(state.overtimePageFormDirty&&!window.confirm('目前有尚未儲存的內容，確定離開嗎？'))return;
+    state.overtimePageFormDirty=false;
+    renderOvertimePage();
+  }
+
+  function otBindPageDirty(){
+    const root=document.getElementById('otPageFormBody');
+    if(!root)return;
+    otFormSetDirty(false);
+    const mark=()=>otFormSetDirty(true);
+    root.addEventListener('input',mark);
+    root.addEventListener('change',mark);
+    document.getElementById('otPageBack')?.addEventListener('click',otFormLeave);
+    document.getElementById('otPageCancel')?.addEventListener('click',otFormLeave);
+  }
+
+  function otRenderPageForm(title,subtitle,html,{existing=null,kind='overtime'}={}){
+    $('content').innerHTML=`
+      <div class="ot-page-form" data-ot-page-form="${escapeHTML(kind)}">
+        <div class="ot-page-form-head">
+          <div>
+            <button type="button" id="otPageBack" class="btn" style="margin-bottom:10px">← 返回加班休假</button>
+            <div class="ot-page-form-title">${escapeHTML(title)}</div>
+            <div class="ot-page-form-sub">${escapeHTML(subtitle)}</div>
+            <div id="otPageFormStatus" class="ot-page-form-status"></div>
+          </div>
+        </div>
+        <div id="otPageFormBody" class="ot-page-form-card">${html}</div>
+        <div class="modal-foot ot-page-form-footer">
+          <button type="button" id="otPageCancel" class="btn">返回</button>
+          <span class="spacer"></span>
+          ${!existing?'<button type="button" id="otPageDraft" class="btn">儲存草稿</button>':''}
+          <button type="button" id="modalConfirm" class="btn primary">送出審核</button>
+        </div>
+      </div>`;
+    otBindPageDirty();
   }
 
   function overtimeFormHTML(existing){
@@ -706,43 +767,40 @@
 
   function openOvertimeModal(existing=null){
     if(!overtimeCanSubmit()){ toast('目前帳號沒有加班申請權限','warn'); return; }
-    openModal({
-      title:existing?'編輯加班／換休申請':'新增加班／換休申請',
-      html:overtimeFormHTML(existing),
-      confirmText:'送出審核',
-      onConfirm:()=>saveOvertime(existing,'pending'),
-      large:true
-    });
-    const foot=$('modalRoot').querySelector('.modal-foot');
-    if(foot && !existing){
-      const draft=el('button',{class:'btn',text:'儲存草稿',onClick:()=>saveOvertime(null,'draft')});
-      foot.insertBefore(draft,$('modalConfirm'));
-    }
+    state.workflowEditingOvertimeId=existing?.id||null;
+    const title=existing?'編輯加班申請':'申請加班';
+    const subtitle=existing?'修改既有申請內容；送出後依原審核流程處理。':'填寫加班日期、時段、類型與處理方式後送出審核。';
+    otRenderPageForm(title,subtitle,overtimeFormHTML(existing),{existing,kind:'overtime'});
     const typeEl=$('otType');
     const compensationEl=$('otCompensation');
     const updateFields=()=>{
-      const selected=!!typeEl.value;
-      const holiday=typeEl.value==='holiday_visit_comp';
-      $('otTimeFields').classList.toggle('hidden',!selected || holiday);
-      $('otHolidayFields').classList.toggle('hidden',!holiday);
-      if(!selected){
-        compensationEl.value='';
-        compensationEl.disabled=true;
-      }else if(holiday){
-        compensationEl.value='comp_leave';
-        compensationEl.disabled=true;
-      }else{
-        compensationEl.disabled=false;
+      const selected=!!typeEl?.value;
+      const holiday=typeEl?.value==='holiday_visit_comp';
+      $('otTimeFields')?.classList.toggle('hidden',!selected || holiday);
+      $('otHolidayFields')?.classList.toggle('hidden',!holiday);
+      if(compensationEl){
+        if(!selected){
+          compensationEl.value='';
+          compensationEl.disabled=true;
+        }else if(holiday){
+          compensationEl.value='comp_leave';
+          compensationEl.disabled=true;
+        }else{
+          compensationEl.disabled=false;
+        }
       }
       updateOvertimeCalc();
     };
-    typeEl.addEventListener('change',()=>{
-      if(typeEl.value!=='holiday_visit_comp') compensationEl.value='';
+    typeEl?.addEventListener('change',()=>{
+      if(typeEl.value!=='holiday_visit_comp'&&compensationEl) compensationEl.value='';
       updateFields();
     });
     ['otStartHour','otStartMinute','otEndHour','otEndMinute'].forEach(id=>$(id)?.addEventListener('change',updateOvertimeCalc));
     $('otCaseCount')?.addEventListener('change',updateOvertimeCalc);
+    $('otPageDraft')?.addEventListener('click',()=>saveOvertime(existing,'draft'));
+    $('modalConfirm')?.addEventListener('click',()=>saveOvertime(existing,'pending'));
     updateFields();
+    window.scrollTo({top:0,behavior:'auto'});
   }
 
   function updateOvertimeCalc(){
@@ -820,6 +878,7 @@
         ({error}=await db.from('overtime_requests').insert(payload));
       }
       if(error) throw error;
+      state.overtimePageFormDirty=false;
       closeModal();
       await loadOvertimeRows();
       renderOvertimePage();
@@ -857,18 +916,10 @@
 
   function openCompLeaveUsageModal(existing=null){
     if(!overtimeCanSubmit()){toast('目前帳號沒有換休使用申請權限','warn');return;}
-    openModal({
-      title:existing?'編輯換休使用申請':'申請使用換休',
-      html:compLeaveUsageFormHTML(existing),
-      confirmText:'送出審核',
-      onConfirm:()=>saveCompLeaveUsage(existing,'pending'),
-      large:true
-    });
-    const foot=$('modalRoot').querySelector('.modal-foot');
-    if(foot && !existing){
-      const draft=el('button',{class:'btn',text:'儲存草稿',onClick:()=>saveCompLeaveUsage(null,'draft')});
-      foot.insertBefore(draft,$('modalConfirm'));
-    }
+    state.workflowEditingLeaveId=existing?.id||null;
+    const title=existing?'編輯換休使用申請':'使用換休';
+    const subtitle=existing?'修改既有換休使用申請；送出後依原審核流程處理。':'填寫換休日期與起訖時間後送出審核。';
+    otRenderPageForm(title,subtitle,compLeaveUsageFormHTML(existing),{existing,kind:'comp_leave'});
     const updateDuration=()=>{
       const start=overtimeSelectedTime('clStart');
       const end=overtimeSelectedTime('clEnd');
@@ -886,7 +937,10 @@
       }
     };
     ['clDate','clStartHour','clStartMinute','clEndHour','clEndMinute'].forEach(id=>$(id)?.addEventListener('change',updateDuration));
+    $('otPageDraft')?.addEventListener('click',()=>saveCompLeaveUsage(existing,'draft'));
+    $('modalConfirm')?.addEventListener('click',()=>saveCompLeaveUsage(existing,'pending'));
     updateDuration();
+    window.scrollTo({top:0,behavior:'auto'});
   }
 
   async function saveCompLeaveUsage(existing,status){
@@ -936,6 +990,7 @@
         ({error}=await db.from('comp_leave_usages').insert(payload));
       }
       if(error) throw error;
+      state.overtimePageFormDirty=false;
       closeModal();
       await loadOvertimeRows();
       state.overtimeView='usage';

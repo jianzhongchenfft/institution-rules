@@ -154,7 +154,7 @@
         note.classList.toggle('hidden',!locked);
         note.textContent=locked?'此日期所屬月份已完成薪資結算，資料已鎖定，不能新增、修改或重新送審。':'';
       }
-      const modal=input.closest('.modal');
+      const modal=input.closest('.modal,.ot-page-form');
       const confirmBtn=modal?.querySelector('#modalConfirm');
       const draftBtn=[...(modal?.querySelectorAll('.modal-foot .btn')||[])].find(b=>b.textContent.trim()==='儲存草稿');
       if(confirmBtn){confirmBtn.disabled=locked;confirmBtn.style.opacity=locked?'0.55':'';}

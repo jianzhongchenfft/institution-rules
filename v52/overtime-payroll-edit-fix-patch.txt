@@ -17,7 +17,7 @@
   function defaultCompLeave(){
     const comp=document.getElementById('otCompensation');
     const type=document.getElementById('otType');
-    const modal=comp?.closest('.modal');
+    const modal=comp?.closest('.modal,.ot-page-form');
     if(!comp||!type||!modal||!modal.querySelector('#otWorkDate'))return;
     if(state.workflowEditingOvertimeId)return;
     if(![...comp.options].some(o=>o.value==='comp_leave'))return;

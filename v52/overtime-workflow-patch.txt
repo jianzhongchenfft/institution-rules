@@ -161,7 +161,7 @@
     if(b.id==='clAddBtn')state.workflowEditingLeaveId=null;
     if(b.dataset.clEdit)state.workflowEditingLeaveId=b.dataset.clEdit;
 
-    const modal=b.closest('.modal');
+    const modal=b.closest('.modal,.ot-page-form');
     if(!modal)return;
     const submit=b.id==='modalConfirm'||b.textContent.trim()==='儲存草稿';
     if(!submit)return;

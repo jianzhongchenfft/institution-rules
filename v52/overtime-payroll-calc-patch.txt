@@ -209,7 +209,7 @@
     const type=document.getElementById('otType')?.value;
     const comp=document.getElementById('otCompensation');
     const help=document.getElementById('otCompensationHelp');
-    const modal=document.getElementById('otType')?.closest('.modal');
+    const modal=document.getElementById('otType')?.closest('.modal,.ot-page-form');
     if(!modal)return;
     let warn=modal.querySelector('#prLegalWarn');
     if(!warn){warn=document.createElement('div');warn.id='prLegalWarn';warn.className='pr-legal-warn hidden';document.getElementById('otCompensation')?.closest('.field')?.insertAdjacentElement('afterend',warn);}
@@ -241,7 +241,7 @@
   function prUpdatePreview(){
     const type=document.getElementById('otType')?.value;
     const date=document.getElementById('otWorkDate')?.value;
-    const modal=document.getElementById('otType')?.closest('.modal');
+    const modal=document.getElementById('otType')?.closest('.modal,.ot-page-form');
     if(!modal||!type||type==='holiday_visit_comp')return;
     let box=modal.querySelector('#prAmountPreview');
     if(!box){box=document.createElement('div');box.id='prAmountPreview';box.className='pr-preview';document.getElementById('otMinuteCalc')?.closest('.field')?.insertAdjacentElement('afterend',box);}
@@ -437,7 +437,7 @@
   document.addEventListener('click',e=>{
     const b=e.target.closest?.('button');if(!b)return;
     if(b.dataset.payrollDetail&&prCanReview()){const id=b.dataset.payrollDetail;setTimeout(()=>prAppendPayrollDetail(id),0);}
-    const modal=b.closest('.modal');if(!modal)return;
+    const modal=b.closest('.modal,.ot-page-form');if(!modal)return;
     const submit=b.id==='modalConfirm'||b.textContent.trim()==='儲存草稿';
     if(!submit)return;
     if(modal.querySelector('#otWorkDate')){

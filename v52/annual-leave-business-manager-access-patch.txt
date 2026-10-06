@@ -42,7 +42,7 @@
 // V5.2 測試版：載入特休到期未休之結清／遞延流程。
 (async()=>{
   try{
-    const expiryRes=await fetch('v52/annual-leave-expiry-patch.txt',{cache:'no-store'});
+    const expiryRes=await fetch('v52/annual-leave-expiry-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
     if(!expiryRes.ok) throw new Error(`v52/annual-leave-expiry-patch.txt 載入失敗（${expiryRes.status}）`);
     eval(await expiryRes.text());
   }catch(err){

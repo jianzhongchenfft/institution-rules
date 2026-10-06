@@ -2,7 +2,7 @@
 (() => {
   const module = modules.find(m => m.id === 'overtime');
   if (module) {
-    module.label = '出勤／休假管理';
+    module.label = '加班休假';
     module.crumb = '加班、換休與特休管理';
     module.icon = '🗓';
   }
@@ -15,7 +15,8 @@
     annualLeaveStaff: state.annualLeaveStaff || [],
     annualLeaveLoaded: false,
     annualLeaveView: state.annualLeaveView || 'mine',
-    annualLeaveMonth: state.annualLeaveMonth || isoDate(new Date()).slice(0, 7)
+    annualLeaveMonth: state.annualLeaveMonth || isoDate(new Date()).slice(0, 7),
+    annualLeaveUsageCreditId: state.annualLeaveUsageCreditId || null
   });
 
   const style = document.createElement('style');
@@ -24,7 +25,9 @@
     .attendance-switch{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}
     .attendance-switch .btn{min-width:116px}
     .attendance-switch .active{background:var(--green-700);border-color:var(--green-700);color:#fff}
-    .al-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .al-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .al-summary-action{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;user-select:none}.al-summary-action:hover{border-color:#dc9479;box-shadow:0 3px 10px rgba(16,24,40,.08)}.al-summary-action:focus{outline:2px solid rgba(220,148,121,.35);outline-offset:2px}.al-summary-action.active{border-color:#dc9479;box-shadow:0 0 0 2px rgba(220,148,121,.14);background:#fff8f5}
+    .al-usage-context{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;padding:11px 12px;border:1px solid #f0ded7;border-radius:11px;background:#fff8f5}.al-usage-context strong{display:block;color:#7d4b3b;font-size:12px}.al-usage-context small{display:block;margin-top:3px;color:#667085;line-height:1.5}
     .al-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     .al-toolbar .spacer{flex:1}
     .al-tabs{display:flex;gap:7px;flex-wrap:wrap}
@@ -112,6 +115,72 @@
     return {granted,used:Math.max(0,granted-remaining),remaining,pending,available:Math.max(0,remaining-pending)};
   }
 
+  function alCreditUsedMinutes(credit){
+    return Math.max(0,(Number(credit?.granted_minutes)||0)-(Number(credit?.remaining_minutes)||0));
+  }
+  function alCurrentCredits(staffId,date=isoDate(new Date())){
+    return (state.annualLeaveCredits||[]).filter(c=>
+      String(c.staff_id)===String(staffId) &&
+      String(c.period_start)<=date &&
+      String(c.period_end)>=date
+    );
+  }
+  function alUsageRows(creditId=null){
+    const today=isoDate(new Date());
+    let credits=[];
+    if(creditId){
+      const credit=(state.annualLeaveCredits||[]).find(c=>String(c.id)===String(creditId));
+      if(credit)credits=[credit];
+    }else{
+      credits=alCurrentCredits(state.profile?.id,today);
+    }
+    const creditMap=new Map(credits.map(c=>[String(c.id),c]));
+    const requestMap=new Map((state.annualLeaveRows||[]).map(r=>[String(r.id),r]));
+    return (state.annualLeaveAllocations||[])
+      .filter(a=>a.is_active===true && creditMap.has(String(a.credit_id)))
+      .map(a=>({
+        allocation:a,
+        credit:creditMap.get(String(a.credit_id)),
+        request:requestMap.get(String(a.request_id))||null
+      }))
+      .sort((a,b)=>{
+        const ad=String(a.request?.leave_date||a.allocation?.allocation_date||'');
+        const bd=String(b.request?.leave_date||b.allocation?.allocation_date||'');
+        return bd.localeCompare(ad)||new Date(b.allocation?.created_at||0)-new Date(a.allocation?.created_at||0);
+      });
+  }
+  function alStaffName(staffId){
+    if(String(staffId)===String(state.profile?.id))return state.profile?.display_name||'本人';
+    return (state.annualLeaveStaff||[]).find(s=>String(s.id)===String(staffId))?.display_name||'未命名員工';
+  }
+  function alUsageTable(){
+    const creditId=state.annualLeaveUsageCreditId;
+    const rows=alUsageRows(creditId);
+    let credits=[];
+    if(creditId){
+      const credit=(state.annualLeaveCredits||[]).find(c=>String(c.id)===String(creditId));
+      if(credit)credits=[credit];
+    }else{
+      credits=alCurrentCredits(state.profile?.id);
+    }
+    const total=rows.reduce((s,x)=>s+(Number(x.allocation?.minutes)||0),0);
+    const context=creditId&&credits[0]
+      ?`<div class="al-usage-context"><div><strong>${escapeHTML(alStaffName(credits[0].staff_id))}｜${escapeHTML(credits[0].label||'特休額度')}</strong><small>額度期間：${escapeHTML(alDate(credits[0].period_start))}～${escapeHTML(alDate(credits[0].period_end))}｜原始額度 ${escapeHTML(alDuration(credits[0].granted_minutes))}｜已使用 ${escapeHTML(alDuration(alCreditUsedMinutes(credits[0])))}｜剩餘 ${escapeHTML(alDuration(credits[0].remaining_minutes))}</small></div><button type="button" class="btn sm" data-al-usage-clear>回到我的本期明細</button></div>`
+      :`<div class="al-usage-context"><div><strong>我的本期特休使用明細</strong><small>${credits.length?credits.map(x=>escapeHTML(alDate(x.period_start))+'～'+escapeHTML(alDate(x.period_end))).join('、'):'目前沒有有效的特休額度'}｜實際扣抵合計 ${escapeHTML(alDuration(total))}</small></div></div>`;
+    if(!rows.length)return context+'<div class="al-empty"><div class="icon">📒</div><h3>目前沒有實際扣抵的特休使用紀錄</h3></div>';
+    return context+`<div class="al-table-shell"><table class="al-table"><thead><tr><th>特休日期</th><th>時間</th><th>實際扣抵</th><th>扣抵額度</th><th>申請狀態</th><th>備註</th></tr></thead><tbody>${rows.map(x=>{
+      const r=x.request,c=x.credit,a=x.allocation;
+      return `<tr>
+        <td>${escapeHTML(alDate(r?.leave_date||a.allocation_date))}</td>
+        <td>${r?escapeHTML(alTime(r.start_time))+'–'+escapeHTML(alTime(r.end_time)):'—'}</td>
+        <td><span class="al-amount">${escapeHTML(alDuration(a.minutes))}</span></td>
+        <td>${escapeHTML(c?.label||'特休額度')}<div class="al-detail">${escapeHTML(alDate(c?.period_start))}～${escapeHTML(alDate(c?.period_end))}</div></td>
+        <td>${r?`<span class="al-status ${escapeHTML(r.status)}">${escapeHTML(alStatusLabel(r.status))}</span>`:'—'}</td>
+        <td>${escapeHTML(r?.reason||r?.notes||'—')}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+
   function attendanceTabs(active){
     return `<div id="attendanceSectionTabs" class="attendance-switch">
       <button type="button" class="btn ${active==='overtime'?'active':''}" data-attendance-section="overtime">加班／換休</button>
@@ -137,7 +206,7 @@
     const head=$('content')?.querySelector('.page-head');
     if(!head) return;
     const h1=head.querySelector('h1');
-    if(h1 && h1.textContent!=='🗓 出勤／休假管理') h1.textContent='🗓 出勤／休假管理';
+    if(h1 && h1.textContent!=='🗓 加班休假') h1.textContent='🗓 加班休假';
     if(!$('attendanceSectionTabs')){
       head.insertAdjacentHTML('afterend',attendanceTabs('overtime'));
       wireAttendanceTabs();
@@ -189,13 +258,15 @@
     let credits=alCanManage()?(state.annualLeaveCredits||[]):alOwnCredits();
     if(!credits.length) return '<div class="al-empty"><div class="icon">📒</div><h3>尚未建立特休額度</h3></div>';
     const names=new Map((state.annualLeaveStaff||[]).map(s=>[String(s.id),s.display_name]));
-    return `<div class="al-table-shell"><table class="al-table"><thead><tr>${alCanManage()?'<th>員工</th>':''}<th>額度期間</th><th>額度名稱</th><th>原始額度</th><th>剩餘</th><th>備註</th></tr></thead><tbody>${credits.map(c=>`<tr>
+    return `<div class="al-table-shell"><table class="al-table"><thead><tr>${alCanManage()?'<th>員工</th>':''}<th>額度期間</th><th>額度名稱</th><th>原始額度</th><th>已使用</th><th>剩餘</th><th>備註</th><th>操作</th></tr></thead><tbody>${credits.map(c=>`<tr>
       ${alCanManage()?`<td><strong>${escapeHTML(names.get(String(c.staff_id))||'—')}</strong></td>`:''}
       <td>${escapeHTML(alDate(c.period_start))}～${escapeHTML(alDate(c.period_end))}</td>
       <td>${escapeHTML(c.label||'特休額度')}</td>
       <td>${escapeHTML(alDuration(c.granted_minutes))}</td>
+      <td><strong>${escapeHTML(alDuration(alCreditUsedMinutes(c)))}</strong></td>
       <td><strong>${escapeHTML(alDuration(c.remaining_minutes))}</strong></td>
       <td>${escapeHTML(c.note||'—')}</td>
+      <td><button type="button" class="btn sm" data-al-usage-credit="${escapeHTML(c.id)}">查看明細</button></td>
     </tr>`).join('')}</tbody></table></div>`;
   }
 
@@ -207,14 +278,14 @@
     const {start,end}=alMonthRange(state.annualLeaveMonth);
     const monthOwn=own.filter(r=>r.leave_date>=start&&r.leave_date<=end);
     const reviewRows=(state.annualLeaveRows||[]).filter(r=>r.status==='pending');
-    const validViews=alCanReview()?['mine','credits','review']:['mine','credits'];
+    const validViews=alCanReview()?['mine','usage','credits','review']:['mine','usage','credits'];
     if(!validViews.includes(state.annualLeaveView)) state.annualLeaveView='mine';
 
-    $('topTitle').textContent='出勤／休假管理';
+    $('topTitle').textContent='加班休假';
     $('crumb').textContent='加班、換休與特休管理';
     $('content').innerHTML=`
       <div class="page-head">
-        <div><h1>🗓 出勤／休假管理</h1></div>
+        <div><h1>🗓 加班休假</h1></div>
         <div class="actions">
           ${alCanSubmit()?'<button id="alAddBtn" class="btn primary">＋ 申請特休</button>':''}
           ${alCanManage()?'<button id="alCreditBtn" class="btn">＋ 設定特休額度</button>':''}
@@ -223,29 +294,45 @@
       ${attendanceTabs('annual')}
       <section class="al-summary">
         <article class="stat-card"><div class="stat-head"><span>本期特休額度</span><span class="stat-icon">🌿</span></div><div class="stat-value">${escapeHTML(alDuration(balance.granted))}</div></article>
-        <article class="stat-card"><div class="stat-head"><span>已使用特休</span><span class="stat-icon">➖</span></div><div class="stat-value">${escapeHTML(alDuration(balance.used))}</div></article>
-        <article class="stat-card"><div class="stat-head"><span>待審核特休</span><span class="stat-icon">⏳</span></div><div class="stat-value">${escapeHTML(alDuration(balance.pending))}</div></article>
-        <article class="stat-card"><div class="stat-head"><span>目前可用特休</span><span class="stat-icon">✅</span></div><div class="stat-value">${escapeHTML(alDuration(balance.available))}</div></article>
+        <article class="stat-card al-summary-action ${state.annualLeaveView==='usage'?'active':''}" role="button" tabindex="0" data-al-open-usage aria-pressed="${state.annualLeaveView==='usage'}"><div class="stat-head"><span>目前剩餘特休</span><span class="stat-icon">✅</span></div><div class="stat-value">${escapeHTML(alDuration(balance.remaining))}</div><div class="stat-foot">已使用 ${escapeHTML(alDuration(balance.used))}・點擊查看明細</div></article>
       </section>
       <div class="al-toolbar">
         <div class="al-tabs">
           <button class="al-tab ${state.annualLeaveView==='mine'?'active':''}" data-al-view="mine">我的申請</button>
+          <button class="al-tab ${state.annualLeaveView==='usage'?'active':''}" data-al-view="usage">使用明細</button>
           <button class="al-tab ${state.annualLeaveView==='credits'?'active':''}" data-al-view="credits">${alCanManage()?'額度管理':'我的特休帳本'}</button>
           ${alCanReview()?`<button class="al-tab ${state.annualLeaveView==='review'?'active':''}" data-al-view="review">待審核 ${reviewRows.length}</button>`:''}
         </div>
         <span class="spacer"></span>
-        <label class="schedule-filter-label" for="alMonth">月份</label>
-        <input id="alMonth" type="month" value="${escapeHTML(state.annualLeaveMonth)}">
+        ${state.annualLeaveView==='mine'?'<label class="schedule-filter-label" for="alMonth">月份</label><input id="alMonth" type="month" value="'+escapeHTML(state.annualLeaveMonth)+'">':''}
         <button id="alReload" class="btn">↻ 重新整理</button>
       </div>
-      <div id="alMain">${state.annualLeaveView==='credits'?alCreditTable():state.annualLeaveView==='review'?alRequestTable(reviewRows,{review:true}):alRequestTable(monthOwn)}</div>`;
+      <div id="alMain">${state.annualLeaveView==='usage'?alUsageTable():state.annualLeaveView==='credits'?alCreditTable():state.annualLeaveView==='review'?alRequestTable(reviewRows,{review:true}):alRequestTable(monthOwn)}</div>`;
 
     wireAttendanceTabs();
     $('alAddBtn')?.addEventListener('click',()=>openAnnualLeaveModal());
     $('alCreditBtn')?.addEventListener('click',()=>openAnnualCreditModal());
-    document.querySelectorAll('[data-al-view]').forEach(btn=>btn.addEventListener('click',()=>{state.annualLeaveView=btn.dataset.alView;renderAnnualLeavePage();}));
+    document.querySelectorAll('[data-al-view]').forEach(btn=>btn.addEventListener('click',()=>{
+      state.annualLeaveView=btn.dataset.alView;
+      if(state.annualLeaveView==='usage')state.annualLeaveUsageCreditId=null;
+      renderAnnualLeavePage();
+    }));
+    const usageCard=document.querySelector('[data-al-open-usage]');
+    const openMyUsage=()=>{state.annualLeaveView='usage';state.annualLeaveUsageCreditId=null;renderAnnualLeavePage();};
+    usageCard?.addEventListener('click',openMyUsage);
+    usageCard?.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openMyUsage();}});
     $('alMonth')?.addEventListener('change',e=>{state.annualLeaveMonth=e.target.value||isoDate(new Date()).slice(0,7);renderAnnualLeavePage();});
     $('alReload')?.addEventListener('click',async()=>{await loadAnnualLeaveData();renderAnnualLeavePage();toast('已重新整理特休資料','success');});
+    document.querySelectorAll('[data-al-usage-credit]').forEach(btn=>btn.addEventListener('click',()=>{
+      state.annualLeaveUsageCreditId=btn.dataset.alUsageCredit;
+      state.annualLeaveView='usage';
+      renderAnnualLeavePage();
+    }));
+    document.querySelector('[data-al-usage-clear]')?.addEventListener('click',()=>{
+      state.annualLeaveUsageCreditId=null;
+      state.annualLeaveView='usage';
+      renderAnnualLeavePage();
+    });
     wireAnnualLeaveActions();
   }
 

@@ -99,7 +99,7 @@
   function enhanceRateModal(){
     if(!canReview())return;
     const staffSel=document.getElementById('prRateStaff');
-    const modal=staffSel?.closest('.modal');
+    const modal=staffSel?.closest('.modal,.ot-page-form');
     if(!staffSel||!modal)return;
     const body=modal.querySelector('.modal-body');
     const top=body?.querySelector('.ot-rule-highlight');
@@ -171,7 +171,7 @@
   function crossesMidnight(a,b){if(!a||!b)return false;const [ah,am]=a.split(':').map(Number),[bh,bm]=b.split(':').map(Number);const start=ah*60+am,end=bh*60+bm;return end<start&&end!==0;}
 
   function updateFormPreview(){
-    const modal=document.getElementById('otWorkDate')?.closest('.modal');if(!modal)return;
+    const modal=document.getElementById('otWorkDate')?.closest('.modal,.ot-page-form');if(!modal)return;
     const type=document.getElementById('otType')?.value,date=document.getElementById('otWorkDate')?.value;
     if(!type||type==='holiday_visit_comp')return;
     const hours=currentStaffHours();
