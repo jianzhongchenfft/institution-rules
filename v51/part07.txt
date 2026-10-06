@@ -24,6 +24,43 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!caseHtmlRes.ok) throw new Error(`v52/case-html-import.txt 載入失敗（${caseHtmlRes.status}）`);
       eval(await caseHtmlRes.text());
 
+      const assessmentModuleFiles=[
+        'v52/assessment-patch.txt',
+        'v52/assessment-adl-patch.txt',
+        'v52/assessment-iadl-patch.txt',
+        'v52/assessment-spmsq-patch.txt',
+        'v52/assessment-gds15-patch.txt',
+        'v52/assessment-health-core.txt',
+        'v52/assessment-health-ui.txt',
+        'v52/assessment-health-save.txt',
+        'v52/assessment-home-safety-patch.txt',
+        'v52/assessment-support-patch.txt',
+        'v52/assessment-caregiver-screen-patch.txt',
+        'v52/assessment-summary-patch.txt',
+        'v52/assessment-history-patch.txt',
+        'v52/assessment-bundle-print-patch.txt'
+      ];
+      let assessmentModuleCode='';
+      for(const path of assessmentModuleFiles){
+        const res=await fetch(`${path}?v=assessment-proxy-void-v1-20261005`,{cache:'no-store'});
+        if(!res.ok) throw new Error(`${path} 載入失敗（${res.status}）`);
+        assessmentModuleCode+='\n'+await res.text();
+      }
+      eval(assessmentModuleCode);
+
+      const caseContactFiles=[
+        'v52/case-contact-core.txt',
+        'v52/case-contact-forms.txt',
+        'v52/case-contact-detail.txt'
+      ];
+      let caseContactCode='';
+      for(const path of caseContactFiles){
+        const res=await fetch(`${path}?v=case-dashboard-filter-v1-20261006`,{cache:'no-store'});
+        if(!res.ok) throw new Error(`${path} 載入失敗（${res.status}）`);
+        caseContactCode+='\n'+await res.text();
+      }
+      eval(caseContactCode);
+
       const scheduleRes = await fetch('v52/schedule-patch.txt',{cache:'no-store'});
       if(!scheduleRes.ok) throw new Error(`v52/schedule-patch.txt 載入失敗（${scheduleRes.status}）`);
       eval(await scheduleRes.text());
@@ -40,55 +77,55 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!mobileScheduleRes.ok) throw new Error(`v52/schedule-mobile-patch.txt 載入失敗（${mobileScheduleRes.status}）`);
       eval(await mobileScheduleRes.text());
 
-      const overtimeRes = await fetch('v52/overtime-patch.txt',{cache:'no-store'});
+      const overtimeRes = await fetch('v52/overtime-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimeRes.ok) throw new Error(`v52/overtime-patch.txt 載入失敗（${overtimeRes.status}）`);
       eval(await overtimeRes.text());
 
-      const payrollGuardRes = await fetch('v52/payroll-period-guard-patch.txt',{cache:'no-store'});
+      const payrollGuardRes = await fetch('v52/payroll-period-guard-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
       if(!payrollGuardRes.ok) throw new Error(`v52/payroll-period-guard-patch.txt 載入失敗（${payrollGuardRes.status}）`);
       eval(await payrollGuardRes.text());
 
-      const overtimeIntegrityRes = await fetch('v52/overtime-integrity-patch.txt',{cache:'no-store'});
+      const overtimeIntegrityRes = await fetch('v52/overtime-integrity-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimeIntegrityRes.ok) throw new Error(`v52/overtime-integrity-patch.txt 載入失敗（${overtimeIntegrityRes.status}）`);
       eval(await overtimeIntegrityRes.text());
 
-      const payrollCorrectionRes = await fetch('v52/payroll-correction-patch.txt',{cache:'no-store'});
+      const payrollCorrectionRes = await fetch('v52/payroll-correction-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
       if(!payrollCorrectionRes.ok) throw new Error(`v52/payroll-correction-patch.txt 載入失敗（${payrollCorrectionRes.status}）`);
       eval(await payrollCorrectionRes.text());
 
-      const compLeaveExpiryRes = await fetch('v52/comp-leave-expiry-patch.txt',{cache:'no-store'});
+      const compLeaveExpiryRes = await fetch('v52/comp-leave-expiry-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
       if(!compLeaveExpiryRes.ok) throw new Error(`v52/comp-leave-expiry-patch.txt 載入失敗（${compLeaveExpiryRes.status}）`);
       eval(await compLeaveExpiryRes.text());
 
-      const overtimeWorkflowRes = await fetch('v52/overtime-workflow-patch.txt',{cache:'no-store'});
+      const overtimeWorkflowRes = await fetch('v52/overtime-workflow-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimeWorkflowRes.ok) throw new Error(`v52/overtime-workflow-patch.txt 載入失敗（${overtimeWorkflowRes.status}）`);
       eval(await overtimeWorkflowRes.text());
 
-      const overtimeWorkflowTrackingRes = await fetch('v52/overtime-workflow-tracking-patch.txt',{cache:'no-store'});
+      const overtimeWorkflowTrackingRes = await fetch('v52/overtime-workflow-tracking-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
       if(!overtimeWorkflowTrackingRes.ok) throw new Error(`v52/overtime-workflow-tracking-patch.txt 載入失敗（${overtimeWorkflowTrackingRes.status}）`);
       eval(await overtimeWorkflowTrackingRes.text());
 
-      const overtimePayrollCalcRes = await fetch('v52/overtime-payroll-calc-patch.txt',{cache:'no-store'});
+      const overtimePayrollCalcRes = await fetch('v52/overtime-payroll-calc-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimePayrollCalcRes.ok) throw new Error(`v52/overtime-payroll-calc-patch.txt 載入失敗（${overtimePayrollCalcRes.status}）`);
       eval(await overtimePayrollCalcRes.text());
 
-      const overtimePayrollSummaryRes = await fetch('v52/overtime-payroll-summary-patch.txt',{cache:'no-store'});
+      const overtimePayrollSummaryRes = await fetch('v52/overtime-payroll-summary-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
       if(!overtimePayrollSummaryRes.ok) throw new Error(`v52/overtime-payroll-summary-patch.txt 載入失敗（${overtimePayrollSummaryRes.status}）`);
       eval(await overtimePayrollSummaryRes.text());
 
-      const overtimePayrollEditFixRes = await fetch('v52/overtime-payroll-edit-fix-patch.txt',{cache:'no-store'});
+      const overtimePayrollEditFixRes = await fetch('v52/overtime-payroll-edit-fix-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimePayrollEditFixRes.ok) throw new Error(`v52/overtime-payroll-edit-fix-patch.txt 載入失敗（${overtimePayrollEditFixRes.status}）`);
       eval(await overtimePayrollEditFixRes.text());
 
-      const overtimePersonalHoursRes = await fetch('v52/overtime-personal-hours-patch.txt',{cache:'no-store'});
+      const overtimePersonalHoursRes = await fetch('v52/overtime-personal-hours-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimePersonalHoursRes.ok) throw new Error(`v52/overtime-personal-hours-patch.txt 載入失敗（${overtimePersonalHoursRes.status}）`);
       eval(await overtimePersonalHoursRes.text());
 
-      const overtimeMonthFilterRes = await fetch('v52/overtime-month-filter-patch.txt',{cache:'no-store'});
+      const overtimeMonthFilterRes = await fetch('v52/overtime-month-filter-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimeMonthFilterRes.ok) throw new Error(`v52/overtime-month-filter-patch.txt 載入失敗（${overtimeMonthFilterRes.status}）`);
       eval(await overtimeMonthFilterRes.text());
 
-      const overtimeWithdrawRes = await fetch('v52/overtime-withdraw-patch.txt',{cache:'no-store'});
+      const overtimeWithdrawRes = await fetch('v52/overtime-withdraw-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimeWithdrawRes.ok) throw new Error(`v52/overtime-withdraw-patch.txt 載入失敗（${overtimeWithdrawRes.status}）`);
       eval(await overtimeWithdrawRes.text());
 
@@ -101,7 +138,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       ];
       let eventTrackingCode='';
       for(const path of eventTrackingFiles){
-        const res=await fetch(`${path}?v=event-production-20260930`,{cache:'no-store'});
+        const res=await fetch(`${path}?v=event-print-signature-20260930x`,{cache:'no-store'});
         if(!res.ok) throw new Error(`${path} 載入失敗（${res.status}）`);
         eventTrackingCode+='\n'+await res.text();
       }
@@ -114,6 +151,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       else if(state.profile && state.page==='schedule') navigate('schedule');
       else if(state.profile && state.page==='overtime') navigate('overtime');
       else if(state.profile && state.page==='events') navigate('events');
+      else if(state.profile && state.page==='assessments') navigate('assessments');
     }catch(err){
       console.error('系統功能模組載入失敗',err);
       if(state.profile) toast('系統功能模組載入失敗，請重新整理頁面。','error');
