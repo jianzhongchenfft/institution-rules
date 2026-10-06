@@ -1,0 +1,228 @@
+// 評估管理／健康儲存與開啟流程
+  async function save(finalize){
+    const row=eventById(local.eventId);
+    const section='combined';
+    const mode=healthSectionMode(row);
+    if(!row||!canEdit(row))return toast('您沒有此個案的評估編輯權限','error');
+
+    syncInputs();
+
+    if(finalize&&answeredCount()!==10){
+      const missing=HEALTH_ITEMS
+        .filter(([k])=>!HEALTH_OPTIONS.some(x=>x[0]===local.healthItems[k]))
+        .map(([,l])=>l)
+        .join('、');
+      return toast('尚有未完成項目：'+missing,'warn');
+    }
+
+    if(finalize){
+      const missingHealthNotes=HEALTH_ITEMS.filter(([key])=>
+        ['observe','refer'].includes(local.healthItems[key])
+        && !String(local.healthNotes[key]||'').trim()
+      );
+      if(missingHealthNotes.length){
+        return toast('以下健康項目選擇「需觀察／異常轉介」，請填寫備註：'+missingHealthNotes.map(([,label])=>label).join('、'),'warn');
+      }
+
+      const missingMedicationNotes=MED_CHECKS.filter(([key])=>{
+        const item=local.medicationChecks[key]||{};
+        return ['improve','not_applicable'].includes(item.status)
+          && !String(item.note||'').trim();
+      });
+      if(missingMedicationNotes.length){
+        return toast('以下用藥安全項目選擇「需改善／不適用」，請填寫備註：'+missingMedicationNotes.map(([,label])=>label).join('、'),'warn');
+      }
+    }
+
+    if(finalize&&mode==='baseline'){
+      const noFixed=local.medicalInfo.opening_no_fixed_medications===true;
+      if(!noFixed&&local.fixedMedicationBaseEntries.length===0){
+        return toast('請填寫接案時既有固定用藥，或勾選「接案時無固定用藥」','warn');
+      }
+      const noTemporary=local.medicalInfo.opening_no_temporary_medications===true;
+      const temporary=safeArray(local.medicalInfo.opening_temporary_medications);
+      if(!noTemporary&&temporary.length===0){
+        return toast('請填寫接案時短期／臨時用藥，或勾選「接案時無短期／臨時用藥」','warn');
+      }
+      if(temporary.some(x=>!isCompleteOpeningTemporaryMedication(x))){
+        return toast('短期／臨時用藥請至少填寫藥物名稱／用法','warn');
+      }
+    }
+
+    const medicalInfoForSave={...local.medicalInfo};
+    delete medicalInfoForSave.diagnosis_change;
+    delete medicalInfoForSave.diagnosis_change_note;
+
+    const c=caseById(row.case_id);
+    const savedMedical=safe(local.record?.medical_info);
+    const baselineReference=local.record?{
+      important_conditions:savedMedical.baseline_important_conditions||'',
+      ongoing_treatments:savedMedical.baseline_ongoing_treatments||''
+    }:{
+      important_conditions:c?.important_conditions||'',
+      ongoing_treatments:c?.ongoing_treatments||''
+    };
+    const healthMasterFieldsChanged=
+      String(medicalInfoForSave.baseline_important_conditions||'').trim()!==String(baselineReference.important_conditions||'').trim()
+      ||String(medicalInfoForSave.baseline_ongoing_treatments||'').trim()!==String(baselineReference.ongoing_treatments||'').trim();
+
+    if(local.hasLaterCompleted&&healthMasterFieldsChanged){
+      const ok=window.confirm('你正在修改較早日期的健康評估，此項修改也會同步更新目前個案主檔，確定儲存嗎？');
+      if(!ok)return;
+    }
+
+    const masterWillChange=
+      healthMasterFieldsChanged
+      &&(
+        String(medicalInfoForSave.baseline_important_conditions||'').trim()!==String(c?.important_conditions||'').trim()
+        ||String(medicalInfoForSave.baseline_ongoing_treatments||'').trim()!==String(c?.ongoing_treatments||'').trim()
+      );
+
+    if(mode==='baseline'){
+      const fixedEntries=rebuildFixedMedicationEntries();
+      let temporary=safeArray(local.medicalInfo.opening_temporary_medications)
+        .map(x=>({...x}))
+        .filter(x=>Object.entries(x).some(([k,v])=>k!=='id'&&String(v||'').trim()!==''));
+      if(local.medicalInfo.opening_no_temporary_medications===true)temporary=[];
+
+      medicalInfoForSave.fixed_medication_base_entries=cloneEntries(local.fixedMedicationBaseEntries);
+      medicalInfoForSave.fixed_medication_entries=cloneEntries(fixedEntries);
+      medicalInfoForSave.fixed_medications=fixedEntries.map(x=>x.medication).join('\n');
+      medicalInfoForSave.no_fixed_medications=fixedEntries.length===0;
+      medicalInfoForSave.opening_no_fixed_medications=local.medicalInfo.opening_no_fixed_medications===true;
+      medicalInfoForSave.opening_temporary_medications=temporary;
+      medicalInfoForSave.opening_no_temporary_medications=local.medicalInfo.opening_no_temporary_medications===true;
+      if(medicalInfoForSave.side_effect!=='present')medicalInfoForSave.side_effect_note='';
+    }
+
+    if(mode==='change'){
+      if(medicalInfoForSave.no_healthcare_events===true){
+        medicalInfoForSave.healthcare_events=[];
+      }else{
+        medicalInfoForSave.healthcare_events=safeArray(medicalInfoForSave.healthcare_events)
+          .filter(item=>Object.values(safe(item)).some(v=>String(v||'').trim()!==''));
+      }
+
+      if(medicalInfoForSave.unvisited_health_change!=='yes'){
+        medicalInfoForSave.unvisited_health_change_note='';
+      }
+
+      let medicationChanges=medicalInfoForSave.no_medication_changes===true
+        ?[]
+        :safeArray(medicalInfoForSave.medication_changes).map(x=>({...x}));
+      let medicationCorrections=safeArray(medicalInfoForSave.medication_corrections).map(x=>({...x}));
+
+      if(finalize){
+        const incomplete=medicationChanges.find(x=>!isCompleteMedicationChange(x));
+        if(incomplete){
+          return toast('請完成本期用藥異動的「異動類型、用藥性質及藥物內容」','warn');
+        }
+        const incompleteCorrection=medicationCorrections.find(x=>!isCompleteMedicationCorrection(x));
+        if(incompleteCorrection){
+          return toast('請完成「修正既有固定用藥」的修正方式、原因及藥物內容','warn');
+        }
+        const otherWithoutNote=medicationCorrections.find(x=>x.reason==='other'&&!String(x.note||'').trim());
+        if(otherWithoutNote){
+          return toast('修正原因選擇「其他」時，請填寫補充說明','warn');
+        }
+      }
+
+      local.medicalInfo.medication_changes=medicationChanges;
+      local.medicalInfo.medication_corrections=medicationCorrections;
+      local.medicalInfo.no_medication_changes=medicationChanges.length===0;
+      const fixedEntries=rebuildFixedMedicationEntries();
+
+      medicalInfoForSave.fixed_medication_base_entries=cloneEntries(local.fixedMedicationBaseEntries);
+      medicalInfoForSave.fixed_medication_entries=cloneEntries(fixedEntries);
+      medicalInfoForSave.fixed_medications=fixedEntries.map(x=>x.medication).join('\n');
+      medicalInfoForSave.no_fixed_medications=fixedEntries.length===0;
+      medicalInfoForSave.medication_changes=medicationChanges;
+      medicalInfoForSave.medication_corrections=medicationCorrections;
+      medicalInfoForSave.no_medication_changes=medicationChanges.length===0;
+      medicalInfoForSave.medication_change=medicationChanges.length?'changed':'none';
+      medicalInfoForSave.medication_change_note=medicationChanges.filter(isCompleteMedicationChange).map(item=>{
+        const action=item.action==='add'?'新增':item.action==='stop'?'停用':'調整';
+        const duration=item.duration_type==='long_term'?'長期／固定':'短期／臨時';
+        const detail=item.action==='add'
+          ?item.medication_after
+          :item.action==='stop'
+            ?item.medication_before
+            :item.medication_before+' → '+item.medication_after;
+        return action+'｜'+duration+'｜'+detail+(item.note?'｜'+item.note:'');
+      }).join('\n');
+      medicalInfoForSave.medication_correction_note=medicationCorrections.filter(isCompleteMedicationCorrection).map(item=>{
+        const action=item.action==='add'?'補登':item.action==='edit'?'更正':'移除';
+        const reason=item.reason==='opening_omission'?'接案時漏登':item.reason==='previous_record_error'?'前次紀錄有誤':'其他';
+        const detail=item.action==='add'
+          ?item.medication_after
+          :item.action==='edit'
+            ?item.medication_before+' → '+item.medication_after
+            :item.medication_before;
+        return action+'｜'+reason+'｜'+detail+(item.note?'｜'+item.note:'');
+      }).join('\n');
+
+      if(medicalInfoForSave.side_effect!=='present')medicalInfoForSave.side_effect_note='';
+    }
+
+    showLoading(true);
+    try{
+      const {error}=await db.rpc('save_assessment_health',{
+        p_event_id:row.id,
+        p_medical_info:medicalInfoForSave,
+        p_medication_checks:local.medicationChecks,
+        p_health_items:local.healthItems,
+        p_health_notes:local.healthNotes,
+        p_finalize:!!finalize,
+        p_copied_from_id:local.pendingCopyFromId||null,
+        p_section:'all'
+      });
+      if(error)throw error;
+
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+
+      const label=sectionTitle(section,row);
+      const message=masterWillChange
+        ?(finalize?label+'已完成，個案健康資料已更新':label+'草稿已儲存，個案健康資料已更新')
+        :(finalize?label+'已完成':label+'草稿已儲存');
+
+      if(finalize){
+        window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);
+        toast(message,'success');
+      }else{
+        await load(row.id);
+        render();
+        toast(message,'success');
+      }
+    }catch(err){
+      console.error(err);
+      const msg=err?.message||String(err);
+      if(msg.includes('OPENING_MEDICATION_BASELINE_UNCONFIRMED')){
+        toast('請確認接案時固定用藥情形','warn');
+      }else if(msg.includes('OPENING_TEMPORARY_MEDICATIONS_UNCONFIRMED')){
+        toast('請確認接案時短期／臨時用藥情形','warn');
+      }else if(msg.includes('OPENING_TEMPORARY_MEDICATION_INCOMPLETE')){
+        toast('短期／臨時用藥請至少填寫藥物名稱／用法','warn');
+      }else{
+        toast('儲存'+sectionTitle(section,row)+'失敗：'+msg,'error');
+      }
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);
+    if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+
+    local.section='combined';
+    if(!formById(eventId))return toast('本次評估未選用「'+sectionTitle('combined',row)+'」','warn');
+
+    showLoading(true);
+    try{await load(eventId);render();window.scrollTo({top:0,behavior:'auto'});}
+    catch(err){console.error(err);toast('讀取'+sectionTitle('combined',row)+'失敗：'+(err?.message||err),'error');}
+    finally{showLoading(false);}
+  }
+
+  window.v52AssessmentHealth={open};
+})();

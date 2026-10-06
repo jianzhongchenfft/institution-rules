@@ -1,0 +1,371 @@
+
+(()=>{
+  const ITEMS=[
+    {key:'q1', label:'1. 基本上，您對您的生活滿意嗎？', reverse:true},
+    {key:'q2', label:'2. 您是否減少很多的活動和興趣的事？', reverse:false},
+    {key:'q3', label:'3. 您是否覺得您的生活很空虛？', reverse:false},
+    {key:'q4', label:'4. 您是否常常感到厭煩？', reverse:false},
+    {key:'q5', label:'5. 您是否大部份時間精神都很好？', reverse:true},
+    {key:'q6', label:'6. 您會常常害怕將有不幸的事情發生在您身上嗎？', reverse:false},
+    {key:'q7', label:'7. 您是否大部份的時間都感到快樂？', reverse:true},
+    {key:'q8', label:'8. 您是否常常感到無論做什麼事，都沒有用？', reverse:false},
+    {key:'q9', label:'9. 您是否比較喜歡待在家裡而較不喜歡外出及不喜歡做新的事？', reverse:false},
+    {key:'q10',label:'10. 您是否覺得現在有記憶力不好的困擾？', reverse:false},
+    {key:'q11',label:'11. 您是否覺得「現在還能活著」是很好的事？', reverse:true},
+    {key:'q12',label:'12. 您是否覺得您現在活得很沒有價值？', reverse:false},
+    {key:'q13',label:'13. 您是否覺得精力很充沛？', reverse:true},
+    {key:'q14',label:'14. 您是否感覺您現在的情況是沒有希望的？', reverse:false},
+    {key:'q15',label:'15. 您是否覺得大部份的人都比您更幸福？', reverse:false}
+  ];
+
+  const OPTIONS=[
+    ['yes','是'],
+    ['no','否']
+  ];
+
+  const MODE_LABELS={
+    completed:'正常評估',
+    unable:'無法評估',
+    not_applicable:'不適用'
+  };
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-gds15-style';
+  style.textContent=`
+    .gds15-page{max-width:980px;margin:0 auto}
+    .gds15-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .gds15-summary-card,.gds15-card,.gds15-mode-box{border:1px solid var(--line);border-radius:12px;background:#fff}
+    .gds15-summary-card{padding:11px 12px}
+    .gds15-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}
+    .gds15-summary-card strong{font-size:18px;color:#344054}
+    .gds15-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px;line-height:1.45}
+    .gds15-notice{padding:10px 12px;border-radius:10px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11.5px;font-weight:800;margin-bottom:12px}
+    .gds15-mode-box{padding:11px 12px;margin-bottom:12px}
+    .gds15-mode-title{font-size:11px;font-weight:900;color:#475467;margin-bottom:8px}
+    .gds15-mode-options{display:flex;gap:8px;flex-wrap:wrap}
+    .gds15-mode-option{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:11.5px;font-weight:800;cursor:pointer}
+    .gds15-mode-option.selected{border-color:#dc9479;background:#fff8f5}
+    .gds15-mode-option input{width:auto}
+    .gds15-mode-box textarea{width:100%;box-sizing:border-box;margin-top:9px;min-height:68px}
+    .gds15-items{display:grid;gap:10px}
+    .gds15-card{overflow:hidden}
+    .gds15-card.changed{border-color:#e7a98e;box-shadow:0 0 0 2px rgba(220,148,121,.10)}
+    .gds15-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:11px 12px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .gds15-title{font-size:12.5px;font-weight:900;color:#344054;line-height:1.5}
+    .gds15-tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+    .gds15-tag{display:inline-flex;border-radius:999px;padding:3px 7px;font-size:9.5px;font-weight:900;white-space:nowrap;background:#f2f4f7;color:#667085}
+    .gds15-tag.prev{background:#eff8ff;color:#175cd3}
+    .gds15-tag.change{background:#fff1eb;color:#a45d49}
+    .gds15-options{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:11px 12px}
+    .gds15-option{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;font-size:12px;font-weight:900}
+    .gds15-option.selected{border-color:#dc9479;background:#fff8f5}
+    .gds15-option input{width:auto}
+    .gds15-score{margin-left:auto;font-size:9.5px;color:#667085}
+    .gds15-help{font-size:10.5px;color:#667085;line-height:1.65;margin:10px 0 2px}
+    .gds15-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    @media(max-width:720px){
+      .gds15-summary{grid-template-columns:1fr}
+      .gds15-options{grid-template-columns:1fr 1fr}
+      .gds15-head{flex-direction:column}
+      .gds15-tags{justify-content:flex-start}
+      .gds15-actions .btn{flex:1}
+    }
+  `;
+  document.head.appendChild(style);
+
+  const local={
+    eventId:null,
+    record:null,
+    previous:null,
+    previousEvent:null,
+    answers:{},
+    completionMode:'completed',
+    exceptionReason:'',
+    hasLaterCompleted:false
+  };
+
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const formById=id=>(state.assessmentEventForms||[]).find(x=>x.assessment_event_id===id&&x.form_code==='gds15')||null;
+  const safe=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+
+  const canEdit=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+
+  const optionLabel=value=>value==='yes'?'是':value==='no'?'否':'—';
+  const answerCount=()=>ITEMS.filter(x=>['yes','no'].includes(local.answers[x.key])).length;
+  const itemScore=item=>{
+    const value=local.answers[item.key];
+    if(!['yes','no'].includes(value))return 0;
+    return item.reverse ? (value==='no'?1:0) : (value==='yes'?1:0);
+  };
+  const currentScore=()=>ITEMS.reduce((sum,item)=>sum+itemScore(item),0);
+
+  const resultText=score=>{
+    if(score<=6)return '適應狀況良好';
+    if(score<=10)return '中度情緒困擾';
+    return '高度情緒困擾';
+  };
+  const resultHelp=score=>{
+    if(score<=6)return '維持良好心理健康並持續觀察';
+    if(score<=10)return '建議進一步需求評估、心理支持或諮詢';
+    return '建議積極關懷並評估轉介心理衛生或醫療資源';
+  };
+
+  async function load(eventId){
+    const row=eventById(eventId);
+    if(!row)throw new Error('找不到評估事件');
+
+    const [cur,hist]=await Promise.all([
+      db.from('assessment_gds15_records')
+        .select('*')
+        .eq('assessment_event_id',eventId)
+        .maybeSingle(),
+      db.from('assessment_gds15_records')
+        .select('*')
+        .eq('case_id',row.case_id)
+        .not('confirmed_at','is',null)
+        .eq('completion_mode','completed')
+        .neq('assessment_event_id',eventId)
+        .order('confirmed_at',{ascending:false})
+    ]);
+
+    if(cur.error)throw cur.error;
+    if(hist.error)throw hist.error;
+
+    local.eventId=eventId;
+    local.record=cur.data||null;
+    local.answers={...safe(local.record?.answers)};
+    local.completionMode=local.record?.completion_mode||'completed';
+    local.exceptionReason=local.record?.exception_reason||'';
+
+    const dated=(hist.data||[])
+      .map(record=>({record,event:eventById(record.assessment_event_id)}))
+      .filter(x=>x.event?.planned_date);
+
+    local.hasLaterCompleted=dated.some(x=>x.event.planned_date>row.planned_date);
+
+    const candidates=dated
+      .filter(x=>x.event.planned_date<row.planned_date)
+      .sort((a,b)=>{
+        const byDate=String(b.event.planned_date).localeCompare(String(a.event.planned_date));
+        if(byDate!==0)return byDate;
+        return String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||''));
+      });
+
+    local.previous=candidates[0]?.record||null;
+    local.previousEvent=candidates[0]?.event||null;
+  }
+
+  function renderSummary(){
+    const count=answerCount();
+    const score=currentScore();
+    const complete=count===15;
+    const prev=local.previous?.total_score;
+    return `
+      <section class="gds15-summary">
+        <div class="gds15-summary-card">
+          <label>本次得分</label>
+          <strong>${local.completionMode==='completed'?(count?score:'—'):'—'}</strong>
+          <small>${local.completionMode!=='completed'
+            ?escapeHTML(MODE_LABELS[local.completionMode])
+            :(complete?'正式總分（滿分15分）':'暫計｜已填 '+count+'/15 題')}</small>
+        </div>
+        <div class="gds15-summary-card">
+          <label>前次得分</label>
+          <strong>${prev??'—'}</strong>
+          <small>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):'無前次完成紀錄'}</small>
+        </div>
+        <div class="gds15-summary-card">
+          <label>篩檢結果</label>
+          <strong style="font-size:14px">${local.completionMode!=='completed'
+            ?escapeHTML(MODE_LABELS[local.completionMode])
+            :(!complete?'尚未完成':escapeHTML(resultText(score)))}</strong>
+          <small>${local.completionMode!=='completed'
+            ?'本次不產生GDS-15分數'
+            :(!complete?'完成15題後顯示正式結果':escapeHTML(resultHelp(score)))}</small>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderCard(item){
+    const now=local.answers[item.key]||null;
+    const prev=local.previous?.answers?.[item.key]||null;
+    const changed=!!now&&!!prev&&now!==prev;
+    return `
+      <section class="gds15-card ${changed?'changed':''}">
+        <div class="gds15-head">
+          <div class="gds15-title">${escapeHTML(item.label)}</div>
+          <div class="gds15-tags">
+            ${prev?'<span class="gds15-tag prev">前次：'+escapeHTML(optionLabel(prev))+'</span>':''}
+            ${changed?'<span class="gds15-tag change">本次有變化</span>':''}
+          </div>
+        </div>
+        <div class="gds15-options">
+          ${OPTIONS.map(([value,label])=>`
+            <label class="gds15-option ${now===value?'selected':''}">
+              <input type="radio" name="gds15_${item.key}" value="${value}" ${now===value?'checked':''}>
+              <span>${escapeHTML(label)}</span>
+              <span class="gds15-score">${item.reverse
+                ?(value==='no'?'1分':'0分')
+                :(value==='yes'?'1分':'0分')}</span>
+            </label>
+          `).join('')}
+        </div>
+      </section>
+    `;
+  }
+
+  function render(){
+    const row=eventById(local.eventId);
+    const c=row?caseById(row.case_id):null;
+    const form=row?formById(row.id):null;
+    if(!row||!c||!form)return window.v52AssessmentApi?.renderAssessmentPage?.();
+
+    const canEditRow=canEdit(row)&&row.status!=='voided';
+
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,'GDS-15 老人心理健康評估表');
+
+    $('content').innerHTML=`
+      <div class="gds15-page">
+        <div class="page-head">
+          <div>
+            <h1>${escapeHTML(c.case_name)}｜GDS-15</h1>
+            <p>在過去一星期當中，您是否有下列感受？請回答「是」或「否」。</p>
+          </div>
+          <div class="assessment-head-actions">
+            <button id="gds15Back" class="btn">← 返回評估事件</button>
+          </div>
+        </div>
+
+        ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
+        ${renderSummary()}
+        ${local.hasLaterCompleted
+          ?'<div class="gds15-notice">此筆評估日期早於個案較新的已完成 GDS-15；系統只會將本次日期以前最近一筆已完成 GDS-15 視為「前次評估」。</div>'
+          :''}
+
+        <div class="gds15-mode-box">
+          <div class="gds15-mode-title">本次評估方式</div>
+          <div class="gds15-mode-options">
+            ${Object.entries(MODE_LABELS).map(([value,label])=>`
+              <label class="gds15-mode-option ${local.completionMode===value?'selected':''}">
+                <input type="radio" name="gds15_mode" value="${value}" ${local.completionMode===value?'checked':''}>
+                ${escapeHTML(label)}
+              </label>
+            `).join('')}
+          </div>
+          <textarea id="gds15ExceptionReason"
+            placeholder="請填寫原因"
+            style="display:${local.completionMode==='completed'?'none':'block'}">${escapeHTML(local.exceptionReason)}</textarea>
+        </div>
+
+        <div class="gds15-items" style="${local.completionMode==='completed'?'':'opacity:.45;pointer-events:none'}">
+          ${ITEMS.map(renderCard).join('')}
+        </div>
+
+        <div class="gds15-help">
+          計分：第1、5、7、11、13題答「否」計1分；第2、3、4、6、8、9、10、12、14、15題答「是」計1分，其餘0分。
+          本量表為情緒篩檢工具，結果供照顧評估、關懷與轉介參考，不作為疾病診斷。
+        </div>
+
+        ${canEditRow?`
+          <div class="gds15-actions">
+            ${!['completed','unable','not_applicable'].includes(form.status)?'<button id="gds15Draft" class="btn">儲存草稿</button>':''}
+            <button id="gds15Confirm" class="btn primary">${['completed','unable','not_applicable'].includes(form.status)?'儲存修正並確認':'完成本次確認'}</button>
+          </div>
+        `:''}
+      </div>
+    `;
+
+    $('gds15Back')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+
+    document.querySelectorAll('input[name^="gds15_q"]').forEach(input=>{
+      input.addEventListener('change',()=>{
+        local.answers[input.name.replace('gds15_','')]=input.value;
+        const y=window.scrollY;
+        render();
+        window.scrollTo({top:y,behavior:'auto'});
+      });
+    });
+
+    document.querySelectorAll('input[name="gds15_mode"]').forEach(input=>{
+      input.addEventListener('change',()=>{
+        local.completionMode=input.value;
+        if(local.completionMode==='completed')local.exceptionReason='';
+        render();
+      });
+    });
+
+    $('gds15ExceptionReason')?.addEventListener('input',()=>{
+      local.exceptionReason=$('gds15ExceptionReason').value;
+    });
+
+    $('gds15Draft')?.addEventListener('click',()=>save(false));
+    $('gds15Confirm')?.addEventListener('click',()=>save(true));
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+
+  async function save(finalize){
+    const row=eventById(local.eventId);
+    if(!row||!canEdit(row))return toast('您沒有此個案的評估編輯權限','error');
+
+    if(local.completionMode!=='completed'){
+      local.exceptionReason=$('gds15ExceptionReason')?.value.trim()||local.exceptionReason.trim();
+      if(!local.exceptionReason)return toast('請填寫原因','warn');
+    }else{
+      const count=answerCount();
+      if(finalize&&count!==15){
+        const missing=ITEMS.filter(x=>!['yes','no'].includes(local.answers[x.key])).map(x=>x.label).join('、');
+        return toast('尚有未完成項目：'+missing,'warn');
+      }
+      if(!finalize&&count===0)return toast('至少填寫一題後再儲存草稿','warn');
+    }
+
+    showLoading(true);
+    try{
+      const {error}=await db.rpc('save_assessment_gds15',{
+        p_event_id:row.id,
+        p_answers:local.answers,
+        p_finalize:!!finalize,
+        p_completion_mode:local.completionMode,
+        p_exception_reason:local.completionMode==='completed'?null:(local.exceptionReason||null)
+      });
+      if(error)throw error;
+
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+      if(finalize){
+        window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);
+        toast('GDS-15本次確認已完成','success');
+      }else{
+        await load(row.id);
+        render();
+        toast('GDS-15草稿已儲存','success');
+      }
+    }catch(err){
+      console.error(err);
+      toast('儲存GDS-15失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);
+    if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+    if(!formById(eventId))return toast('本次評估未選用GDS-15','warn');
+
+    showLoading(true);
+    try{
+      await load(eventId);
+      render();
+    }catch(err){
+      console.error(err);
+      toast('讀取GDS-15失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  window.v52AssessmentGds15={open};
+})();

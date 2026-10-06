@@ -1,0 +1,171 @@
+
+// V5.2 評估管理：SPMSQ
+(()=>{
+  const ITEMS=[
+    ['q1','1. 今天是幾年幾月幾日？'],
+    ['q2','2. 今天星期幾？'],
+    ['q3','3. 您現在住在哪裡？'],
+    ['q4','4. 您的電話號碼是幾號？（或可辨識之聯絡方式）'],
+    ['q5','5. 您今年幾歲？'],
+    ['q6','6. 您的出生年月日是？'],
+    ['q7','7. 現任總統是誰？'],
+    ['q8','8. 上一任總統是誰？'],
+    ['q9','9. 您母親的名字是什麼？'],
+    ['q10','10. 請從20開始，每次減3，連續說下去。']
+  ];
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-spmsq-style';
+  style.textContent=`
+    .spmsq-page{max-width:980px;margin:0 auto}.spmsq-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .spmsq-card,.spmsq-summary-card{border:1px solid var(--line);border-radius:12px;background:#fff}.spmsq-summary-card{padding:11px 12px}
+    .spmsq-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}.spmsq-summary-card strong{font-size:18px;color:#344054}
+    .spmsq-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px;line-height:1.45}
+    .spmsq-copy{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #d9e9f7;background:#f7fbff;border-radius:11px;padding:11px 12px;margin-bottom:12px}
+    .spmsq-copy strong{font-size:12px;color:#175cd3}.spmsq-copy span{display:block;font-size:10.5px;color:#475467;margin-top:3px}
+    .spmsq-notice{padding:10px 12px;border-radius:10px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11.5px;font-weight:800;margin-bottom:12px}
+    .spmsq-unable{border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:#fff;margin-bottom:12px}.spmsq-unable label{font-weight:900;font-size:12px}
+    .spmsq-unable textarea{width:100%;box-sizing:border-box;margin-top:8px;min-height:70px}
+    .spmsq-items{display:grid;gap:10px}.spmsq-card{padding:12px}.spmsq-card.changed{border-color:#e7a98e;box-shadow:0 0 0 2px rgba(220,148,121,.10)}
+    .spmsq-title{font-size:13px;font-weight:900;color:#344054;margin-bottom:9px}.spmsq-prev{font-size:10px;color:#175cd3;margin-left:8px}
+    .spmsq-judge{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}.spmsq-judge label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;cursor:pointer;font-size:11.5px;font-weight:800}
+    .spmsq-judge label.selected{border-color:#dc9479;background:#fff8f5}.spmsq-judge input{width:auto}
+    .spmsq-note{margin-top:9px}.spmsq-note label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}.spmsq-note textarea{width:100%;box-sizing:border-box;min-height:58px;resize:vertical}.spmsq-note .btn{font-size:10.5px}
+    .spmsq-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    @media(max-width:720px){.spmsq-summary{grid-template-columns:1fr}.spmsq-copy{align-items:flex-start;flex-direction:column}.spmsq-copy .btn{width:100%}.spmsq-actions .btn{flex:1}}
+  `;
+  document.head.appendChild(style);
+
+  const local={eventId:null,record:null,previous:null,previousEvent:null,judgments:{},notes:{},expandedNotes:new Set(),pendingCopyFromId:null,hasLaterCompleted:false,isUnable:false,unableReason:''};
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const formById=id=>(state.assessmentEventForms||[]).find(x=>x.assessment_event_id===id&&x.form_code==='spmsq')||null;
+  const safe=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const canEdit=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+  const errorCount=()=>ITEMS.filter(([k])=>['wrong','unable_answer'].includes(local.judgments[k])).length;
+  const completedCount=()=>ITEMS.filter(([k])=>['correct','wrong','unable_answer'].includes(local.judgments[k])).length;
+  const judgmentLabel=v=>v==='correct'?'正確':v==='wrong'?'錯誤':v==='unable_answer'?'無法作答':'—';
+
+  async function load(eventId){
+    const row=eventById(eventId); if(!row)throw new Error('找不到評估事件');
+    const [cur,hist]=await Promise.all([
+      db.from('assessment_spmsq_records').select('*').eq('assessment_event_id',eventId).maybeSingle(),
+      db.from('assessment_spmsq_records').select('*').eq('case_id',row.case_id).not('confirmed_at','is',null).eq('is_unable',false).neq('assessment_event_id',eventId).order('confirmed_at',{ascending:false})
+    ]);
+    if(cur.error)throw cur.error;if(hist.error)throw hist.error;
+    local.eventId=eventId;local.record=cur.data||null;local.judgments={...safe(local.record?.judgments)};local.notes={...safe(local.record?.notes)};
+    local.expandedNotes=new Set(Object.entries(local.notes).filter(([,v])=>String(v||'').trim()).map(([k])=>k));
+    local.isUnable=!!local.record?.is_unable;local.unableReason=local.record?.unable_reason||'';
+    const dated=(hist.data||[]).map(record=>({record,event:eventById(record.assessment_event_id)})).filter(x=>x.event?.planned_date);
+    local.hasLaterCompleted=dated.some(x=>x.event.planned_date>row.planned_date);
+    const candidates=dated.filter(x=>x.event.planned_date<row.planned_date).sort((a,b)=>String(b.event.planned_date).localeCompare(String(a.event.planned_date))||String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||'')));
+    local.previous=candidates[0]?.record||null;local.previousEvent=candidates[0]?.event||null;
+    local.pendingCopyFromId=(local.record?.copied_from_id&&local.record.copied_from_id===local.previous?.id)?local.record.copied_from_id:null;
+  }
+
+  function render(){
+    const row=eventById(local.eventId),c=row?caseById(row.case_id):null,form=row?formById(row.id):null;
+    if(!row||!c||!form)return window.v52AssessmentApi?.renderAssessmentPage?.();
+    const count=completedCount(),err=errorCount(),complete=count===10;
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,'SPMSQ 短簡易智能狀態問卷');
+    $('content').innerHTML=`
+      <div class="spmsq-page">
+        <div class="page-head"><div><h1>${escapeHTML(c.case_name)}｜SPMSQ</h1><p>評估日期：${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}</p></div><div><button id="spmsqBack" class="btn">← 返回評估事件</button></div></div>
+        ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
+        <section class="spmsq-summary">
+          <div class="spmsq-summary-card"><label>本次錯誤題數</label><strong>${local.isUnable?'—':(count?err:'—')}</strong><small>${local.isUnable?'本次標示無法評估':(complete?'正式結果':'暫計｜已完成 '+count+'/10 題')}</small></div>
+          <div class="spmsq-summary-card"><label>前次錯誤題數</label><strong>${local.previous?.error_count??'—'}</strong><small>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):'無前次完成紀錄'}</small></div>
+          <div class="spmsq-summary-card"><label>結果說明</label><strong style="font-size:14px">${local.isUnable?'無法評估':(!complete?'尚未完成':err<=2?'0–2題錯誤':'3題以上')}</strong><small>${local.isUnable?'請填寫原因':(!complete?'完成10題後顯示':err<=2?'多屬正常範圍':'建議持續觀察並視需要進一步評估')}</small></div>
+        </section>
+        ${local.hasLaterCompleted?'<div class="spmsq-notice">此筆評估日期早於個案較新的已完成 SPMSQ；系統只會將本次日期以前最近一筆已完成 SPMSQ 視為「前次評估」。</div>':''}
+        <div class="spmsq-unable"><label><input id="spmsqUnable" type="checkbox" style="width:auto" ${local.isUnable?'checked':''}> 無法評估</label><textarea id="spmsqUnableReason" placeholder="請填寫無法評估原因" style="display:${local.isUnable?'block':'none'}">${escapeHTML(local.unableReason)}</textarea></div>
+        <div class="spmsq-items" style="${local.isUnable?'opacity:.45;pointer-events:none':''}">
+          ${ITEMS.map(([key,label])=>{
+            const prev=local.previous?.judgments?.[key],changed=prev&&local.judgments[key]&&prev!==local.judgments[key];
+            return `<section class="spmsq-card ${changed?'changed':''}">
+              <div class="spmsq-title">${escapeHTML(label)}${prev?'<span class="spmsq-prev">前次：'+judgmentLabel(prev)+'</span>':''}</div>
+              <div class="spmsq-judge">
+                <label class="${local.judgments[key]==='correct'?'selected':''}"><input type="radio" name="spmsq_${key}" value="correct" ${local.judgments[key]==='correct'?'checked':''}>正確</label>
+                <label class="${local.judgments[key]==='wrong'?'selected':''}"><input type="radio" name="spmsq_${key}" value="wrong" ${local.judgments[key]==='wrong'?'checked':''}>錯誤</label>
+                <label class="${local.judgments[key]==='unable_answer'?'selected':''}"><input type="radio" name="spmsq_${key}" value="unable_answer" ${local.judgments[key]==='unable_answer'?'checked':''}>無法作答</label>
+              </div>
+              <div class="spmsq-note">
+                ${local.judgments[key]==='unable_answer'||local.expandedNotes.has(key)||String(local.notes[key]||'').trim()
+                  ?`<label>${local.judgments[key]==='unable_answer'?'無法作答原因 *':'備註（選填）'}</label><textarea data-spmsq-note="${key}" placeholder="${local.judgments[key]==='unable_answer'?'請填寫無法作答原因':'需要時補充，例如：僅能回答年份、因失語無法回答'}">${escapeHTML(local.notes[key]||'')}</textarea>`
+                  :`<button type="button" class="btn sm" data-spmsq-add-note="${key}">＋ 補充備註</button>`}
+              </div>
+            </section>`;
+          }).join('')}
+        </div>
+        ${canEdit(row)&&row.status!=='voided'?`<div class="spmsq-actions">${form.status!=='completed'&&form.status!=='unable'?'<button id="spmsqDraft" class="btn">儲存草稿</button>':''}<button id="spmsqConfirm" class="btn primary">${['completed','unable'].includes(form.status)?'儲存修正並確認':'完成本次確認'}</button></div>`:''}
+      </div>`;
+
+    $('spmsqBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+    document.querySelectorAll('[data-spmsq-note]').forEach(inp=>inp.addEventListener('input',()=>local.notes[inp.dataset.spmsqNote]=inp.value));
+    document.querySelectorAll('[data-spmsq-add-note]').forEach(btn=>btn.addEventListener('click',()=>{
+      local.expandedNotes.add(btn.dataset.spmsqAddNote);
+      const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+    }));
+    document.querySelectorAll('input[name^="spmsq_q"]').forEach(inp=>inp.addEventListener('change',()=>{
+      const key=inp.name.replace('spmsq_','');
+      local.judgments[key]=inp.value;
+      if(inp.value==='unable_answer'){
+        local.expandedNotes.add(key);
+      }else if(!String(local.notes[key]||'').trim()){
+        local.expandedNotes.delete(key);
+      }
+      const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+    }));
+    $('spmsqUnable')?.addEventListener('change',()=>{local.isUnable=$('spmsqUnable').checked;render();});
+    $('spmsqUnableReason')?.addEventListener('input',()=>local.unableReason=$('spmsqUnableReason').value);
+    $('spmsqDraft')?.addEventListener('click',()=>save(false));
+    $('spmsqConfirm')?.addEventListener('click',()=>save(true));
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+
+  async function save(finalize){
+    const row=eventById(local.eventId);if(!row||!canEdit(row))return toast('您沒有此個案的評估編輯權限','error');
+    document.querySelectorAll('[data-spmsq-note]').forEach(inp=>local.notes[inp.dataset.spmsqNote]=inp.value);
+    if(local.isUnable){
+      local.unableReason=$('spmsqUnableReason')?.value.trim()||local.unableReason.trim();
+      if(!local.unableReason)return toast('請填寫無法評估原因','warn');
+    }else if(finalize&&completedCount()!==10){
+      const missing=ITEMS.filter(([k])=>!['correct','wrong','unable_answer'].includes(local.judgments[k])).map(([,l])=>l).join('、');
+      return toast('尚有未完成項目：'+missing,'warn');
+    }else if(finalize){
+      const missingReasons=ITEMS
+        .filter(([k])=>local.judgments[k]==='unable_answer'&&!String(local.notes[k]||'').trim())
+        .map(([,l])=>l);
+      if(missingReasons.length)return toast('請填寫無法作答原因：'+missingReasons.join('、'),'warn');
+    }else if(!finalize&&completedCount()===0&&!Object.values(local.notes).some(v=>String(v||'').trim())){
+      return toast('至少判定一項或填寫備註後再儲存草稿','warn');
+    }
+
+    showLoading(true);
+    try{
+      const {error}=await db.rpc('save_assessment_spmsq',{
+        p_event_id:row.id,p_judgments:local.judgments,p_notes:local.notes,p_finalize:!!finalize,
+        p_unable:!!local.isUnable,p_unable_reason:local.isUnable?(local.unableReason||null):null,p_copied_from_id:null
+      });
+      if(error)throw error;
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+      if(finalize){
+        window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);
+        toast('SPMSQ本次確認已完成','success');
+      }else{
+        await load(row.id);render();
+        toast('SPMSQ草稿已儲存','success');
+      }
+    }catch(err){console.error(err);toast('儲存SPMSQ失敗：'+(err?.message||err),'error');}
+    finally{showLoading(false);}
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+    if(!formById(eventId))return toast('本次評估未選用SPMSQ','warn');
+    showLoading(true);try{await load(eventId);render();}catch(err){console.error(err);toast('讀取SPMSQ失敗：'+(err?.message||err),'error');}finally{showLoading(false);}
+  }
+
+  window.v52AssessmentSpmsq={open};
+})();

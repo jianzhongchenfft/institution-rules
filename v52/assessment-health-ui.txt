@@ -1,0 +1,872 @@
+// 評估管理／健康與用藥＋10項狀態 UI
+  function renderSummary(){
+    const count=answeredCount(),total=score(),complete=count===10,prev=local.previous?.total_score;
+    return `
+      <section class="health-summary">
+        <div class="health-summary-card"><label>本次健康狀況得分</label><strong>${count?total:'—'}</strong><small>${complete?'正式總分（滿分20分）':'暫計｜已填 '+count+'/10 項'}</small></div>
+        <div class="health-summary-card"><label>前次得分</label><strong>${prev??'—'}</strong><small>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):'無前次完成紀錄'}</small></div>
+        <div class="health-summary-card"><label>與前次差異</label><strong style="font-size:14px">${prev==null||!complete?'—':((total-prev)>0?'+':'')+(total-prev)+' 分'}</strong><small>分數越高代表個案整體狀況越好</small></div>
+      </section>
+    `;
+  }
+
+  function renderEvent(item,index){
+    return `
+      <div class="health-event" data-health-event="${index}">
+        <div class="health-event-head">
+          <strong>就醫事件 ${index+1}</strong>
+          <button type="button" class="btn sm" data-remove-health-event="${index}">移除</button>
+        </div>
+        <div class="health-event-grid">
+          <div>
+            <label>日期</label>
+            <input type="date" data-health-event-field="date" value="${escapeHTML(item.date||'')}">
+          </div>
+          <div>
+            <label>類型</label>
+            <select data-health-event-field="type">
+              <option value="">請選擇</option>
+              ${EVENT_TYPES.map(([v,l])=>`<option value="${v}" ${item.type===v?'selected':''}>${l}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label>院所</label>
+            <input data-health-event-field="facility" value="${escapeHTML(item.facility||'')}">
+          </div>
+          <div>
+            <label>科別／醫師（選填）</label>
+            <input data-health-event-field="department" value="${escapeHTML(item.department||'')}">
+          </div>
+          <div class="wide">
+            <label>就醫原因</label>
+            <textarea data-health-event-field="reason">${escapeHTML(item.reason||'')}</textarea>
+          </div>
+          <div class="wide">
+            <label>結果／處置</label>
+            <textarea data-health-event-field="result">${escapeHTML(item.result||'')}</textarea>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMedCheck([key,label]){
+    const cur=local.medicationChecks[key]||{};
+    const prev=local.previous?.medication_checks?.[key]||{};
+    const changed=cur.status&&prev.status&&cur.status!==prev.status;
+    const noteValue=String(cur.note||'');
+    const noteRequired=cur.status==='improve'||cur.status==='not_applicable';
+    const showNote=noteRequired||!!noteValue||local.expandedMedicationNotes.has(key);
+    const notePlaceholder=cur.status==='improve'
+      ?'請說明需改善的狀況'
+      :cur.status==='not_applicable'
+        ?'請說明不適用原因'
+        :'補充備註（選填）';
+
+    return `
+      <div class="health-card ${changed?'changed':''}">
+        <div class="health-card-head">
+          <div class="health-card-title">${escapeHTML(label)}</div>
+          <div class="health-tags">
+            ${prev.status?`<span class="health-tag prev">前次：${escapeHTML(medStatusLabel(prev.status))}</span>`:''}
+            ${changed?'<span class="health-tag change">本次有變化</span>':''}
+          </div>
+        </div>
+        <div class="health-options">
+          ${[['good','狀況良好'],['improve','需改善'],['not_applicable','不適用']].map(([v,l])=>`
+            <label class="health-option ${cur.status===v?'selected':''}">
+              <input type="radio" name="health_med_${key}" value="${v}" ${cur.status===v?'checked':''}>${l}
+            </label>
+          `).join('')}
+        </div>
+        ${!showNote&&!['improve','not_applicable'].includes(cur.status)
+          ?`<div class="health-note"><button type="button" class="btn sm" data-health-med-add-note="${key}">＋ 補充備註</button></div>`
+          :''}
+        ${showNote?`<div class="health-note">
+          <label style="display:block;font-size:10px;font-weight:850;color:#667085;margin-bottom:4px">備註${noteRequired?' *':''}</label>
+          <textarea data-health-med-note="${key}" placeholder="${escapeHTML(notePlaceholder)}">${escapeHTML(noteValue)}</textarea>
+        </div>`:''}
+      </div>
+    `;
+  }
+
+  function renderOpeningFixedMedication(item,index){
+    return `
+      <div class="health-event" data-opening-fixed-med="${escapeHTML(item.id||'')}">
+        <div class="health-event-head">
+          <strong>固定用藥 ${index+1}</strong>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="health-tag prev">接案時既有</span>
+            <button type="button" class="btn sm" data-remove-opening-fixed-med="${escapeHTML(item.id||'')}">移除</button>
+          </div>
+        </div>
+        <div class="health-event-grid">
+          <div class="wide">
+            <label>藥物名稱／用法 *</label>
+            <input data-opening-fixed-med-field="medication" value="${escapeHTML(item.medication||'')}" placeholder="例如：高血壓藥A，每日1次">
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderOpeningTemporaryMedication(item,index){
+    return `
+      <div class="health-event" data-opening-temp-med="${escapeHTML(item.id||'')}">
+        <div class="health-event-head">
+          <strong>短期／臨時用藥 ${index+1}</strong>
+          <button type="button" class="btn sm" data-remove-opening-temp-med="${index}">移除</button>
+        </div>
+        <div class="health-event-grid">
+          <div class="wide">
+            <label>藥物名稱／用法 *</label>
+            <input data-opening-temp-med-field="medication" value="${escapeHTML(item.medication||'')}" placeholder="例如：感冒藥，每日3次">
+          </div>
+          <div>
+            <label>用藥原因</label>
+            <input data-opening-temp-med-field="reason" value="${escapeHTML(item.reason||'')}" placeholder="例如：感冒">
+          </div>
+          <div>
+            <label>預計服用至</label>
+            <input type="date" data-opening-temp-med-field="planned_end_date" value="${escapeHTML(item.planned_end_date||'')}">
+          </div>
+          <div class="wide">
+            <label>備註（選填）</label>
+            <textarea data-opening-temp-med-field="note">${escapeHTML(item.note||'')}</textarea>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderFixedMedicationList(entries){
+    if(!entries.length){
+      return '<div class="health-notice" style="margin:0;background:#f9fafb;border-color:#eaecf0;color:#667085">目前無固定用藥</div>';
+    }
+    return `
+      <div class="health-med-checks">
+        ${entries.map(entry=>`
+          <div class="health-card">
+            <div class="health-card-head">
+              <div class="health-card-title">${escapeHTML(entry.medication||'')}</div>
+              <div class="health-tags"><span class="health-tag prev">${escapeHTML(medicationEntryTag(entry))}</span></div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderMedicationChange(item,index){
+    const entries=medicationEntriesBeforeChange(index);
+    const action=item.action||'',duration=item.duration_type||'';
+    const selectedId=item.medication_before_entry_id||'';
+    const beforeOptions=[...entries];
+    if(selectedId&&!beforeOptions.some(x=>x.id===selectedId)&&item.medication_before){
+      beforeOptions.push({
+        id:selectedId,
+        medication:item.medication_before,
+        origin_type:'legacy',
+        origin_date:null,
+        origin_event_id:null,
+        origin_note:''
+      });
+    }
+    const beforeField=action==='stop'||action==='adjust'
+      ?(duration==='long_term'
+        ?`<select data-med-change-field="medication_before_entry_id">
+            <option value="">請選擇目前固定用藥</option>
+            ${beforeOptions.map(entry=>`<option value="${escapeHTML(entry.id)}" ${selectedId===entry.id?'selected':''}>${escapeHTML(entry.medication)}｜${escapeHTML(medicationEntryTag(entry))}</option>`).join('')}
+          </select>`
+        :`<input data-med-change-field="medication_before" value="${escapeHTML(item.medication_before||'')}" placeholder="例如：感冒藥A">`)
+      :'';
+    const afterField=action==='add'||action==='adjust'
+      ?`<input data-med-change-field="medication_after" value="${escapeHTML(item.medication_after||'')}" placeholder="${action==='add'?'例如：高血壓藥A，每日1次':'請填調整後藥物與用法'}">`
+      :'';
+
+    return `
+      <div class="health-event" data-med-change="${escapeHTML(item.id||'')}">
+        <div class="health-event-head">
+          <strong>用藥異動 ${index+1}</strong>
+          <button type="button" class="btn sm" data-remove-med-change="${index}">移除</button>
+        </div>
+        <div class="health-event-grid">
+          <div>
+            <label>異動類型</label>
+            <select data-med-change-field="action">
+              <option value="">請選擇</option>
+              <option value="add" ${action==='add'?'selected':''}>新增</option>
+              <option value="stop" ${action==='stop'?'selected':''}>停用</option>
+              <option value="adjust" ${action==='adjust'?'selected':''}>調整</option>
+            </select>
+          </div>
+          <div>
+            <label>用藥性質</label>
+            <select data-med-change-field="duration_type">
+              <option value="">請選擇</option>
+              <option value="long_term" ${duration==='long_term'?'selected':''}>長期／固定</option>
+              <option value="short_term" ${duration==='short_term'?'selected':''}>短期／臨時</option>
+            </select>
+          </div>
+          ${(action==='stop'||action==='adjust')?`
+            <div class="wide">
+              <label>${action==='stop'?'停用藥物':'調整前藥物'}</label>
+              ${beforeField}
+            </div>`:''}
+          ${(action==='add'||action==='adjust')?`
+            <div class="wide">
+              <label>${action==='add'?'新增藥物／用法':'調整後藥物／用法'}</label>
+              ${afterField}
+            </div>`:''}
+          <div class="wide">
+            <label>備註（選填）</label>
+            <textarea data-med-change-field="note">${escapeHTML(item.note||'')}</textarea>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMedicationCorrection(item,index){
+    const entries=cloneEntries(local.fixedMedicationBaseEntries);
+    safeArray(local.medicalInfo.medication_corrections).slice(0,index).forEach(x=>applyMedicationCorrection(entries,x,eventById(local.eventId)));
+    const action=item.action||'',reason=item.reason||'',selected=item.target_entry_id||'';
+    return `
+      <div class="health-event" data-med-correction="${escapeHTML(item.id||'')}">
+        <div class="health-event-head">
+          <strong>既有固定用藥修正 ${index+1}</strong>
+          <button type="button" class="btn sm" data-remove-med-correction="${index}">移除</button>
+        </div>
+        <div class="health-event-grid">
+          <div>
+            <label>修正方式</label>
+            <select data-med-correction-field="action">
+              <option value="">請選擇</option>
+              <option value="add" ${action==='add'?'selected':''}>補登既有藥物</option>
+              <option value="edit" ${action==='edit'?'selected':''}>更正既有藥物</option>
+              <option value="remove" ${action==='remove'?'selected':''}>移除誤載藥物</option>
+            </select>
+          </div>
+          <div>
+            <label>修正原因</label>
+            <select data-med-correction-field="reason">
+              <option value="">請選擇</option>
+              <option value="opening_omission" ${reason==='opening_omission'?'selected':''}>接案時漏登</option>
+              <option value="previous_record_error" ${reason==='previous_record_error'?'selected':''}>前次紀錄有誤</option>
+              <option value="other" ${reason==='other'?'selected':''}>其他</option>
+            </select>
+          </div>
+          ${(action==='edit'||action==='remove')?`
+            <div class="wide">
+              <label>${action==='edit'?'要更正的固定用藥':'要移除的固定用藥'}</label>
+              <select data-med-correction-field="target_entry_id">
+                <option value="">請選擇</option>
+                ${entries.map(entry=>`<option value="${escapeHTML(entry.id)}" ${selected===entry.id?'selected':''}>${escapeHTML(entry.medication)}｜${escapeHTML(medicationEntryTag(entry))}</option>`).join('')}
+              </select>
+            </div>`:''}
+          ${(action==='add'||action==='edit')?`
+            <div class="wide">
+              <label>${action==='add'?'補登藥物／用法':'更正後藥物／用法'}</label>
+              <input data-med-correction-field="medication_after" value="${escapeHTML(item.medication_after||'')}" placeholder="請填藥物名稱與用途／用法">
+            </div>`:''}
+          <div class="wide">
+            <label>補充說明（選填）</label>
+            <textarea data-med-correction-field="note">${escapeHTML(item.note||'')}</textarea>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHealthItem([key,label]){
+    const cur=local.healthItems[key],prev=local.previous?.health_items?.[key],changed=cur&&prev&&cur!==prev;
+    const noteValue=String(local.healthNotes[key]||'');
+    const noteRequired=cur==='observe'||cur==='refer';
+    const showNote=noteRequired||!!noteValue||local.expandedHealthNotes.has(key);
+    const notePlaceholder=cur==='observe'
+      ?'請說明需觀察的狀況'
+      :cur==='refer'
+        ?'請說明異常狀況及轉介／處置情形'
+        :'補充備註（選填）';
+    return `
+      <div class="health-card ${changed?'changed':''}">
+        <div class="health-card-head">
+          <div class="health-card-title">${escapeHTML(label)}</div>
+          <div class="health-tags">
+            ${prev?`<span class="health-tag prev">前次：${escapeHTML(healthStatusLabel(prev))}</span>`:''}
+            ${changed?'<span class="health-tag change">本次有變化</span>':''}
+          </div>
+        </div>
+        <div class="health-options">
+          ${HEALTH_OPTIONS.map(([v,l,s])=>`
+            <label class="health-option ${cur===v?'selected':''}">
+              <input type="radio" name="health_item_${key}" value="${v}" ${cur===v?'checked':''}>
+              <span>${l}</span><span class="health-score">${s}分</span>
+            </label>
+          `).join('')}
+        </div>
+        ${!showNote&&!['observe','refer'].includes(cur)
+          ?`<div class="health-note"><button type="button" class="btn sm" data-health-add-note="${key}">＋ 補充備註</button></div>`
+          :''}
+        ${showNote?`<div class="health-note">
+          <label style="display:block;font-size:10px;font-weight:850;color:#667085;margin-bottom:4px">備註${noteRequired?' *':''}</label>
+          <textarea data-health-note="${key}" placeholder="${escapeHTML(notePlaceholder)}">${escapeHTML(noteValue)}</textarea>
+        </div>`:''}
+      </div>
+    `;
+  }
+
+  function render(){
+    const row=eventById(local.eventId),c=row?caseById(row.case_id):null,form=row?formById(row.id):null;
+    if(!row||!c||!form)return window.v52AssessmentApi?.renderAssessmentPage?.();
+
+    const canEditRow=canEdit(row)&&row.status!=='voided';
+    const mode=healthSectionMode(row);
+    const title=sectionTitle('combined',row);
+    const events=safeArray(local.medicalInfo.healthcare_events);
+    const noEvents=local.medicalInfo.no_healthcare_events===true;
+    const openingNoFixed=local.medicalInfo.opening_no_fixed_medications===true;
+    const openingNoTemporary=local.medicalInfo.opening_no_temporary_medications===true;
+    const openingTemporaryMedications=safeArray(local.medicalInfo.opening_temporary_medications);
+    const currentFixedEntries=rebuildFixedMedicationEntries();
+    const unvisitedHealthChanged=local.medicalInfo.unvisited_health_change==='yes';
+    const hasSideEffect=local.medicalInfo.side_effect==='present';
+
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,title);
+
+    const baselineHtml=`
+      <section class="health-section">
+        <div class="health-section-head">
+          <h3>健康與用藥初始評估</h3>
+          <p>建立接案當下的健康與用藥基準；長期用藥與短期／臨時用藥分開記錄。</p>
+        </div>
+        <div class="health-section-body">
+          <div class="health-subsection">
+            <div class="health-subtitle"><strong>健康現況</strong></div>
+            <div class="health-grid">
+              <div class="health-field">
+                <label>目前重要疾病／慢性病史</label>
+                <textarea data-health-medical="baseline_important_conditions" placeholder="例如：高血壓、末期腎臟病">${escapeHTML(local.medicalInfo.baseline_important_conditions||'')}</textarea>
+              </div>
+              <div class="health-field">
+                <label>固定治療／特殊醫療安排</label>
+                <textarea data-health-medical="baseline_ongoing_treatments" placeholder="例如：每週一、三、五固定血液透析">${escapeHTML(local.medicalInfo.baseline_ongoing_treatments||'')}</textarea>
+              </div>
+              <div class="health-field">
+                <label>是否定期回診</label>
+                <select data-health-medical="regular_followup">
+                  <option value="">請選擇</option>
+                  <option value="yes" ${local.medicalInfo.regular_followup==='yes'?'selected':''}>是</option>
+                  <option value="no" ${local.medicalInfo.regular_followup==='no'?'selected':''}>否</option>
+                </select>
+              </div>
+              <div class="health-field">
+                <label>未定期回診原因／其他需追蹤事項</label>
+                <textarea data-health-medical="regular_followup_reason">${escapeHTML(local.medicalInfo.regular_followup_reason||'')}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>接案時固定用藥</strong>
+              <small>直接建立目前固定用藥清單；後續評估會自動承接並以用藥異動追蹤新增、停用或調整</small>
+            </div>
+            <div class="health-field" style="margin-bottom:10px">
+              <label style="display:flex;align-items:center;gap:6px">
+                <input id="openingNoFixedMedication" type="checkbox" ${openingNoFixed?'checked':''} style="width:auto">
+                接案時無固定用藥
+              </label>
+            </div>
+            <div id="openingFixedMedicationWrap" style="${openingNoFixed?'display:none':''}">
+              <div class="health-event-list">
+                ${(local.fixedMedicationBaseEntries.length
+                  ?local.fixedMedicationBaseEntries
+                  :[newOpeningFixedMedication()]).map(renderOpeningFixedMedication).join('')}
+              </div>
+              <button id="healthAddOpeningFixedMedication" type="button" class="btn sm" style="margin-top:8px">＋ 新增固定用藥</button>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>接案時短期／臨時用藥</strong>
+              <small>例如感冒藥、短期抗生素、臨時止痛藥；不會自動延續到後續評估</small>
+            </div>
+            <div class="health-field" style="margin-bottom:10px">
+              <label style="display:flex;align-items:center;gap:6px">
+                <input id="openingNoTemporaryMedication" type="checkbox" ${openingNoTemporary?'checked':''} style="width:auto">
+                接案時無短期／臨時用藥
+              </label>
+            </div>
+            <div id="openingTemporaryMedicationWrap" style="${openingNoTemporary?'display:none':''}">
+              <div class="health-event-list">
+                ${(openingTemporaryMedications.length?openingTemporaryMedications:[newOpeningTemporaryMedication()]).map(renderOpeningTemporaryMedication).join('')}
+              </div>
+              <button id="healthAddOpeningTemporaryMedication" type="button" class="btn sm" style="margin-top:8px">＋ 新增一筆短期／臨時用藥</button>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle"><strong>目前用藥管理</strong></div>
+            <div class="health-grid">
+              <div class="health-field">
+                <label>用藥方式</label>
+                <select data-health-medical="medication_method">
+                  <option value="">請選擇</option>
+                  <option value="self" ${local.medicalInfo.medication_method==='self'?'selected':''}>自行</option>
+                  <option value="assisted" ${local.medicalInfo.medication_method==='assisted'?'selected':''}>他人協助</option>
+                </select>
+              </div>
+              <div class="health-field">
+                <label>協助者</label>
+                <input data-health-medical="medication_assisted_by" value="${escapeHTML(local.medicalInfo.medication_assisted_by||'')}">
+              </div>
+              <div class="health-field">
+                <label>是否服藥規律</label>
+                <select data-health-medical="medication_regular">
+                  <option value="">請選擇</option>
+                  <option value="yes" ${local.medicalInfo.medication_regular==='yes'?'selected':''}>是</option>
+                  <option value="no" ${local.medicalInfo.medication_regular==='no'?'selected':''}>否</option>
+                </select>
+              </div>
+              <div class="health-field">
+                <label>服藥需追蹤事項</label>
+                <textarea data-health-medical="medication_followup">${escapeHTML(local.medicalInfo.medication_followup||'')}</textarea>
+              </div>
+              <div class="health-field">
+                <label>是否自述或觀察到疑似用藥後不適</label>
+                <select data-health-medical="side_effect">
+                  <option value="">請選擇</option>
+                  <option value="none" ${local.medicalInfo.side_effect==='none'?'selected':''}>否</option>
+                  <option value="present" ${hasSideEffect?'selected':''}>有</option>
+                </select>
+              </div>
+              <div class="health-field" style="${hasSideEffect?'':'display:none'}">
+                <label>疑似用藥後不適情形</label>
+                <textarea data-health-medical="side_effect_note">${escapeHTML(local.medicalInfo.side_effect_note||'')}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>用藥安全</strong>
+              <small>若不適用可直接選「不適用」</small>
+            </div>
+            <div class="health-med-checks">${MED_CHECKS.map(renderMedCheck).join('')}</div>
+          </div>
+        </div>
+      </section>
+    `;
+
+    const changeHtml=`
+      <section class="health-section">
+        <div class="health-section-head">
+          <h3>健康與用藥追蹤評估</h3>
+          <p>記錄自前次正式評估後至本次評估期間的健康事件、用藥變化與目前管理狀況。</p>
+        </div>
+        <div class="health-section-body">
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>1. 本期就醫事件</strong>
+              <small>門診、急診、住院、手術／處置皆可分筆記錄</small>
+            </div>
+            <div class="health-inline" style="margin-bottom:10px">
+              <label><input type="checkbox" data-health-medical="no_healthcare_events" ${noEvents?'checked':''}> 本評估期間無就醫事件</label>
+            </div>
+            <div id="healthEventsWrap" style="${noEvents?'display:none':''}">
+              <div class="health-event-list">${(events.length?events:[emptyEvent()]).map(renderEvent).join('')}</div>
+              <button id="healthAddEvent" type="button" class="btn sm" style="margin-top:8px">＋ 新增一筆就醫事件</button>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>2. 未就醫的重要健康變化</strong>
+              <small>只記錄未看醫生、但需要機構特別追蹤的明顯變化</small>
+            </div>
+            <div class="health-grid">
+              <div class="health-field">
+                <label>本期是否有未就醫但需特別追蹤的重要健康變化</label>
+                <select data-health-medical="unvisited_health_change">
+                  <option value="">請選擇</option>
+                  <option value="no" ${local.medicalInfo.unvisited_health_change==='no'?'selected':''}>無</option>
+                  <option value="yes" ${unvisitedHealthChanged?'selected':''}>有</option>
+                </select>
+              </div>
+              <div class="health-field" style="${unvisitedHealthChanged?'':'display:none'}">
+                <label>變化與需追蹤事項</label>
+                <textarea data-health-medical="unvisited_health_change_note" placeholder="例如：近兩週走路穩定度明顯下降，目前尚未就醫。">${escapeHTML(local.medicalInfo.unvisited_health_change_note||'')}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>3. 本期用藥變化</strong>
+              <button id="healthAddMedicationCorrection" type="button" class="btn sm">修正既有固定用藥</button>
+            </div>
+            <div class="health-subtitle"><strong>目前固定用藥</strong></div>
+            <div id="currentFixedMedicationList">${renderFixedMedicationList(currentFixedEntries)}</div>
+
+            ${safeArray(local.medicalInfo.medication_corrections).length?`
+              <div class="health-event-list" style="margin-top:10px">
+                ${safeArray(local.medicalInfo.medication_corrections).map(renderMedicationCorrection).join('')}
+              </div>
+            `:''}
+
+            <div class="health-field" style="margin-top:12px">
+              <label style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" data-health-medical="no_medication_changes" ${local.medicalInfo.no_medication_changes===true?'checked':''} style="width:auto">
+                本評估期間無用藥異動
+              </label>
+            </div>
+
+            <div style="${local.medicalInfo.no_medication_changes===true?'display:none':''};margin-top:10px">
+              <div class="health-event-list">
+                ${(safeArray(local.medicalInfo.medication_changes).length
+                  ?safeArray(local.medicalInfo.medication_changes)
+                  :[newMedicationChange()]).map(renderMedicationChange).join('')}
+              </div>
+              <button id="healthAddMedicationChange" type="button" class="btn sm" style="margin-top:8px">＋ 新增一筆用藥異動</button>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle"><strong>4. 目前回診與用藥管理</strong></div>
+            <div class="health-grid">
+              <div class="health-field">
+                <label>是否定期回診</label>
+                <select data-health-medical="regular_followup">
+                  <option value="">請選擇</option>
+                  <option value="yes" ${local.medicalInfo.regular_followup==='yes'?'selected':''}>是</option>
+                  <option value="no" ${local.medicalInfo.regular_followup==='no'?'selected':''}>否</option>
+                </select>
+              </div>
+              <div class="health-field">
+                <label>未定期回診原因／其他需追蹤事項</label>
+                <textarea data-health-medical="regular_followup_reason">${escapeHTML(local.medicalInfo.regular_followup_reason||'')}</textarea>
+              </div>
+              <div class="health-field">
+                <label>用藥方式</label>
+                <select data-health-medical="medication_method">
+                  <option value="">請選擇</option>
+                  <option value="self" ${local.medicalInfo.medication_method==='self'?'selected':''}>自行</option>
+                  <option value="assisted" ${local.medicalInfo.medication_method==='assisted'?'selected':''}>他人協助</option>
+                </select>
+              </div>
+              <div class="health-field">
+                <label>協助者</label>
+                <input data-health-medical="medication_assisted_by" value="${escapeHTML(local.medicalInfo.medication_assisted_by||'')}">
+              </div>
+              <div class="health-field">
+                <label>是否服藥規律</label>
+                <select data-health-medical="medication_regular">
+                  <option value="">請選擇</option>
+                  <option value="yes" ${local.medicalInfo.medication_regular==='yes'?'selected':''}>是</option>
+                  <option value="no" ${local.medicalInfo.medication_regular==='no'?'selected':''}>否</option>
+                </select>
+              </div>
+              <div class="health-field">
+                <label>服藥需追蹤事項</label>
+                <textarea data-health-medical="medication_followup">${escapeHTML(local.medicalInfo.medication_followup||'')}</textarea>
+              </div>
+              <div class="health-field">
+                <label>本期是否自述或觀察到疑似用藥後不適</label>
+                <select data-health-medical="side_effect">
+                  <option value="">請選擇</option>
+                  <option value="none" ${local.medicalInfo.side_effect==='none'?'selected':''}>否</option>
+                  <option value="present" ${hasSideEffect?'selected':''}>有</option>
+                </select>
+              </div>
+              <div class="health-field" style="${hasSideEffect?'':'display:none'}">
+                <label>疑似用藥後不適情形</label>
+                <textarea data-health-medical="side_effect_note">${escapeHTML(local.medicalInfo.side_effect_note||'')}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>5. 用藥安全現況</strong>
+              <div style="display:flex;align-items:center;gap:8px">
+                <small>請依本次實際狀況重新評估</small>
+                ${local.previous?'<button id="healthCopyMedicationSafety" type="button" class="btn sm">帶入前次</button>':''}
+              </div>
+            </div>
+            <div class="health-med-checks">${MED_CHECKS.map(renderMedCheck).join('')}</div>
+          </div>
+
+          <div class="health-subsection">
+            <div class="health-subtitle">
+              <strong>6. 本期健康／就醫／用藥變化對照顧需求的影響</strong>
+            </div>
+            <div class="health-grid">
+              <div class="health-field">
+                <label>目前判斷</label>
+                <select data-health-medical="care_impact">
+                  <option value="">請選擇</option>
+                  ${CARE_IMPACTS.map(([v,l])=>`<option value="${v}" ${local.medicalInfo.care_impact===v?'selected':''}>${l}</option>`).join('')}
+                </select>
+              </div>
+              <div class="health-field">
+                <label>說明／後續追蹤</label>
+                <textarea data-health-medical="care_impact_note">${escapeHTML(local.medicalInfo.care_impact_note||'')}</textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    `;
+
+    const statusHtml=`
+      ${renderSummary()}
+      ${local.hasLaterCompleted?'<div class="health-notice">此筆評估日期早於個案較新的已完成身體健康評估；系統只會將本次日期以前最近一筆完成紀錄視為「前次評估」。</div>':''}
+      <section class="health-section">
+        <div class="health-section-head">
+          <h3>身體健康狀態（10項）</h3>
+          <p>本區評估個案目前10項身體健康狀態；開案與後續皆重新判斷當下狀況。</p>
+        </div>
+        <div class="health-section-body">
+          ${local.previous?`
+            <div class="health-copy">
+              <div>
+                <strong>前次身體與健康狀況</strong>
+                <span>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):''}</span>
+              </div>
+              <button id="healthCopyPrevious" class="btn sm">帶入前次</button>
+            </div>
+          `:''}
+          <div class="health-items">${HEALTH_ITEMS.map(renderHealthItem).join('')}</div>
+        </div>
+      </section>
+    `;
+
+    $('content').innerHTML=`
+      <div class="health-page">
+        <div class="page-head">
+          <div>
+            <h1>${escapeHTML(c.case_name)}｜${escapeHTML(title)}</h1>
+            <p>${mode==='baseline'
+              ?'一次完成接案當下的健康現況、身體健康狀態與用藥評估。'
+              :'一次完成本期健康變化、身體健康狀態與用藥追蹤。'}</p>
+          </div>
+          <div class="assessment-head-actions"><button id="healthBack" class="btn">← 返回評估事件</button></div>
+        </div>
+
+        ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
+        ${mode==='baseline'?baselineHtml:changeHtml}
+        ${statusHtml}
+
+        ${canEditRow?`
+          <div class="health-actions">
+            ${form.status!=='completed'?'<button id="healthDraft" class="btn">儲存草稿</button>':''}
+            <button id="healthConfirm" class="btn primary">${form.status==='completed'?'儲存修正並確認':'完成本次確認'}</button>
+          </div>
+        `:''}
+      </div>
+    `;
+
+    $('healthBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+
+    document.querySelectorAll('[data-health-medical]').forEach(el=>{
+      const evt=el.tagName==='SELECT'||el.type==='checkbox'?'change':'input';
+      el.addEventListener(evt,()=>{
+        syncInputs();
+        const key=el.dataset.healthMedical;
+        if(key==='no_medication_changes')rebuildFixedMedicationEntries();
+        if(['no_healthcare_events','unvisited_health_change','no_medication_changes','side_effect'].includes(key)){
+          const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+        }
+      });
+    });
+
+    $('openingNoFixedMedication')?.addEventListener('change',e=>{
+      local.medicalInfo.opening_no_fixed_medications=!!e.target.checked;
+      if(e.target.checked)local.fixedMedicationBaseEntries=[];
+      rebuildFixedMedicationEntries();
+      render();
+    });
+
+    document.querySelectorAll('[data-opening-fixed-med-field]').forEach(el=>{
+      el.addEventListener('input',()=>{
+        local.medicalInfo.opening_no_fixed_medications=false;
+        syncInputs();
+      });
+    });
+
+    $('healthAddOpeningFixedMedication')?.addEventListener('click',()=>{
+      const y=window.scrollY;
+      syncInputs();
+      local.medicalInfo.opening_no_fixed_medications=false;
+      local.fixedMedicationBaseEntries=[
+        ...local.fixedMedicationBaseEntries,
+        newOpeningFixedMedication()
+      ];
+      rebuildFixedMedicationEntries();
+      render();
+      window.scrollTo({top:y,behavior:'auto'});
+    });
+
+    document.querySelectorAll('[data-remove-opening-fixed-med]').forEach(btn=>btn.addEventListener('click',()=>{
+      syncInputs();
+      const id=btn.dataset.removeOpeningFixedMed;
+      local.fixedMedicationBaseEntries=local.fixedMedicationBaseEntries.filter(entry=>entry.id!==id);
+      rebuildFixedMedicationEntries();
+      render();
+    }));
+
+    $('openingNoTemporaryMedication')?.addEventListener('change',e=>{
+      local.medicalInfo.opening_no_temporary_medications=!!e.target.checked;
+      if(e.target.checked)local.medicalInfo.opening_temporary_medications=[];
+      render();
+    });
+
+    $('healthAddOpeningTemporaryMedication')?.addEventListener('click',()=>{
+      const y=window.scrollY;
+      syncInputs();
+      local.medicalInfo.opening_no_temporary_medications=false;
+      local.medicalInfo.opening_temporary_medications=[
+        ...safeArray(local.medicalInfo.opening_temporary_medications),
+        newOpeningTemporaryMedication()
+      ];
+      render();
+      window.scrollTo({top:y,behavior:'auto'});
+    });
+
+    document.querySelectorAll('[data-remove-opening-temp-med]').forEach(btn=>btn.addEventListener('click',()=>{
+      syncInputs();
+      const index=Number(btn.dataset.removeOpeningTempMed);
+      const items=safeArray(local.medicalInfo.opening_temporary_medications);
+      items.splice(index,1);
+      local.medicalInfo.opening_temporary_medications=items;
+      render();
+    }));
+
+    document.querySelectorAll('input[name^="health_med_"]').forEach(input=>input.addEventListener('change',()=>{
+      syncInputs();
+      const key=input.name.replace('health_med_','');
+      local.medicationChecks[key]={...(local.medicationChecks[key]||{}),status:input.value};
+      const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+    }));
+
+    document.querySelectorAll('input[name^="health_item_"]').forEach(input=>input.addEventListener('change',()=>{
+      syncInputs();
+      local.healthItems[input.name.replace('health_item_','')]=input.value;
+      const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+    }));
+
+    document.querySelectorAll('[data-health-med-add-note]').forEach(btn=>btn.addEventListener('click',()=>{
+      local.expandedMedicationNotes.add(btn.dataset.healthMedAddNote);
+      const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+    }));
+
+    document.querySelectorAll('[data-health-add-note]').forEach(btn=>btn.addEventListener('click',()=>{
+      local.expandedHealthNotes.add(btn.dataset.healthAddNote);
+      const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+    }));
+
+    $('healthAddEvent')?.addEventListener('click',()=>{
+      syncInputs();
+      local.medicalInfo.no_healthcare_events=false;
+      local.medicalInfo.healthcare_events=[...safeArray(local.medicalInfo.healthcare_events),emptyEvent()];
+      render();
+    });
+
+    document.querySelectorAll('[data-remove-health-event]').forEach(btn=>btn.addEventListener('click',()=>{
+      syncInputs();
+      const index=Number(btn.dataset.removeHealthEvent);
+      const items=safeArray(local.medicalInfo.healthcare_events);
+      items.splice(index,1);
+      local.medicalInfo.healthcare_events=items;
+      render();
+    }));
+
+    $('healthAddMedicationChange')?.addEventListener('click',()=>{
+      syncInputs();
+      local.medicalInfo.no_medication_changes=false;
+      local.medicalInfo.medication_changes=[...safeArray(local.medicalInfo.medication_changes),newMedicationChange()];
+      render();
+    });
+
+    document.querySelectorAll('[data-remove-med-change]').forEach(btn=>btn.addEventListener('click',()=>{
+      syncInputs();
+      const index=Number(btn.dataset.removeMedChange);
+      const items=safeArray(local.medicalInfo.medication_changes);
+      items.splice(index,1);
+      local.medicalInfo.medication_changes=items;
+      rebuildFixedMedicationEntries();
+      render();
+    }));
+
+    document.querySelectorAll('[data-med-change-field]').forEach(el=>{
+      const evt=el.tagName==='SELECT'?'change':'input';
+      el.addEventListener(evt,()=>{
+        syncInputs();
+        const entries=rebuildFixedMedicationEntries();
+        const target=$('currentFixedMedicationList');
+        if(target)target.innerHTML=renderFixedMedicationList(entries);
+        if(el.tagName==='SELECT'){
+          const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+        }
+      });
+    });
+
+    $('healthAddMedicationCorrection')?.addEventListener('click',()=>{
+      syncInputs();
+      local.medicalInfo.medication_corrections=[
+        ...safeArray(local.medicalInfo.medication_corrections),
+        newMedicationCorrection()
+      ];
+      render();
+    });
+
+    document.querySelectorAll('[data-remove-med-correction]').forEach(btn=>btn.addEventListener('click',()=>{
+      syncInputs();
+      const index=Number(btn.dataset.removeMedCorrection);
+      const items=safeArray(local.medicalInfo.medication_corrections);
+      items.splice(index,1);
+      local.medicalInfo.medication_corrections=items;
+      rebuildFixedMedicationEntries();
+      render();
+    }));
+
+    document.querySelectorAll('[data-med-correction-field]').forEach(el=>{
+      const evt=el.tagName==='SELECT'?'change':'input';
+      el.addEventListener(evt,()=>{
+        syncInputs();
+        const entries=rebuildFixedMedicationEntries();
+        const target=$('currentFixedMedicationList');
+        if(target)target.innerHTML=renderFixedMedicationList(entries);
+        if(el.tagName==='SELECT'){
+          const y=window.scrollY;render();window.scrollTo({top:y,behavior:'auto'});
+        }
+      });
+    });
+
+    $('healthCopyPrevious')?.addEventListener('click',()=>{
+      if(!local.previous)return;
+      const y=window.scrollY;
+      local.healthItems={...safe(local.previous.health_items)};
+      local.healthNotes={...safe(local.previous.health_notes)};
+      local.pendingCopyFromId=local.previous.id;
+      render();
+      window.scrollTo({top:y,behavior:'auto'});
+      toast('已帶入前次身體與健康狀況','success');
+    });
+
+    $('healthCopyMedicationSafety')?.addEventListener('click',()=>{
+      if(!local.previous)return;
+      const y=window.scrollY;
+      local.medicationChecks=JSON.parse(JSON.stringify(safe(local.previous.medication_checks)));
+      render();
+      window.scrollTo({top:y,behavior:'auto'});
+      toast('已帶入前次用藥安全現況','success');
+    });
+
+    $('healthDraft')?.addEventListener('click',()=>save(false));
+    $('healthConfirm')?.addEventListener('click',()=>save(true));
+    // 表單內重繪不主動捲動，避免新增／移除／修正等操作跳回頁首。
+  }
+

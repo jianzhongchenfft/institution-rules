@@ -1,0 +1,1230 @@
+
+// V5.2 評估管理：評估首頁＋評估事件外殼
+(()=>{
+  const ASSESSMENT_ACCESS_ROLES=['supervisor','business_manager','organization_manager','admin'];
+  const ASSESSMENT_MANAGER_ROLES=['business_manager','organization_manager','admin'];
+
+  const ASSESSMENT_TYPES={
+    opening:'開案評估',
+    periodic:'定期再評估',
+    condition_change:'狀況變化評估',
+    specific_problem:'特定問題評估'
+  };
+
+  const ASSESSMENT_STATUS={
+    pending:'待進行',
+    in_progress:'評估中',
+    forms_completed:'表單完成／待總結',
+    completed:'已完成',
+    voided:'作廢'
+  };
+
+  const ASSESSMENT_REASON_OPTIONS=[
+    ['new_case','新案開案'],
+    ['periodic_due','定期評估到期'],
+    ['post_hospital_change','住院／急診後功能變化'],
+    ['fall_or_function_decline','跌倒或日常功能下降'],
+    ['cognition_emotion_change','認知／情緒狀況變化'],
+    ['caregiver_change','主要照顧者狀況改變'],
+    ['living_arrangement_change','居住／家庭支持狀況改變'],
+    ['service_refusal','拒絕服務或服務接受度改變'],
+    ['care_measure_mismatch','現行照顧措施已不適用'],
+    ['a_unit_adjustment','A單位計畫調整'],
+    ['visit_risk_found','家訪／電訪發現風險'],
+    ['specific_issue','特定問題評估'],
+    ['other','其他']
+  ];
+
+  const ALL_ASSESSMENT_TYPES=['opening','periodic','condition_change','specific_problem'];
+  const ASSESSMENT_FORMS=[
+    {code:'adl',name:'ADL 日常生活活動功能量表',requiredFor:['opening','periodic'],availableFor:ALL_ASSESSMENT_TYPES,kind:'status',sort:10},
+    {code:'iadl',name:'IADL 工具性日常生活活動量表',requiredFor:['opening','periodic'],availableFor:ALL_ASSESSMENT_TYPES,kind:'status',sort:20},
+    {code:'health_medication',name:'健康與用藥評估',requiredFor:['opening','periodic'],availableFor:ALL_ASSESSMENT_TYPES,kind:'health_medication',sort:30},
+    {code:'home_safety',name:'居家環境安全評估',requiredFor:['opening','periodic'],availableFor:ALL_ASSESSMENT_TYPES,kind:'status',sort:50},
+    {code:'support',name:'支持系統',requiredFor:['opening','periodic'],availableFor:ALL_ASSESSMENT_TYPES,kind:'baseline_carry',sort:60},
+    {code:'spmsq',name:'SPMSQ 簡易心智狀態問卷',requiredFor:['opening','periodic'],availableFor:ALL_ASSESSMENT_TYPES,kind:'status',sort:70},
+    {code:'gds15',name:'GDS-15 老人心理健康評估表',requiredFor:['opening','periodic'],availableFor:ALL_ASSESSMENT_TYPES,kind:'status',sort:80},
+    {code:'caregiver_burden',name:'高負荷家庭照顧者初篩',requiredFor:[],availableFor:ALL_ASSESSMENT_TYPES,kind:'status',sort:90}
+  ];
+
+  const ASSESSMENT_FORM_HANDLERS={
+    adl:{api:'v52AssessmentAdl',done:['completed']},
+    iadl:{api:'v52AssessmentIadl',done:['completed']},
+    spmsq:{api:'v52AssessmentSpmsq',done:['completed','unable']},
+    gds15:{api:'v52AssessmentGds15',done:['completed','unable','not_applicable']},
+    health_medication:{api:'v52AssessmentHealth',done:['completed']},
+    home_safety:{api:'v52AssessmentHomeSafety',done:['completed']},
+    support:{api:'v52AssessmentSupport',done:['completed']},
+    caregiver_burden:{api:'v52AssessmentCaregiverScreen',done:['completed','unable','not_applicable']}
+  };
+
+  const existingModule=modules.find(m=>m.id==='assessments');
+  if(existingModule){
+    existingModule.ready=true;
+  }else{
+    const caseIndex=modules.findIndex(m=>m.id==='cases');
+    const assessmentModule={
+      section:'每天工作',
+      id:'assessments',
+      icon:'🩺',
+      label:'評估管理',
+      crumb:'正式評估事件、量表進度與評估總結',
+      ready:true,
+      features:['評估事件','ADL／IADL','SPMSQ／GDS-15','健康與環境安全','評估總結']
+    };
+    modules.splice(caseIndex>=0?caseIndex+1:1,0,assessmentModule);
+  }
+
+  const assessmentStyle=document.createElement('style');
+  assessmentStyle.id='v52-assessment-shell-style';
+  assessmentStyle.textContent=`
+    .assessment-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .assessment-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .assessment-toolbar .spacer{flex:1}
+    .assessment-segment{display:inline-flex;border:1px solid var(--line);border-radius:10px;padding:2px;background:#fff}
+    .assessment-segment button{border:0;background:transparent;padding:7px 10px;border-radius:8px;font-size:11.5px;font-weight:900;color:#667085;cursor:pointer}
+    .assessment-segment button.active{background:#fff1eb;color:#a45d49}
+    .assessment-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .assessment-stat{cursor:pointer;transition:.15s}
+    .assessment-stat:hover{transform:translateY(-1px);border-color:#e2b4a3}
+    .assessment-stat.active{border-color:#dc9479;box-shadow:0 0 0 2px rgba(220,148,121,.15)}
+    .assessment-table-shell{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+    .assessment-table{width:100%;min-width:920px;border-collapse:collapse}
+    .assessment-table th{padding:10px 12px;text-align:left;background:#faf8f7;color:#667085;font-size:11px;font-weight:900;border-bottom:1px solid var(--line);white-space:nowrap}
+    .assessment-table th[data-assessment-sort]{cursor:pointer;user-select:none}
+    .assessment-table th[data-assessment-sort]:hover{background:#f7f1ee;color:#344054}
+    .assessment-sort-indicator{display:inline-block;min-width:12px;margin-left:4px;color:#b66f55;font-size:10px}
+    .assessment-table td{padding:12px;border-bottom:1px solid var(--line);font-size:12px;color:#344054;vertical-align:middle}
+    .assessment-table tr:last-child td{border-bottom:0}
+    .assessment-table tbody tr{cursor:pointer}
+    .assessment-table tbody tr:hover{background:#fffaf8}
+    .assessment-case-name{font-weight:900;color:#1f2937}
+    .assessment-case-sub{font-size:10.5px;color:#98a2b3;margin-top:3px}
+    .assessment-pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 7px;font-size:10px;font-weight:900;white-space:nowrap;background:#f2f4f7;color:#667085}
+    .assessment-pill.pending{background:#fff7ed;color:#b54708}
+    .assessment-pill.in_progress{background:#eff8ff;color:#175cd3}
+    .assessment-pill.forms_completed{background:#f4ebff;color:#6941c6}
+    .assessment-pill.completed{background:#eef7f1;color:#237a4b}
+    .assessment-pill.voided{background:#f2f4f7;color:#667085}
+    .assessment-pill.overdue{background:#fef3f2;color:#b42318;margin-left:4px}
+    .assessment-progress{display:flex;align-items:center;gap:8px;min-width:120px}
+    .assessment-progress-bar{height:6px;flex:1;border-radius:999px;background:#f2f4f7;overflow:hidden}
+    .assessment-progress-bar span{display:block;height:100%;background:#dc9479;border-radius:999px}
+    .assessment-progress small{font-size:10.5px;color:#667085;white-space:nowrap}
+    .assessment-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .assessment-form-option{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+    .assessment-form-option input{width:auto;margin-top:2px}
+    .assessment-form-option strong{font-size:11.5px;display:block}
+    .assessment-form-option small{font-size:10px;color:#667085;display:block;margin-top:3px;line-height:1.4}
+    .assessment-supervisor-preview{padding:9px 10px;border-radius:9px;background:#f8fafc;border:1px solid var(--line);font-size:11.5px;color:#475467}
+    .assessment-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:14px}
+    .assessment-detail-cell{border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:#fff}
+    .assessment-detail-cell label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:4px}
+    .assessment-detail-cell div{font-size:12px;font-weight:800;color:#344054;line-height:1.55;word-break:break-word}
+    .assessment-form-cards{display:grid;gap:8px}
+    .assessment-form-card{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:#fff;transition:.15s;border-left-width:4px}
+    .assessment-form-card.pending{border-left-color:var(--line)}
+    .assessment-form-card.in_progress{background:#fff8f3;border-color:#f2c7b7;border-left-color:#dc9479}
+    .assessment-form-card.completed{background:#f3faf6;border-color:#b8dfc7;border-left-color:#4f9d69}
+    .assessment-form-card.unable,.assessment-form-card.not_applicable{background:#f8f9fb;border-color:#d8dde6;border-left-color:#98a2b3}
+    .assessment-form-card strong{font-size:12px}
+    .assessment-form-card small{display:block;font-size:10.5px;color:#667085;margin-top:3px}
+    .assessment-form-card.completed small{color:#357a4e;font-weight:800}
+    .assessment-form-card.in_progress small{color:#a45d49;font-weight:800}
+    .assessment-form-card .assessment-view-btn{background:#fff;border:1px solid #9ac8aa;color:#357a4e}
+    .assessment-form-card .assessment-view-btn:hover{background:#edf8f1}
+    .assessment-detail-note{padding:11px 12px;border-radius:10px;background:#fff8f5;border:1px solid #f0ded7;color:#765548;font-size:11.5px;line-height:1.6;margin-bottom:12px}
+    .assessment-context-bar{position:sticky;top:72px;z-index:15;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 12px;padding:9px 11px;border:1px solid #edc9bb;border-radius:11px;background:rgba(255,248,245,.97);backdrop-filter:blur(8px);box-shadow:0 4px 12px rgba(52,64,84,.06)}
+    .assessment-context-bar .assessment-context-name{font-size:13px;font-weight:900;color:#7b3f2d}
+    .assessment-context-bar .assessment-context-item{font-size:11px;font-weight:800;color:#475467;padding-left:8px;border-left:1px solid #e7cfc6}
+    .assessment-context-bar .assessment-context-label{font-size:9.5px;color:#98a2b3;margin-right:4px}
+    .assessment-reason{white-space:pre-wrap;line-height:1.55}
+    .assessment-empty{padding:34px 16px;text-align:center;color:#667085}
+    @media(max-width:820px){
+      .assessment-stats{grid-template-columns:repeat(2,1fr)}
+      .assessment-detail-grid{grid-template-columns:repeat(2,1fr)}
+    }
+    @media(max-width:560px){
+      .assessment-stats{grid-template-columns:1fr 1fr}
+      .assessment-toolbar>*{max-width:100%}
+      .assessment-form-grid{grid-template-columns:1fr}
+      .assessment-detail-grid{grid-template-columns:1fr}
+      .assessment-head-actions{width:100%}
+      .assessment-head-actions .btn{flex:1}
+    }
+  `;
+  document.head.appendChild(assessmentStyle);
+
+  Object.assign(state,{
+    assessmentEvents:[],
+    assessmentEventForms:[],
+    assessmentCases:[],
+    assessmentStaff:[],
+    assessmentOwner:null,
+    assessmentFilter:null,
+    assessmentListScope:'open',
+    assessmentSortKey:null,
+    assessmentSortDir:'asc',
+    assessmentLoaded:false
+  });
+
+  const canUseAssessments=()=>!!state.profile&&ASSESSMENT_ACCESS_ROLES.includes(state.profile.role);
+  const canManageAllAssessments=()=>!!state.profile&&ASSESSMENT_MANAGER_ROLES.includes(state.profile.role);
+  const assessmentCase=id=>state.assessmentCases.find(c=>c.id===id)||null;
+  const assessmentStaffName=id=>state.assessmentStaff.find(s=>s.id===id)?.display_name||'尚未指派';
+  const assessmentTypeLabel=v=>ASSESSMENT_TYPES[v]||v||'—';
+  const assessmentStatusLabel=v=>ASSESSMENT_STATUS[v]||v||'—';
+  const assessmentReasonLabel=v=>ASSESSMENT_REASON_OPTIONS.find(x=>x[0]===v)?.[1]||v||'—';
+  const assessmentToday=()=>isoDate(new Date());
+
+  function assessmentCanEditCase(caseId){
+    if(!state.profile)return false;
+    const c=assessmentCase(caseId);
+    if(!c)return false;
+    return canUseAssessments();
+  }
+
+  function assessmentIsOverdue(row){
+    return !['completed','voided'].includes(row.status)
+      && !!row.planned_date
+      && row.planned_date<assessmentToday();
+  }
+
+  function assessmentFormsFor(eventId){
+    return state.assessmentEventForms
+      .filter(x=>x.assessment_event_id===eventId)
+      .sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+  }
+
+  function assessmentProgress(eventId){
+    const forms=assessmentFormsFor(eventId);
+    const done=forms.filter(x=>['completed','unable','not_applicable'].includes(x.status)).length;
+    return {done,total:forms.length,pct:forms.length?Math.round(done/forms.length*100):0};
+  }
+
+  function assessmentReasonText(row){
+    const base=assessmentReasonLabel(row.reason_code);
+    return row.reason_note?base+'｜'+row.reason_note:base;
+  }
+
+  function renderAssessmentContextBar(row,c){
+    if(!row||!c)return '';
+    const date=row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—';
+    return `
+      <div class="assessment-context-bar">
+        <span class="assessment-context-name">${escapeHTML(c.case_name||'未知個案')}</span>
+        <span class="assessment-context-item"><span class="assessment-context-label">評估日期</span>${escapeHTML(date)}</span>
+        <span class="assessment-context-item"><span class="assessment-context-label">評估類型</span>${escapeHTML(assessmentTypeLabel(row.assessment_type))}</span>
+      </div>
+    `;
+  }
+
+  function setAssessmentFormHeader(row,c,formLabel){
+    $('topTitle').textContent='評估管理';
+    const date=row?.planned_date?rocDate(row.planned_date+'T00:00:00'):'—';
+    const caseName=c?.case_name||'未知個案';
+    $('crumb').textContent=`${caseName}｜${date}｜${formLabel||'評估表單'}`;
+  }
+
+  function assessmentMonthBounds(){
+    const d=new Date();
+    const y=d.getFullYear(),m=d.getMonth();
+    return {
+      first:isoDate(new Date(y,m,1)),
+      next:isoDate(new Date(y,m+1,1))
+    };
+  }
+
+  async function loadAssessmentData(showBusy=true){
+    if(!canUseAssessments())return;
+    if(showBusy)showLoading(true);
+    try{
+      const [casesRes,staffRes,eventRes,formsRes]=await Promise.all([
+        db.from('care_cases')
+          .select('id,case_name,case_no,supervisor_id,service_status,assessment_date,current_plan_date,important_conditions,ongoing_treatments,identity_type,welfare_identity,copay_rate')
+          .order('case_name'),
+        db.from('staff_users')
+          .select('id,display_name,role,is_active,can_supervise')
+          .eq('is_active',true)
+          .order('display_name'),
+        db.from('assessment_events')
+          .select('*')
+          .order('planned_date',{ascending:false})
+          .order('created_at',{ascending:false}),
+        db.from('assessment_event_forms')
+          .select('*')
+          .order('sort_order',{ascending:true})
+      ]);
+      for(const result of [casesRes,staffRes,eventRes,formsRes]){
+        if(result.error)throw result.error;
+      }
+      state.assessmentCases=casesRes.data||[];
+      state.assessmentStaff=staffRes.data||[];
+      state.assessmentEvents=eventRes.data||[];
+      state.assessmentEventForms=formsRes.data||[];
+      state.assessmentLoaded=true;
+      if(state.assessmentOwner===null){
+        state.assessmentOwner=state.profile.role==='supervisor'?'mine':'all';
+      }
+    }catch(err){
+      console.error(err);
+      toast('評估資料讀取失敗：'+(err?.message||err),'error');
+    }finally{
+      if(showBusy)showLoading(false);
+    }
+  }
+
+  function assessmentStatusBadge(row){
+    return '<span class="assessment-pill '+escapeHTML(row.status)+'">'+escapeHTML(assessmentStatusLabel(row.status))+'</span>'
+      +(assessmentIsOverdue(row)?'<span class="assessment-pill overdue">逾期</span>':'');
+  }
+
+  function assessmentProgressHTML(row){
+    const p=assessmentProgress(row.id);
+    return '<div class="assessment-progress"><div class="assessment-progress-bar"><span style="width:'+p.pct+'%"></span></div><small>'+p.done+'/'+p.total+'</small></div>';
+  }
+
+  const ASSESSMENT_STATUS_SORT_ORDER={
+    pending:0,
+    in_progress:1,
+    forms_completed:2,
+    completed:3,
+    voided:4
+  };
+
+  function assessmentSortIndicator(key){
+    if(state.assessmentSortKey!==key)return '<span class="assessment-sort-indicator"></span>';
+    return '<span class="assessment-sort-indicator">'+(state.assessmentSortDir==='asc'?'↑':'↓')+'</span>';
+  }
+
+  function assessmentSortValue(row,key){
+    const c=assessmentCase(row.case_id);
+    if(key==='planned_date')return row.planned_date||'9999-12-31';
+    if(key==='case_name')return c?.case_name||'';
+    if(key==='assessment_type')return assessmentTypeLabel(row.assessment_type);
+    if(key==='reason')return assessmentReasonText(row);
+    if(key==='supervisor')return assessmentStaffName(row.responsible_staff_id||c?.supervisor_id);
+    if(key==='progress'){
+      const p=assessmentProgress(row.id);
+      return {ratio:p.total?p.done/p.total:0,done:p.done,total:p.total};
+    }
+    if(key==='status')return ASSESSMENT_STATUS_SORT_ORDER[row.status]??99;
+    return '';
+  }
+
+  function assessmentCompareRows(a,b,key){
+    if(key==='progress'){
+      const av=assessmentSortValue(a,key),bv=assessmentSortValue(b,key);
+      if(av.ratio!==bv.ratio)return av.ratio-bv.ratio;
+      if(av.done!==bv.done)return av.done-bv.done;
+      return av.total-bv.total;
+    }
+    const av=assessmentSortValue(a,key),bv=assessmentSortValue(b,key);
+    if(typeof av==='number'&&typeof bv==='number')return av-bv;
+    return String(av).localeCompare(String(bv),'zh-Hant',{numeric:true,sensitivity:'base'});
+  }
+
+  function assessmentScopedRows(){
+    let rows=[...state.assessmentEvents];
+    if(state.assessmentOwner==='mine'){
+      rows=rows.filter(row=>assessmentCase(row.case_id)?.supervisor_id===state.profile.id);
+    }
+    if(state.assessmentListScope==='open'){
+      rows=rows.filter(row=>!['completed','voided'].includes(row.status));
+    }
+    const bounds=assessmentMonthBounds();
+    if(state.assessmentFilter==='this_month'){
+      rows=rows.filter(row=>!['completed','voided'].includes(row.status)&&row.planned_date>=bounds.first&&row.planned_date<bounds.next);
+    }else if(state.assessmentFilter==='overdue'){
+      rows=rows.filter(assessmentIsOverdue);
+    }else if(state.assessmentFilter==='in_progress'){
+      rows=rows.filter(row=>row.status==='in_progress');
+    }else if(state.assessmentFilter==='forms_completed'){
+      rows=rows.filter(row=>row.status==='forms_completed');
+    }
+    if(state.assessmentSortKey){
+      const dir=state.assessmentSortDir==='desc'?-1:1;
+      rows.sort((a,b)=>{
+        const primary=assessmentCompareRows(a,b,state.assessmentSortKey);
+        if(primary!==0)return primary*dir;
+        return String(a.planned_date||'').localeCompare(String(b.planned_date||''))*dir;
+      });
+    }else{
+      rows.sort((a,b)=>{
+        const aOpen=!['completed','voided'].includes(a.status);
+        const bOpen=!['completed','voided'].includes(b.status);
+        if(aOpen!==bOpen)return aOpen?-1:1;
+        if(aOpen)return String(a.planned_date||'9999-12-31').localeCompare(String(b.planned_date||'9999-12-31'));
+        return String(b.planned_date||'').localeCompare(String(a.planned_date||''));
+      });
+    }
+    return rows;
+  }
+
+  function renderAssessmentPage(){
+    if(!canUseAssessments()){
+      $('content').innerHTML='<div class="empty"><div class="icon">🔒</div><h3>此帳號沒有評估管理權限</h3></div>';
+      return;
+    }
+    const scopedBase=state.assessmentOwner==='mine'
+      ?state.assessmentEvents.filter(row=>assessmentCase(row.case_id)?.supervisor_id===state.profile.id)
+      :state.assessmentEvents;
+    const bounds=assessmentMonthBounds();
+    const counts={
+      this_month:scopedBase.filter(row=>!['completed','voided'].includes(row.status)&&row.planned_date>=bounds.first&&row.planned_date<bounds.next).length,
+      overdue:scopedBase.filter(assessmentIsOverdue).length,
+      in_progress:scopedBase.filter(row=>row.status==='in_progress').length,
+      forms_completed:scopedBase.filter(row=>row.status==='forms_completed').length
+    };
+    const rows=assessmentScopedRows();
+
+    $('content').innerHTML=`
+      <div class="page-head">
+        <div>
+          <h1>🩺 評估管理</h1>
+          <p>以「一次正式評估」為單位管理預定日期、評估工具與完成進度。</p>
+        </div>
+        <div class="assessment-head-actions">
+          <button id="assessmentReload" class="btn">↻ 重新整理</button>
+          <button id="assessmentNew" class="btn primary">＋ 建立評估事件</button>
+        </div>
+      </div>
+
+      <section class="assessment-stats">
+        ${[
+          ['this_month','本月待評估',counts.this_month,'📅'],
+          ['overdue','逾期',counts.overdue,'!'],
+          ['in_progress','評估進行中',counts.in_progress,'▶'],
+          ['forms_completed','待完成總結',counts.forms_completed,'✓']
+        ].map(x=>`
+          <article class="stat-card assessment-stat ${state.assessmentFilter===x[0]?'active':''}" data-assessment-filter="${x[0]}" tabindex="0">
+            <div class="stat-head"><span>${x[1]}</span><span class="stat-icon">${x[3]}</span></div>
+            <div class="stat-value">${x[2]}</div>
+            <div class="stat-foot">${state.assessmentFilter===x[0]?'再次點擊可取消篩選':'點擊查看'}</div>
+          </article>
+        `).join('')}
+      </section>
+
+      <div class="assessment-toolbar">
+        ${state.profile.role==='supervisor'?`
+          <div class="assessment-segment">
+            <button data-assessment-owner="mine" class="${state.assessmentOwner==='mine'?'active':''}">我的個案</button>
+            <button data-assessment-owner="all" class="${state.assessmentOwner==='all'?'active':''}">全部個案</button>
+          </div>
+        `:''}
+        <select id="assessmentListScope">
+          <option value="open" ${state.assessmentListScope==='open'?'selected':''}>待辦／進行中</option>
+          <option value="all" ${state.assessmentListScope==='all'?'selected':''}>全部紀錄</option>
+        </select>
+        ${state.assessmentFilter?'<button id="assessmentClearFilter" class="btn sm">清除卡片篩選</button>':''}
+        <div class="spacer"></div>
+        <span style="font-size:11px;color:#667085">共 ${rows.length} 筆</span>
+      </div>
+
+      <div class="assessment-table-shell">
+        ${rows.length?`
+          <table class="assessment-table">
+            <thead>
+              <tr>
+                <th data-assessment-sort="planned_date">預定日期${assessmentSortIndicator('planned_date')}</th>
+                <th data-assessment-sort="case_name">個案${assessmentSortIndicator('case_name')}</th>
+                <th data-assessment-sort="assessment_type">評估類型${assessmentSortIndicator('assessment_type')}</th>
+                <th data-assessment-sort="reason">評估原因${assessmentSortIndicator('reason')}</th>
+                <th data-assessment-sort="supervisor">負責督導${assessmentSortIndicator('supervisor')}</th>
+                <th data-assessment-sort="progress">表單進度${assessmentSortIndicator('progress')}</th>
+                <th data-assessment-sort="status">狀態${assessmentSortIndicator('status')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row=>{
+                const c=assessmentCase(row.case_id);
+                return `
+                  <tr data-assessment-id="${row.id}">
+                    <td>${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}</td>
+                    <td><div class="assessment-case-name">${escapeHTML(c?.case_name||'未知個案')}</div><div class="assessment-case-sub">${escapeHTML(c?.case_no||'未編號')}</div></td>
+                    <td>${escapeHTML(assessmentTypeLabel(row.assessment_type))}</td>
+                    <td class="assessment-reason">${escapeHTML(assessmentReasonText(row))}</td>
+                    <td>${escapeHTML(assessmentStaffName(row.responsible_staff_id||c?.supervisor_id))}</td>
+                    <td>${assessmentProgressHTML(row)}</td>
+                    <td>${assessmentStatusBadge(row)}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `:'<div class="assessment-empty">目前沒有符合條件的評估事件。</div>'}
+      </div>
+    `;
+
+    $('assessmentNew')?.addEventListener('click',()=>openAssessmentEventModal());
+    $('assessmentReload')?.addEventListener('click',async()=>{
+      await loadAssessmentData(true);
+      renderAssessmentPage();
+      toast('評估資料已重新整理','success');
+    });
+    $('assessmentListScope')?.addEventListener('change',e=>{
+      state.assessmentListScope=e.target.value;
+      renderAssessmentPage();
+    });
+    $('assessmentClearFilter')?.addEventListener('click',()=>{
+      state.assessmentFilter=null;
+      renderAssessmentPage();
+    });
+    document.querySelectorAll('[data-assessment-sort]').forEach(th=>{
+      th.addEventListener('click',()=>{
+        const key=th.dataset.assessmentSort;
+        if(state.assessmentSortKey===key){
+          state.assessmentSortDir=state.assessmentSortDir==='asc'?'desc':'asc';
+        }else{
+          state.assessmentSortKey=key;
+          state.assessmentSortDir='asc';
+        }
+        renderAssessmentPage();
+      });
+    });
+    document.querySelectorAll('[data-assessment-owner]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        state.assessmentOwner=btn.dataset.assessmentOwner;
+        state.assessmentFilter=null;
+        renderAssessmentPage();
+      });
+    });
+    document.querySelectorAll('[data-assessment-filter]').forEach(card=>{
+      const apply=()=>{
+        const key=card.dataset.assessmentFilter;
+        state.assessmentFilter=state.assessmentFilter===key?null:key;
+        renderAssessmentPage();
+      };
+      card.addEventListener('click',apply);
+      card.addEventListener('keydown',e=>{
+        if(e.key==='Enter'||e.key===' '){e.preventDefault();apply();}
+      });
+    });
+    document.querySelectorAll('[data-assessment-id]').forEach(row=>{
+      row.addEventListener('click',()=>renderAssessmentDetail(row.dataset.assessmentId));
+    });
+  }
+
+  function assessmentEditableCases(existing){
+    if(existing){
+      const c=assessmentCase(existing.case_id);
+      return c?[c]:[];
+    }
+    return state.assessmentCases.filter(c=>assessmentCanEditCase(c.id));
+  }
+
+  function assessmentReasonOptions(selected){
+    return '<option value="">請選擇</option>'+ASSESSMENT_REASON_OPTIONS
+      .map(([value,label])=>'<option value="'+value+'" '+(value===selected?'selected':'')+'>'+escapeHTML(label)+'</option>')
+      .join('');
+  }
+
+  function assessmentCaseOptions(cases,selected){
+    return '<option value="">請選擇個案</option>'+cases.map(c=>
+      '<option value="'+c.id+'" '+(c.id===selected?'selected':'')+'>'+escapeHTML(c.case_name)+(c.case_no?'｜'+escapeHTML(c.case_no):'')+'</option>'
+    ).join('');
+  }
+
+  function assessmentTypeOptions(selected){
+    return Object.entries(ASSESSMENT_TYPES).map(([value,label])=>
+      '<option value="'+value+'" '+(value===selected?'selected':'')+'>'+escapeHTML(label)+'</option>'
+    ).join('');
+  }
+
+  function assessmentFormAvailable(def,type){
+    return (def.availableFor||ALL_ASSESSMENT_TYPES).includes(type);
+  }
+
+  function assessmentFormRequired(def,type){
+    return (def.requiredFor||[]).includes(type);
+  }
+
+  function assessmentFormKindLabel(def,type){
+    if(assessmentFormRequired(def,type)){
+      if(def.kind==='health_medication')return type==='opening'?'開案初始版':'後續追蹤版';
+      if(def.kind==='baseline_carry')return type==='opening'?'開案建立基準':'沿用現況並確認';
+      return '完整評估核心工具';
+    }
+    if(def.kind==='health_medication')return '依本次問題選用';
+    return '依個案狀況選用';
+  }
+
+  function assessmentSelectedCodesForNew(type){
+    return ASSESSMENT_FORMS
+      .filter(def=>assessmentFormAvailable(def,type)&&assessmentFormRequired(def,type))
+      .map(def=>def.code);
+  }
+
+  function assessmentFormStatusLabel(v){
+    return ({
+      pending:'待進行',
+      in_progress:'填寫中',
+      completed:'已完成',
+      unable:'無法完成',
+      not_applicable:'不適用'
+    })[v]||v||'—';
+  }
+
+  function renderAssessmentFormOptions(existing,type){
+    const currentForms=existing?assessmentFormsFor(existing.id):[];
+    const currentMap=new Map(currentForms.map(x=>[x.form_code,x]));
+    const eventLocked=!!existing&&['completed','voided'].includes(existing.status);
+    const selected=new Set(
+      existing
+        ?currentForms
+          .filter(row=>{
+            const def=ASSESSMENT_FORMS.find(x=>x.code===row.form_code);
+            return def&&assessmentFormAvailable(def,type);
+          })
+          .map(x=>x.form_code)
+        :assessmentSelectedCodesForNew(type)
+    );
+
+    return ASSESSMENT_FORMS
+      .filter(def=>assessmentFormAvailable(def,type))
+      .map(def=>{
+        const row=currentMap.get(def.code);
+        const locked=!!row&&row.status!=='pending';
+        const required=assessmentFormRequired(def,type);
+        const checked=selected.has(def.code)||required;
+        return `
+          <label class="assessment-form-option">
+            <input type="checkbox"
+              data-assessment-form="${def.code}"
+              data-status-locked="${locked?'1':'0'}"
+              data-required="${required?'1':'0'}"
+              ${checked?'checked':''}
+              ${(eventLocked||locked||required)?'disabled':''}>
+            <span>
+              <strong>${escapeHTML(def.name)}</strong>
+              <small>${escapeHTML(assessmentFormKindLabel(def,type))}${eventLocked?'｜評估事件已完成，工具組合不可變更':locked?'｜已開始填寫，無法由此移除':''}</small>
+            </span>
+          </label>
+        `;
+      }).join('');
+  }
+
+  function applyAssessmentFormRules(){
+    document.querySelectorAll('[data-assessment-form]').forEach(input=>{
+      const locked=input.dataset.statusLocked==='1';
+      const required=input.dataset.required==='1';
+      if(locked||required){
+        input.checked=true;
+        input.disabled=true;
+      }else{
+        input.disabled=false;
+      }
+    });
+  }
+
+  function updateAssessmentSupervisorPreview(){
+    const c=assessmentCase($('assessmentCase')?.value);
+    const target=$('assessmentSupervisorPreview');
+    if(!target)return;
+    target.textContent=c
+      ?'負責督導：'+assessmentStaffName(c.supervisor_id)
+      :'選擇個案後，系統會自動帶入目前負責督導。';
+  }
+
+  function defaultAssessmentReasonForType(type){
+    return ({
+      opening:'new_case',
+      periodic:'periodic_due',
+      condition_change:'post_hospital_change',
+      specific_problem:'specific_issue'
+    })[type]||'';
+  }
+
+  function openAssessmentEventModal(existing=null){
+    const creationHook=!existing&&typeof window.__assessmentCreatedHook==='function'?window.__assessmentCreatedHook:null;
+    if(!existing)window.__assessmentCreatedHook=null;
+    const cases=assessmentEditableCases(existing);
+    if(!cases.length){
+      toast(existing?'找不到此評估事件的個案資料':'目前沒有可建立評估的個案','warn');
+      return;
+    }
+    const initialType=existing?.assessment_type||'opening';
+    const selectedCase=existing?.case_id||'';
+    const selectedReason=existing?.reason_code||defaultAssessmentReasonForType(initialType);
+
+    openModal({
+      title:existing?'編輯評估事件':'建立評估事件',
+      large:true,
+      confirmText:existing?'儲存修改':'建立評估事件',
+      html:`
+        <div class="form-grid">
+          <div class="field half">
+            <label>個案 *</label>
+            <select id="assessmentCase" ${existing?'disabled':''}>${assessmentCaseOptions(cases,selectedCase)}</select>
+          </div>
+          <div class="field half">
+            <label>評估類型 *</label>
+            <select id="assessmentType" ${(existing&&existing.status!=='pending')?'disabled':''}>${assessmentTypeOptions(initialType)}</select>
+          </div>
+          <div class="field half">
+            <label>預定評估日期 *</label>
+            <input id="assessmentPlannedDate" type="date" value="${existing?.planned_date||assessmentToday()}">
+          </div>
+          <div class="field half">
+            <label>評估原因 *</label>
+            <select id="assessmentReason">${assessmentReasonOptions(selectedReason)}</select>
+          </div>
+          <div class="field half" id="assessmentProblemFollowupField">
+            <label>問題追蹤日期</label>
+            <input id="assessmentProblemFollowupDate" type="date" value="${existing?.problem_followup_date||''}">
+            <div style="font-size:10.5px;color:#667085;margin-top:5px">僅用於本次狀況／特定問題後續確認，不會直接改變完整評估週期。</div>
+          </div>
+          <div class="field full">
+            <div id="assessmentSupervisorPreview" class="assessment-supervisor-preview"></div>
+          </div>
+          <div class="field full">
+            <label>原因補充</label>
+            <textarea id="assessmentReasonNote" rows="3" placeholder="可補充本次評估的背景或要特別確認的事項">${escapeHTML(existing?.reason_note||'')}</textarea>
+          </div>
+          <div class="field full">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:800">
+              <input id="assessmentWithVisit" type="checkbox" style="width:auto" ${existing?.combined_with_home_visit?'checked':''}>
+              本次評估預計與家訪同日進行
+            </label>
+          </div>
+          <div class="field full">
+            <label>本次評估工具 *</label>
+            <div style="font-size:10.5px;color:#667085;margin-bottom:8px">健康與用藥評估會依評估類型自動切換「開案初始版／後續追蹤版」，並在同一份表單內完成身體健康10項與用藥評估。</div>
+            <div class="assessment-form-grid" id="assessmentFormGrid">
+              ${renderAssessmentFormOptions(existing,initialType)}
+            </div>
+          </div>
+        </div>
+      `,
+      onConfirm:async()=>{
+        const caseId=existing?.case_id||$('assessmentCase')?.value;
+        const type=$('assessmentType')?.value;
+        const plannedDate=$('assessmentPlannedDate')?.value;
+        const reasonCode=$('assessmentReason')?.value;
+        if(!caseId)return toast('請選擇個案','warn');
+        if(!type)return toast('請選擇評估類型','warn');
+        if(!plannedDate)return toast('請填寫預定評估日期','warn');
+        if(!reasonCode)return toast('請選擇評估原因','warn');
+
+        const newerCompletedAssessment=[...state.assessmentEvents]
+          .filter(row=>row.case_id===caseId
+            && row.id!==existing?.id
+            && ['forms_completed','completed'].includes(row.status)
+            && row.planned_date
+            && row.planned_date>plannedDate)
+          .sort((a,b)=>String(b.planned_date).localeCompare(String(a.planned_date)))[0];
+
+        if(newerCompletedAssessment){
+          const ok=window.confirm(
+            '本次評估日期早於個案較新的已完成評估紀錄，系統將視為補登歷史評估，前次資料會依評估日期重新判定。\n\n確定仍要繼續儲存嗎？'
+          );
+          if(!ok)return false;
+        }
+
+        if(!$('assessmentWithVisit')?.checked){
+          const ok=window.confirm('本次評估未勾選「與家訪同日進行」，確定仍要繼續儲存嗎？');
+          if(!ok)return false;
+        }
+
+        const selectedCodes=[...document.querySelectorAll('[data-assessment-form]')]
+          .filter(x=>x.checked)
+          .map(x=>x.dataset.assessmentForm);
+        if(!selectedCodes.length)return toast('請至少選擇一項評估工具','warn');
+
+        const c=assessmentCase(caseId);
+        if(!c||!assessmentCanEditCase(caseId))return toast('您沒有此個案的評估編輯權限','error');
+
+        showLoading(true);
+        let createdEvent=null;
+        try{
+          const payload={
+            planned_date:plannedDate,
+            reason_code:reasonCode,
+            reason_note:$('assessmentReasonNote')?.value.trim()||null,
+            combined_with_home_visit:!!$('assessmentWithVisit')?.checked,
+            problem_followup_date:['condition_change','specific_problem'].includes(type)
+              ?($('assessmentProblemFollowupDate')?.value||null)
+              :null,
+            updated_by:state.user.id,
+            updated_at:new Date().toISOString()
+          };
+
+          if(existing){
+            if(existing.status==='pending')payload.assessment_type=type;
+            const {error}=await db.from('assessment_events').update(payload).eq('id',existing.id);
+            if(error)throw error;
+
+            if(!['completed','voided'].includes(existing.status)){
+              const current=assessmentFormsFor(existing.id);
+              const currentMap=new Map(current.map(x=>[x.form_code,x]));
+              const now=new Date().toISOString();
+              const existingRows=[];
+              const newRows=[];
+
+              selectedCodes.forEach(code=>{
+                const def=ASSESSMENT_FORMS.find(x=>x.code===code);
+                const old=currentMap.get(code);
+                const row={
+                  assessment_event_id:existing.id,
+                  form_code:def.code,
+                  form_name:def.name,
+                  sort_order:def.sort,
+                  is_required:assessmentFormRequired(def,type),
+                  status:old?.status||'pending',
+                  updated_at:now
+                };
+                if(old?.id){
+                  existingRows.push({
+                    ...row,
+                    id:old.id,
+                    created_at:old.created_at||now
+                  });
+                }else{
+                  newRows.push(row);
+                }
+              });
+
+              if(existingRows.length){
+                const {error:upsertError}=await db.from('assessment_event_forms')
+                  .upsert(existingRows,{onConflict:'assessment_event_id,form_code'});
+                if(upsertError)throw upsertError;
+              }
+              if(newRows.length){
+                const {error:insertError}=await db.from('assessment_event_forms').insert(newRows);
+                if(insertError)throw insertError;
+              }
+
+              const removable=current
+                .filter(x=>x.status==='pending'&&!selectedCodes.includes(x.form_code))
+                .map(x=>x.id);
+              if(removable.length){
+                const {error:deleteError}=await db.from('assessment_event_forms').delete().in('id',removable);
+                if(deleteError)throw deleteError;
+              }
+
+              if(existing.status!=='pending'){
+                const doneStatuses=new Set(['completed','unable','not_applicable']);
+                const allFormsDone=selectedCodes.every(code=>{
+                  const old=currentMap.get(code);
+                  return !!old&&doneStatuses.has(old.status);
+                });
+                const nextStatus=allFormsDone?'forms_completed':'in_progress';
+                const statusPayload={
+                  status:nextStatus,
+                  forms_completed_at:allFormsDone?(existing.forms_completed_at||now):null,
+                  updated_by:state.user.id,
+                  updated_at:now
+                };
+                const {error:statusError}=await db.from('assessment_events')
+                  .update(statusPayload)
+                  .eq('id',existing.id);
+                if(statusError)throw statusError;
+              }
+            }
+
+            closeModal();
+            await loadAssessmentData(false);
+            renderAssessmentDetail(existing.id);
+            toast('評估事件已更新','success');
+            return true;
+          }
+
+          const insertPayload={
+            case_id:caseId,
+            assessment_type:type,
+            planned_date:plannedDate,
+            reason_code:reasonCode,
+            reason_note:$('assessmentReasonNote')?.value.trim()||null,
+            combined_with_home_visit:!!$('assessmentWithVisit')?.checked,
+            problem_followup_date:['condition_change','specific_problem'].includes(type)
+              ?($('assessmentProblemFollowupDate')?.value||null)
+              :null,
+            responsible_staff_id:c.supervisor_id||null,
+            status:'pending',
+            created_by:state.user.id,
+            updated_by:state.user.id
+          };
+          const {data:newEvent,error:eventError}=await db.from('assessment_events')
+            .insert(insertPayload)
+            .select()
+            .single();
+          if(eventError)throw eventError;
+          createdEvent=newEvent;
+
+          const formRows=selectedCodes.map(code=>{
+            const def=ASSESSMENT_FORMS.find(x=>x.code===code);
+            return {
+              assessment_event_id:newEvent.id,
+              form_code:def.code,
+              form_name:def.name,
+              sort_order:def.sort,
+              is_required:assessmentFormRequired(def,type),
+              status:'pending'
+            };
+          });
+          const {error:formsError}=await db.from('assessment_event_forms').insert(formRows);
+          if(formsError)throw formsError;
+
+          if(creationHook){
+            try{await creationHook(newEvent);}
+            catch(hookErr){
+              console.error('assessment create hook failed',hookErr);
+              toast('評估已建立，但來源紀錄連結失敗，請稍後從家、電訪紀錄重新連結。','warn');
+            }
+          }
+
+          closeModal();
+          await loadAssessmentData(false);
+          renderAssessmentDetail(newEvent.id);
+          toast('評估事件已建立','success');
+          return true;
+        }catch(err){
+          if(createdEvent){
+            try{
+              await db.from('assessment_events').update({
+                status:'voided',
+                voided_at:new Date().toISOString(),
+                void_reason:'建立評估工具時發生錯誤，系統自動作廢',
+                updated_by:state.user.id,
+                updated_at:new Date().toISOString()
+              }).eq('id',createdEvent.id);
+            }catch(_){}
+          }
+          console.error(err);
+          toast('儲存評估事件失敗：'+(err?.message||err),'error');
+          return false;
+        }finally{
+          showLoading(false);
+        }
+      }
+    });
+
+    const toggleProblemFollowupField=()=>{
+      const type=$('assessmentType')?.value;
+      const field=$('assessmentProblemFollowupField');
+      if(field)field.style.display=['condition_change','specific_problem'].includes(type)?'block':'none';
+    };
+
+    let previousType=initialType;
+    $('assessmentType')?.addEventListener('change',()=>{
+      const next=$('assessmentType').value;
+      const grid=$('assessmentFormGrid');
+      if(grid)grid.innerHTML=renderAssessmentFormOptions(existing,next);
+      applyAssessmentFormRules();
+      const reason=$('assessmentReason');
+      if(reason&&(!reason.value||reason.value===defaultAssessmentReasonForType(previousType))){
+        reason.value=defaultAssessmentReasonForType(next);
+      }
+      previousType=next;
+      toggleProblemFollowupField();
+    });
+    $('assessmentCase')?.addEventListener('change',updateAssessmentSupervisorPreview);
+    updateAssessmentSupervisorPreview();
+    applyAssessmentFormRules();
+    toggleProblemFollowupField();
+  }
+
+  async function startAssessment(row){
+    if(!assessmentCanEditCase(row.case_id))return toast('您沒有此個案的評估編輯權限','error');
+    showLoading(true);
+    try{
+      const {error}=await db.from('assessment_events').update({
+        status:'in_progress',
+        started_at:row.started_at||new Date().toISOString(),
+        updated_by:state.user.id,
+        updated_at:new Date().toISOString()
+      }).eq('id',row.id).eq('status','pending');
+      if(error)throw error;
+      await loadAssessmentData(false);
+      renderAssessmentDetail(row.id);
+      toast('評估事件已開始','success');
+    }catch(err){
+      toast('開始評估失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  function voidAssessment(row){
+    if(!assessmentCanEditCase(row.case_id))return toast('您沒有此個案的評估編輯權限','error');
+    openModal({
+      title:'作廢評估事件',
+      confirmText:'確認作廢',
+      html:`
+        ${row.status==='completed'?'<div class="assessment-detail-note" style="margin-bottom:10px">此評估已完成。作廢後仍保留原始紀錄與歷程，但不再列入最新有效評估及三個月評估週期。</div>':''}
+        <div class="field">
+          <label>作廢原因 *</label>
+          <textarea id="assessmentVoidReason" rows="4" placeholder="請說明為何作廢此評估事件"></textarea>
+        </div>
+      `,
+      onConfirm:async()=>{
+        const reason=$('assessmentVoidReason')?.value.trim();
+        if(!reason)return toast('請填寫作廢原因','warn');
+        showLoading(true);
+        try{
+          const {error}=await db.from('assessment_events').update({
+            status:'voided',
+            voided_at:new Date().toISOString(),
+            void_reason:reason,
+            updated_by:state.user.id,
+            updated_at:new Date().toISOString()
+          }).eq('id',row.id);
+          if(error)throw error;
+          closeModal();
+          await loadAssessmentData(false);
+          if(window.caseContactApi&&typeof window.caseContactApi.loadData==='function'){
+            await window.caseContactApi.loadData(true);
+          }
+          const returnCaseId=window.__assessmentReturnCaseId;
+          if(returnCaseId&&typeof window.openCaseDetailPage==='function'){
+            window.__assessmentReturnCaseId=null;
+            await window.openCaseDetailPage(returnCaseId,'assessment',true);
+          }else{
+            renderAssessmentPage();
+          }
+          toast('評估事件已作廢','success');
+          return true;
+        }catch(err){
+          toast('作廢失敗：'+(err?.message||err),'error');
+          return false;
+        }finally{
+          showLoading(false);
+        }
+      }
+    });
+  }
+
+  function assessmentFormActionButton(row,form){
+    const config=ASSESSMENT_FORM_HANDLERS[form.form_code];
+    if(row.status==='pending')return '<button class="btn sm" disabled>待開始</button>';
+    if(row.status==='voided')return '<button class="btn sm" disabled>下一階段開放</button>';
+    if(!config||!window[config.api])return '<button class="btn sm" disabled>下一階段開放</button>';
+
+    const done=(config.done||['completed']).includes(form.status);
+    return '<button class="btn sm '+(done?'assessment-view-btn':'primary')+'" data-assessment-open="'+escapeHTML(form.form_code)+'">'
+      +(done?'查看／修正':'開始／繼續')
+      +'</button>';
+  }
+
+  function bindAssessmentFormActions(row){
+    document.querySelectorAll('[data-assessment-open]').forEach(btn=>{
+      const code=btn.dataset.assessmentOpen;
+      const config=ASSESSMENT_FORM_HANDLERS[code];
+      const api=config?window[config.api]:null;
+      if(!api?.open)return;
+      btn.addEventListener('click',()=>{
+        if(config.section)api.open(row.id,config.section);
+        else api.open(row.id);
+      });
+    });
+  }
+
+  function renderAssessmentDetail(id){
+    const row=state.assessmentEvents.find(x=>x.id===id);
+    if(!row){
+      renderAssessmentPage();
+      return;
+    }
+    const c=assessmentCase(row.case_id);
+    const forms=assessmentFormsFor(row.id);
+    const p=assessmentProgress(row.id);
+    const canEdit=assessmentCanEditCase(row.case_id)&&row.status!=='voided';
+    $('topTitle').textContent='評估管理';
+    $('crumb').textContent='評估事件';
+    $('content').innerHTML=`
+      <div class="page-head">
+        <div>
+          <h1>${escapeHTML(c?.case_name||'未知個案')}｜${escapeHTML(assessmentTypeLabel(row.assessment_type))}</h1>
+          <p>預定評估日：${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}　${assessmentStatusBadge(row)}</p>
+        </div>
+        <div class="assessment-head-actions">
+          <button id="assessmentBack" class="btn">← 返回評估列表</button>
+          ${p.total&&p.done===p.total&&row.status!=='voided'
+            ?'<button id="assessmentBundlePrintBtn" class="btn">列印完整評估套表</button>'
+            :''}
+          ${p.total&&p.done===p.total&&row.status!=='voided'
+            ?'<button id="assessmentSummaryBtn" class="btn '+(row.status==='forms_completed'?'primary':'')+'">'+(row.status==='completed'?'查看總結／列印':'填寫評估總結')+'</button>'
+            :''}
+          ${canEdit?'<button id="assessmentEdit" class="btn">編輯事件</button>':''}
+          ${canEdit&&row.status==='pending'?'<button id="assessmentStart" class="btn primary">開始評估</button>':''}
+          ${canEdit&&row.status!=='voided'?'<button id="assessmentVoid" class="btn">作廢</button>':''}
+        </div>
+      </div>
+
+      ${renderAssessmentContextBar(row,c)}
+
+      <div class="assessment-detail-grid">
+        <div class="assessment-detail-cell"><label>個案</label><div>${escapeHTML(c?.case_name||'—')}</div></div>
+        <div class="assessment-detail-cell"><label>評估類型</label><div>${escapeHTML(assessmentTypeLabel(row.assessment_type))}</div></div>
+        <div class="assessment-detail-cell"><label>負責督導</label><div>${escapeHTML(assessmentStaffName(row.responsible_staff_id||c?.supervisor_id))}</div></div>
+        <div class="assessment-detail-cell"><label>評估原因</label><div>${escapeHTML(assessmentReasonText(row))}</div></div>
+        <div class="assessment-detail-cell"><label>與家訪同日</label><div>${row.combined_with_home_visit?'是':'否'}</div></div>
+        <div class="assessment-detail-cell"><label>表單進度</label><div>${p.done}／${p.total}</div></div>
+        ${['condition_change','specific_problem'].includes(row.assessment_type)?'<div class="assessment-detail-cell"><label>問題追蹤日期</label><div>'+(row.problem_followup_date?rocDate(row.problem_followup_date+'T00:00:00'):'未設定')+'</div></div>':''}
+        <div class="assessment-detail-cell"><label>完整評估週期</label><div>${
+          ['opening','periodic'].includes(row.assessment_type)
+            ?'本次完成後作為完整評估基準'
+            :(row.counts_as_full_reassessment?'已確認視同完整再評估':'目前不影響原定完整評估週期')
+        }</div></div>
+        ${row.status==='voided'?'<div class="assessment-detail-cell" style="grid-column:1/-1"><label>作廢原因</label><div>'+escapeHTML(row.void_reason||'—')+'</div></div>':''}
+      </div>
+
+      <div class="assessment-detail-note">
+        評估工具會依評估類型顯示：開案先建立基準資料，後續評估追蹤期間變化；ADL、IADL、認知、情緒與身體健康等則記錄本次當下狀態。
+      </div>
+      ${canManageAllAssessments()?`
+        <div style="text-align:right;margin:-4px 2px 10px;font-size:10px;color:#98a2b3">
+          管理查核｜<button id="assessmentHistoryBtn" type="button" style="border:0;background:none;padding:0;color:#667085;font:inherit;text-decoration:underline;cursor:pointer">查看修改歷程</button>
+        </div>
+      `:''}
+
+      <section class="panel">
+        <div class="panel-head">
+          <div><h3>本次評估工具</h3><small>${p.total?p.done+'/'+p.total+' 已完成':'尚未選擇工具'}</small></div>
+        </div>
+        <div class="panel-body">
+          ${forms.length?`
+            <div class="assessment-form-cards">
+              ${forms.map(form=>`
+                <div class="assessment-form-card ${escapeHTML(form.status||'pending')}">
+                  <div>
+                    <strong>${escapeHTML(form.form_name)}</strong>
+                    <small>${form.is_required?'核心工具｜':''}${form.status==='completed'?'✓ 已完成':form.status==='in_progress'?'填寫中':escapeHTML(assessmentFormStatusLabel(form.status))}</small>
+                  </div>
+                  ${assessmentFormActionButton(row,form)}
+                </div>
+              `).join('')}
+            </div>
+          `:'<div class="assessment-empty">此評估事件目前沒有評估工具。</div>'}
+        </div>
+      </section>
+    `;
+
+    $('assessmentBack')?.addEventListener('click',()=>{
+      const returnCaseId=window.__assessmentReturnCaseId;
+      if(returnCaseId&&typeof window.openCaseDetailPage==='function'){
+        window.__assessmentReturnCaseId=null;
+        window.openCaseDetailPage(returnCaseId,'assessment',true);
+        return;
+      }
+      renderAssessmentPage();
+    });
+    $('assessmentHistoryBtn')?.addEventListener('click',()=>{
+      const api=window.v52AssessmentHistory;
+      if(!api?.open)return toast('評估修改歷程模組尚未載入','error');
+      api.open(row.id);
+    });
+    $('assessmentBundlePrintBtn')?.addEventListener('click',()=>{
+      const api=window.v52AssessmentBundlePrint;
+      if(!api?.open)return toast('完整評估套表列印模組尚未載入','error');
+      api.open(row.id);
+    });
+    $('assessmentSummaryBtn')?.addEventListener('click',()=>{
+      const api=window.v52AssessmentSummary;
+      if(!api?.open)return toast('評估總結模組尚未載入','error');
+      api.open(row.id);
+    });
+    $('assessmentEdit')?.addEventListener('click',()=>openAssessmentEventModal(row));
+    $('assessmentStart')?.addEventListener('click',()=>startAssessment(row));
+    $('assessmentVoid')?.addEventListener('click',()=>voidAssessment(row));
+    bindAssessmentFormActions(row);
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+
+  function renderCaseAssessmentTab(caseId){
+    const c=assessmentCase(caseId);
+    const rows=state.assessmentEvents
+      .filter(row=>row.case_id===caseId)
+      .sort((a,b)=>String(b.planned_date||'').localeCompare(String(a.planned_date||''))||new Date(b.created_at)-new Date(a.created_at));
+    const completed=rows.filter(row=>row.status==='completed');
+    const openRows=rows.filter(row=>!['completed','voided'].includes(row.status))
+      .sort((a,b)=>String(a.planned_date||'9999-12-31').localeCompare(String(b.planned_date||'9999-12-31')));
+    const latest=completed[0]||null;
+    const next=openRows[0]||null;
+    const canEdit=assessmentCanEditCase(caseId);
+    const history=rows.length?rows.map(row=>{
+      const p=assessmentProgress(row.id);
+      return '<tr>'+
+        '<td>'+(row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—')+'</td>'+
+        '<td>'+escapeHTML(assessmentTypeLabel(row.assessment_type))+'</td>'+
+        '<td>'+escapeHTML(assessmentReasonText(row))+'</td>'+
+        '<td>'+escapeHTML(assessmentStaffName(row.responsible_staff_id||c?.supervisor_id))+'</td>'+
+        '<td><div class="assessment-progress"><div class="assessment-progress-bar"><span style="width:'+p.pct+'%"></span></div><small>'+p.done+'/'+p.total+'</small></div></td>'+
+        '<td>'+assessmentStatusBadge(row)+'</td>'+
+        '<td><button class="btn sm" data-case-assessment-id="'+row.id+'">查看評估</button></td>'+
+      '</tr>';
+    }).join(''):'';
+    return [
+      '<div class="case-overview-grid">',
+        '<div class="case-overview-card"><label>最近完成評估</label><strong>'+(latest&&latest.planned_date?rocDate(latest.planned_date+'T00:00:00'):'尚無')+'</strong><small>'+(latest?escapeHTML(assessmentTypeLabel(latest.assessment_type)):'尚無已完成評估')+'</small></div>',
+        '<div class="case-overview-card"><label>進行中／待評估</label><strong>'+openRows.length+' 筆</strong><small>不含已完成及已作廢</small></div>',
+        '<div class="case-overview-card"><label>下一筆預定</label><strong>'+(next&&next.planned_date?rocDate(next.planned_date+'T00:00:00'):'尚未安排')+'</strong><small>'+(next?escapeHTML(assessmentTypeLabel(next.assessment_type)):'目前無待辦評估')+'</small></div>',
+      '</div>',
+      '<div class="case-panel-card">',
+        '<div class="case-panel-head"><div><strong>歷次評估紀錄</strong><div class="case-panel-note">此處與「評估管理」共用同一份資料，不另外建立第二套評估紀錄。</div></div>',
+          (canEdit?'<button class="btn sm primary" data-case-assessment-new>＋ 新增評估</button>':''),
+        '</div>',
+        rows.length
+          ?'<div style="overflow-x:auto"><table class="case-table-simple"><thead><tr><th>評估日期</th><th>類型</th><th>原因</th><th>負責人</th><th>進度</th><th>狀態</th><th>操作</th></tr></thead><tbody>'+history+'</tbody></table></div>'
+          :'<div class="case-empty-inline">此個案目前尚無評估紀錄。</div>',
+      '</div>'
+    ].join('');
+  }
+
+  function bindCaseAssessmentTab(caseId){
+    document.querySelectorAll('[data-case-assessment-id]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        window.__assessmentReturnCaseId=caseId;
+        renderAssessmentDetail(btn.dataset.caseAssessmentId);
+      });
+    });
+    document.querySelector('[data-case-assessment-new]')?.addEventListener('click',()=>{
+      if(!assessmentCanEditCase(caseId))return;
+      window.__assessmentReturnCaseId=caseId;
+      openAssessmentEventModal();
+      setTimeout(()=>{
+        const caseSelect=$('assessmentCase');
+        if(caseSelect){
+          caseSelect.value=caseId;
+          caseSelect.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+      },0);
+    });
+  }
+
+  function clearAssessmentReturnContext(){
+    window.__assessmentReturnCaseId=null;
+  }
+
+  window.v52AssessmentApi={
+    loadAssessmentData,
+    renderAssessmentPage,
+    renderAssessmentDetail,
+    openAssessmentEventModal,
+    renderAssessmentContextBar,
+    setAssessmentFormHeader,
+    canEditCase:assessmentCanEditCase,
+    renderCaseAssessmentTab,
+    bindCaseAssessmentTab,
+    clearReturnContext:clearAssessmentReturnContext
+  };
+
+  const assessmentBaseNavigate=navigate;
+  navigate=function(id){
+    if(id!=='assessments')return assessmentBaseNavigate(id);
+    window.__assessmentReturnCaseId=null;
+    const m=modules.find(x=>x.id==='assessments');
+    state.page='assessments';
+    renderNav();
+    $('topTitle').textContent=m?.label||'評估管理';
+    $('crumb').textContent=m?.crumb||'評估管理';
+    $('sidebar').classList.remove('open');
+    $('content').innerHTML='<div class="empty compact"><div class="icon">🩺</div><h3>正在載入評估資料</h3><p>請稍候。</p></div>';
+    if(!canUseAssessments()){
+      renderAssessmentPage();
+      return;
+    }
+    loadAssessmentData(true).then(renderAssessmentPage);
+    window.scrollTo({top:0,behavior:'auto'});
+  };
+})();

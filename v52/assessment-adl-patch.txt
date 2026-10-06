@@ -1,0 +1,509 @@
+
+// V5.2 評估管理：Barthel ADL
+(()=>{
+  const ADL_ITEMS=[
+    {
+      key:'feeding',
+      label:'一、進食',
+      max:10,
+      options:[
+        [10,'自己在合理的時間內（約10秒鐘吃一口），可用筷子取食眼前食物；若須使用進食輔具，會自行取用穿脫，不須協助。'],
+        [5,'須別人協助取用或切好食物，或協助穿脫進食輔具。'],
+        [0,'無法自行取食。']
+      ]
+    },
+    {
+      key:'transfer',
+      label:'二、移位',
+      max:15,
+      options:[
+        [15,'可自行坐起，且由床移位至椅子或輪椅，不須協助，包括輪椅煞車及移開腳踏板，且沒有安全上的顧慮。'],
+        [10,'上述移位過程中須些微協助（例如輕扶保持平衡）或提醒，或有安全上的顧慮。'],
+        [5,'可自行坐起，但須別人協助才能移位至椅子。'],
+        [0,'須別人協助才能坐起，或須兩人幫忙方可移位。']
+      ]
+    },
+    {
+      key:'grooming',
+      label:'三、個人衛生',
+      max:5,
+      options:[
+        [5,'可自行刷牙、洗臉、洗手、梳頭髮及刮鬍子。'],
+        [0,'須別人協助才能完成上述盥洗項目。']
+      ]
+    },
+    {
+      key:'toileting',
+      label:'四、如廁',
+      max:10,
+      options:[
+        [10,'可自行上下馬桶、便後清潔，不會弄髒衣褲，且沒有安全上的顧慮；若使用便盆，可自行取放並清洗乾淨。'],
+        [5,'如廁過程中須協助保持平衡、整理衣物或使用衛生紙。'],
+        [0,'無法自行完成如廁過程。']
+      ]
+    },
+    {
+      key:'bathing',
+      label:'五、洗澡',
+      max:5,
+      options:[
+        [5,'可自行完成盆浴或淋浴。'],
+        [0,'須別人協助才能完成盆浴或淋浴。']
+      ]
+    },
+    {
+      key:'walking',
+      label:'六、平地走動',
+      max:15,
+      options:[
+        [15,'使用或不使用輔具（包括穿支架、義肢或無輪子之助行器）皆可獨立行走50公尺以上。'],
+        [10,'需要稍微扶持或口頭教導方向，可行走50公尺以上。'],
+        [5,'雖無法行走，但可獨立操作輪椅或電動輪椅（包含轉彎、進門及接近桌子、床沿），並可推行50公尺以上。'],
+        [0,'需要別人幫忙。']
+      ]
+    },
+    {
+      key:'stairs',
+      label:'七、上下樓梯',
+      max:10,
+      options:[
+        [10,'可自行上下樓梯（可抓扶手或用拐杖）。'],
+        [5,'需要稍微扶持或口頭指導。'],
+        [0,'無法上下樓梯。']
+      ]
+    },
+    {
+      key:'dressing',
+      label:'八、穿脫衣褲鞋襪',
+      max:10,
+      options:[
+        [10,'可自行穿脫衣褲鞋襪，必要時使用輔具。'],
+        [5,'在別人幫忙下，可自行完成一半以上動作。'],
+        [0,'需要別人完全幫忙。']
+      ]
+    },
+    {
+      key:'bowel',
+      label:'九、大便控制',
+      max:10,
+      options:[
+        [10,'不會失禁，必要時會自行使用塞劑。'],
+        [5,'偶爾會失禁（每週不超過一次），使用塞劑時需要別人幫忙。'],
+        [0,'失禁或需要灌腸。']
+      ]
+    },
+    {
+      key:'bladder',
+      label:'十、小便控制',
+      max:10,
+      options:[
+        [10,'日夜皆不會尿失禁，必要時會自行使用並清理尿布、尿套。'],
+        [5,'偶爾會失禁（每週不超過一次），使用尿布、尿套時需要別人幫忙。'],
+        [0,'失禁或需要導尿。']
+      ]
+    }
+  ];
+
+  const ADL_LEVELS={
+    complete_dependence:'完全依賴',
+    severe_dependence:'嚴重依賴',
+    moderate_dependence:'中度依賴',
+    mild_dependence:'輕度依賴',
+    independent:'完全獨立'
+  };
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-adl-style';
+  style.textContent=`
+    .adl-page{max-width:980px;margin:0 auto}
+    .adl-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .adl-summary-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:11px 12px}
+    .adl-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}
+    .adl-summary-card strong{font-size:19px;color:#344054}
+    .adl-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px}
+    .adl-copy-box{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #d9e9f7;background:#f7fbff;border-radius:11px;padding:11px 12px;margin-bottom:12px}
+    .adl-copy-box strong{display:block;font-size:12px;color:#175cd3}
+    .adl-copy-box span{display:block;font-size:10.5px;color:#475467;margin-top:3px;line-height:1.5}
+    .adl-copy-notice{padding:10px 12px;border-radius:10px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11.5px;font-weight:800;margin-bottom:12px}
+    .adl-items{display:grid;gap:10px}
+    .adl-card{border:1px solid var(--line);border-radius:13px;background:#fff;overflow:hidden}
+    .adl-card.changed{border-color:#e7a98e;box-shadow:0 0 0 2px rgba(220,148,121,.10)}
+    .adl-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .adl-card-title{font-size:13px;font-weight:900;color:#344054}
+    .adl-card-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .adl-max,.adl-prev,.adl-change{display:inline-flex;border-radius:999px;padding:3px 7px;font-size:9.5px;font-weight:900;white-space:nowrap}
+    .adl-max{background:#f2f4f7;color:#667085}
+    .adl-prev{background:#eff8ff;color:#175cd3}
+    .adl-change{background:#fff1eb;color:#a45d49}
+    .adl-options{display:grid;gap:7px;padding:11px 12px}
+    .adl-option{display:grid;grid-template-columns:auto 42px 1fr;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:9px 10px;cursor:pointer;background:#fff}
+    .adl-option:hover{background:#fffaf8}
+    .adl-option.selected{border-color:#dc9479;background:#fff8f5}
+    .adl-option input{width:auto;margin-top:3px}
+    .adl-score{display:inline-flex;align-items:center;justify-content:center;min-width:34px;border-radius:8px;background:#f2f4f7;padding:4px 5px;font-size:11px;font-weight:900;color:#475467}
+    .adl-option.selected .adl-score{background:#dc9479;color:#fff}
+    .adl-option-text{font-size:11.5px;line-height:1.58;color:#475467}
+    .adl-note{padding:0 12px 12px}
+    .adl-note label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
+    .adl-note textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical}
+    .adl-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    .adl-source-note{font-size:10.5px;color:#667085;line-height:1.55;margin:9px 0 2px}
+    @media(max-width:720px){
+      .adl-summary{grid-template-columns:1fr 1fr}
+      .adl-copy-box{align-items:flex-start;flex-direction:column}
+      .adl-copy-box .btn{width:100%}
+      .adl-card-head{align-items:flex-start;flex-direction:column}
+      .adl-card-meta{justify-content:flex-start}
+      .adl-option{grid-template-columns:auto 38px 1fr;padding:9px}
+      .adl-actions .btn{flex:1}
+    }
+  `;
+  document.head.appendChild(style);
+
+  const local={
+    eventId:null,
+    record:null,
+    previous:null,
+    previousEvent:null,
+    answers:{},
+    notes:{},
+    expandedNotes:new Set(),
+    pendingCopyFromId:null,
+    hasLaterCompleted:false,
+    loading:false
+  };
+
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const eventForms=id=>(state.assessmentEventForms||[]).filter(x=>x.assessment_event_id===id);
+  const adlForm=id=>eventForms(id).find(x=>x.form_code==='adl')||null;
+  const canEditEvent=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+  const safeObj=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const selectedScore=key=>{
+    const v=local.answers?.[key];
+    return v===0||Number.isFinite(Number(v))?Number(v):null;
+  };
+  const previousScore=key=>{
+    const v=local.previous?.answers?.[key];
+    return v===0||Number.isFinite(Number(v))?Number(v):null;
+  };
+  const currentTotal=()=>ADL_ITEMS.reduce((sum,item)=>{
+    const score=selectedScore(item.key);
+    return sum+(score===null?0:score);
+  },0);
+  const answeredCount=()=>ADL_ITEMS.filter(item=>selectedScore(item.key)!==null).length;
+  const levelFromScore=score=>{
+    if(score===null||score===undefined)return null;
+    if(score<=20)return 'complete_dependence';
+    if(score<=60)return 'severe_dependence';
+    if(score<=90)return 'moderate_dependence';
+    if(score<=99)return 'mild_dependence';
+    return 'independent';
+  };
+  const diffText=(now,prev)=>{
+    if(now===null||prev===null)return '—';
+    const d=now-prev;
+    if(d===0)return '無變化';
+    return (d>0?'+':'')+d+' 分';
+  };
+  const isChanged=key=>{
+    const now=selectedScore(key);
+    const prev=previousScore(key);
+    return now!==null&&prev!==null&&now!==prev;
+  };
+
+  async function loadAdl(eventId){
+    const row=eventById(eventId);
+    if(!row)throw new Error('找不到評估事件');
+    const [currentRes,historyRes]=await Promise.all([
+      db.from('assessment_adl_records')
+        .select('*')
+        .eq('assessment_event_id',eventId)
+        .maybeSingle(),
+      db.from('assessment_adl_records')
+        .select('*')
+        .eq('case_id',row.case_id)
+        .not('confirmed_at','is',null)
+        .neq('assessment_event_id',eventId)
+        .order('confirmed_at',{ascending:false})
+    ]);
+    if(currentRes.error)throw currentRes.error;
+    if(historyRes.error)throw historyRes.error;
+
+    local.eventId=eventId;
+    local.record=currentRes.data||null;
+    local.answers={...safeObj(local.record?.answers)};
+    local.notes={...safeObj(local.record?.notes)};
+    local.expandedNotes=new Set();
+
+    const allCompleted=historyRes.data||[];
+    const dated=allCompleted
+      .map(record=>({record,event:eventById(record.assessment_event_id)}))
+      .filter(x=>x.event?.planned_date);
+
+    local.hasLaterCompleted=dated.some(x=>x.event.planned_date>row.planned_date);
+
+    const candidates=dated
+      .filter(x=>x.event.planned_date<row.planned_date)
+      .sort((a,b)=>{
+        const byDate=String(b.event.planned_date).localeCompare(String(a.event.planned_date));
+        if(byDate!==0)return byDate;
+        return String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||''));
+      });
+
+    local.previous=candidates[0]?.record||null;
+    local.previousEvent=candidates[0]?.event||null;
+
+    const copiedSourceIsValid=!!local.record?.copied_from_id
+      && local.record.copied_from_id===local.previous?.id;
+    local.pendingCopyFromId=copiedSourceIsValid?local.record.copied_from_id:null;
+  }
+
+  function renderSummary(){
+    const row=eventById(local.eventId);
+    const total=currentTotal();
+    const count=answeredCount();
+    const complete=count===ADL_ITEMS.length;
+    const level=complete?levelFromScore(total):null;
+    const prevTotal=local.previous?.total_score;
+    return `
+      <section class="adl-summary">
+        <div class="adl-summary-card">
+          <label>本次得分</label>
+          <strong>${count?total:'—'}</strong>
+          <small>${complete?'正式總分':'暫計｜已填 '+count+'/'+ADL_ITEMS.length+' 項'}</small>
+        </div>
+        <div class="adl-summary-card">
+          <label>依賴程度</label>
+          <strong style="font-size:15px">${level?escapeHTML(ADL_LEVELS[level]):'尚未完成'}</strong>
+          <small>${complete?'依本機構現行ADL區間判定':'完成10項後顯示'}</small>
+        </div>
+        <div class="adl-summary-card">
+          <label>前次得分</label>
+          <strong>${prevTotal??'—'}</strong>
+          <small>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):'無前次完成紀錄'}</small>
+        </div>
+        <div class="adl-summary-card">
+          <label>與前次差異</label>
+          <strong style="font-size:15px">${prevTotal===null||prevTotal===undefined||!complete?'—':escapeHTML(diffText(total,Number(prevTotal)))}</strong>
+          <small>${prevTotal===null||prevTotal===undefined?'首次評估或無可比較資料':(complete?'僅供督導比較，不替代專業判斷':'完成10項後顯示差異')}</small>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderCopyBox(){
+    if(!local.previous)return '';
+    return `
+      <div class="adl-copy-box">
+        <div>
+          <strong>前次 ADL：${local.previous.total_score??'—'} 分</strong>
+          <span>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00')+'｜':''}${escapeHTML(ADL_LEVELS[local.previous.dependency_level]||'已完成')}</span>
+        </div>
+        <button id="adlCopyPrevious" class="btn sm">帶入前次結果</button>
+      </div>
+    `;
+  }
+
+  function renderItem(item){
+    const current=selectedScore(item.key);
+    const prev=previousScore(item.key);
+    const changed=isChanged(item.key);
+    const noteValue=String(local.notes?.[item.key]||'');
+    const showNote=changed||!!noteValue||local.expandedNotes.has(item.key);
+    return `
+      <section class="adl-card ${changed?'changed':''}" data-adl-card="${item.key}">
+        <div class="adl-card-head">
+          <div class="adl-card-title">${escapeHTML(item.label)}</div>
+          <div class="adl-card-meta">
+            <span class="adl-max">最高 ${item.max} 分</span>
+            ${prev!==null?'<span class="adl-prev">前次 '+prev+' 分</span>':''}
+            ${changed?'<span class="adl-change">較前次 '+escapeHTML(diffText(current,prev))+'</span>':''}
+          </div>
+        </div>
+        <div class="adl-options">
+          ${item.options.map(([score,text])=>`
+            <label class="adl-option ${current===score?'selected':''}">
+              <input type="radio" name="adl_${item.key}" value="${score}" ${current===score?'checked':''}>
+              <span class="adl-score">${score}</span>
+              <span class="adl-option-text">${escapeHTML(text)}</span>
+            </label>
+          `).join('')}
+        </div>
+        ${!showNote?`
+          <div class="adl-note"><button type="button" class="btn sm" data-adl-add-note="${item.key}">＋ 補充備註</button></div>
+        `:''}
+        ${showNote?`
+          <div class="adl-note">
+            <label>${changed?'本項較前次有變化，可補充原因或觀察：':'備註（選填）：'}</label>
+            <textarea data-adl-note="${item.key}" placeholder="可記錄輔具使用、協助程度或本次觀察">${escapeHTML(noteValue)}</textarea>
+          </div>
+        `:''}
+      </section>
+    `;
+  }
+
+  function renderAdlPage(){
+    const row=eventById(local.eventId);
+    const c=row?caseById(row.case_id):null;
+    const form=row?adlForm(row.id):null;
+    if(!row||!c||!form){
+      window.v52AssessmentApi?.renderAssessmentPage?.();
+      return;
+    }
+    const canEdit=canEditEvent(row)&&row.status!=='voided';
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,'ADL 日常生活活動功能量表');
+    $('content').innerHTML=`
+      <div class="adl-page">
+        <div class="page-head">
+          <div>
+            <h1>${escapeHTML(c.case_name)}｜Barthel ADL</h1>
+            <p>評估日期：${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}　狀態：${escapeHTML(({pending:'待進行',in_progress:'評估中',forms_completed:'表單完成／待總結',completed:'已完成',voided:'作廢'})[row.status]||row.status)}</p>
+          </div>
+          <div class="assessment-head-actions">
+            <button id="adlBack" class="btn">← 返回評估事件</button>
+          </div>
+        </div>
+
+        ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
+        ${renderSummary()}
+        ${renderCopyBox()}
+        ${local.hasLaterCompleted
+          ?'<div class="adl-copy-notice">此筆評估日期早於個案較新的已完成 ADL 紀錄；系統只會將本次日期以前最近一筆已完成 ADL 視為「前次評估」。</div>'
+          :''}
+        ${(local.record?.copied_at&&!local.record?.confirmed_at&&local.pendingCopyFromId)||(!local.record&&local.pendingCopyFromId)
+          ?'<div class="adl-copy-notice">已帶入前次資料，尚未完成本次確認。請逐項確認後再按「完成本次確認」。</div>'
+          :''}
+
+        <div class="adl-items">
+          ${ADL_ITEMS.map(renderItem).join('')}
+        </div>
+
+        <div class="adl-source-note">
+          總分100分；完全依賴0–20分、嚴重依賴21–60分、中度依賴61–90分、輕度依賴91–99分、完全獨立100分。
+        </div>
+
+        ${canEdit?`
+          <div class="adl-actions">
+            ${form.status!=='completed'?'<button id="adlSaveDraft" class="btn">儲存草稿</button>':''}
+            <button id="adlConfirm" class="btn primary">${form.status==='completed'?'儲存修正並確認':'完成本次確認'}</button>
+          </div>
+        `:''}
+      </div>
+    `;
+
+    $('adlBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+
+    document.querySelectorAll('input[name^="adl_"]').forEach(input=>{
+      input.addEventListener('change',()=>{
+        const key=input.name.replace(/^adl_/,'');
+        local.answers[key]=Number(input.value);
+        document.querySelectorAll(`[name="adl_${key}"]`).forEach(radio=>{
+          radio.closest('.adl-option')?.classList.toggle('selected',radio.checked);
+        });
+        refreshAdlDerivedUI();
+      });
+    });
+
+    document.querySelectorAll('[data-adl-add-note]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        local.expandedNotes.add(btn.dataset.adlAddNote);
+        const y=window.scrollY;
+        renderAdlPage();
+        window.scrollTo({top:y,behavior:'auto'});
+      });
+    });
+
+    document.querySelectorAll('[data-adl-note]').forEach(textarea=>{
+      textarea.addEventListener('input',()=>{
+        const key=textarea.dataset.adlNote;
+        local.notes[key]=textarea.value;
+      });
+    });
+
+    $('adlCopyPrevious')?.addEventListener('click',()=>{
+      if(!local.previous)return;
+      local.answers={...safeObj(local.previous.answers)};
+      local.notes={...safeObj(local.previous.notes)};
+      local.pendingCopyFromId=local.previous.id;
+      renderAdlPage();
+      toast('已帶入前次ADL，請確認本次狀況後再完成','success');
+    });
+
+    $('adlSaveDraft')?.addEventListener('click',()=>saveAdl(false));
+    $('adlConfirm')?.addEventListener('click',()=>saveAdl(true));
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+
+  function refreshAdlDerivedUI(){
+    const scrollY=window.scrollY;
+    renderAdlPage();
+    window.scrollTo({top:scrollY,behavior:'auto'});
+  }
+
+  async function saveAdl(finalize){
+    const row=eventById(local.eventId);
+    if(!row||!canEditEvent(row))return toast('您沒有此個案的評估編輯權限','error');
+
+    document.querySelectorAll('[data-adl-note]').forEach(textarea=>{
+      local.notes[textarea.dataset.adlNote]=textarea.value;
+    });
+
+    const count=answeredCount();
+    if(finalize&&count!==ADL_ITEMS.length){
+      const missing=ADL_ITEMS.filter(x=>selectedScore(x.key)===null).map(x=>x.label).join('、');
+      return toast('尚有未完成項目：'+missing,'warn');
+    }
+    if(!finalize&&count===0){
+      return toast('至少填寫一項後再儲存草稿','warn');
+    }
+
+    showLoading(true);
+    try{
+      const {data,error}=await db.rpc('save_assessment_adl',{
+        p_event_id:row.id,
+        p_answers:local.answers,
+        p_notes:local.notes,
+        p_finalize:!!finalize,
+        p_copied_from_id:local.pendingCopyFromId||local.record?.copied_from_id||null
+      });
+      if(error)throw error;
+
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+      if(finalize){
+        window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);
+        toast('ADL本次確認已完成','success');
+      }else{
+        await loadAdl(row.id);
+        renderAdlPage();
+        toast('ADL草稿已儲存','success');
+      }
+    }catch(err){
+      console.error(err);
+      const msg=String(err?.message||err);
+      if(msg.includes('ADL_INCOMPLETE'))toast('尚有ADL項目未完成','warn');
+      else toast('儲存ADL失敗：'+msg,'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);
+    if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+    if(!adlForm(eventId))return toast('本次評估未選用ADL','warn');
+    showLoading(true);
+    try{
+      await loadAdl(eventId);
+      renderAdlPage();
+    }catch(err){
+      console.error(err);
+      toast('讀取ADL失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  window.v52AssessmentAdl={open};
+})();

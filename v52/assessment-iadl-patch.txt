@@ -1,0 +1,394 @@
+
+// V5.2 評估管理：Lawton IADL
+(()=>{
+  const IADL_ITEMS=[
+    {key:'telephone',label:'1. 使用電話'},
+    {key:'shopping',label:'2. 購物'},
+    {key:'meal_prep',label:'3. 準備餐食'},
+    {key:'housekeeping',label:'4. 家務清潔'},
+    {key:'laundry',label:'5. 洗衣'},
+    {key:'transportation',label:'6. 使用交通工具'},
+    {key:'medication',label:'7. 服藥管理'},
+    {key:'finances',label:'8. 理財'}
+  ];
+
+  const IADL_OPTIONS=[
+    [2,'可獨立'],
+    [1,'需部分協助'],
+    [0,'完全依賴']
+  ];
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-iadl-style';
+  style.textContent=`
+    .iadl-page{max-width:980px;margin:0 auto}
+    .iadl-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .iadl-summary-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:11px 12px}
+    .iadl-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}
+    .iadl-summary-card strong{font-size:19px;color:#344054}
+    .iadl-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px}
+    .iadl-copy-box{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #d9e9f7;background:#f7fbff;border-radius:11px;padding:11px 12px;margin-bottom:12px}
+    .iadl-copy-box strong{display:block;font-size:12px;color:#175cd3}
+    .iadl-copy-box span{display:block;font-size:10.5px;color:#475467;margin-top:3px;line-height:1.5}
+    .iadl-copy-notice{padding:10px 12px;border-radius:10px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11.5px;font-weight:800;margin-bottom:12px}
+    .iadl-items{display:grid;gap:10px}
+    .iadl-card{border:1px solid var(--line);border-radius:13px;background:#fff;overflow:hidden}
+    .iadl-card.changed{border-color:#e7a98e;box-shadow:0 0 0 2px rgba(220,148,121,.10)}
+    .iadl-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .iadl-card-title{font-size:13px;font-weight:900;color:#344054}
+    .iadl-card-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .iadl-max,.iadl-prev,.iadl-change{display:inline-flex;border-radius:999px;padding:3px 7px;font-size:9.5px;font-weight:900;white-space:nowrap}
+    .iadl-max{background:#f2f4f7;color:#667085}
+    .iadl-prev{background:#eff8ff;color:#175cd3}
+    .iadl-change{background:#fff1eb;color:#a45d49}
+    .iadl-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:11px 12px}
+    .iadl-option{display:grid;grid-template-columns:auto 34px 1fr;gap:8px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:9px 10px;cursor:pointer;background:#fff}
+    .iadl-option:hover{background:#fffaf8}
+    .iadl-option.selected{border-color:#dc9479;background:#fff8f5}
+    .iadl-option input{width:auto}
+    .iadl-score{display:inline-flex;align-items:center;justify-content:center;min-width:28px;border-radius:8px;background:#f2f4f7;padding:4px 5px;font-size:11px;font-weight:900;color:#475467}
+    .iadl-option.selected .iadl-score{background:#dc9479;color:#fff}
+    .iadl-option-text{font-size:11.5px;font-weight:800;color:#475467}
+    .iadl-note{padding:0 12px 12px}
+    .iadl-note label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
+    .iadl-note textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical}
+    .iadl-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    .iadl-source-note{font-size:10.5px;color:#667085;line-height:1.55;margin:9px 0 2px}
+    @media(max-width:720px){
+      .iadl-summary{grid-template-columns:1fr}
+      .iadl-copy-box{align-items:flex-start;flex-direction:column}
+      .iadl-copy-box .btn{width:100%}
+      .iadl-card-head{align-items:flex-start;flex-direction:column}
+      .iadl-card-meta{justify-content:flex-start}
+      .iadl-options{grid-template-columns:1fr}
+      .iadl-actions .btn{flex:1}
+    }
+  `;
+  document.head.appendChild(style);
+
+  const local={
+    eventId:null,
+    record:null,
+    previous:null,
+    previousEvent:null,
+    answers:{},
+    notes:{},
+    expandedNotes:new Set(),
+    pendingCopyFromId:null,
+    hasLaterCompleted:false
+  };
+
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const eventForms=id=>(state.assessmentEventForms||[]).filter(x=>x.assessment_event_id===id);
+  const iadlForm=id=>eventForms(id).find(x=>x.form_code==='iadl')||null;
+
+  const canEditEvent=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+
+  const safeObj=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const selectedScore=key=>{
+    const v=local.answers?.[key];
+    return v===0||Number.isFinite(Number(v))?Number(v):null;
+  };
+  const previousScore=key=>{
+    const v=local.previous?.answers?.[key];
+    return v===0||Number.isFinite(Number(v))?Number(v):null;
+  };
+  const currentTotal=()=>IADL_ITEMS.reduce((sum,item)=>{
+    const score=selectedScore(item.key);
+    return sum+(score===null?0:score);
+  },0);
+  const answeredCount=()=>IADL_ITEMS.filter(item=>selectedScore(item.key)!==null).length;
+  const diffText=(now,prev)=>{
+    if(now===null||prev===null)return '—';
+    const d=now-prev;
+    if(d===0)return '無變化';
+    return (d>0?'+':'')+d+' 分';
+  };
+  const isChanged=key=>{
+    const now=selectedScore(key),prev=previousScore(key);
+    return now!==null&&prev!==null&&now!==prev;
+  };
+
+  async function loadIadl(eventId){
+    const row=eventById(eventId);
+    if(!row)throw new Error('找不到評估事件');
+
+    const [currentRes,historyRes]=await Promise.all([
+      db.from('assessment_iadl_records')
+        .select('*')
+        .eq('assessment_event_id',eventId)
+        .maybeSingle(),
+      db.from('assessment_iadl_records')
+        .select('*')
+        .eq('case_id',row.case_id)
+        .not('confirmed_at','is',null)
+        .neq('assessment_event_id',eventId)
+        .order('confirmed_at',{ascending:false})
+    ]);
+
+    if(currentRes.error)throw currentRes.error;
+    if(historyRes.error)throw historyRes.error;
+
+    local.eventId=eventId;
+    local.record=currentRes.data||null;
+    local.answers={...safeObj(local.record?.answers)};
+    local.notes={...safeObj(local.record?.notes)};
+    local.expandedNotes=new Set();
+
+    const dated=(historyRes.data||[])
+      .map(record=>({record,event:eventById(record.assessment_event_id)}))
+      .filter(x=>x.event?.planned_date);
+
+    local.hasLaterCompleted=dated.some(x=>x.event.planned_date>row.planned_date);
+
+    const candidates=dated
+      .filter(x=>x.event.planned_date<row.planned_date)
+      .sort((a,b)=>{
+        const byDate=String(b.event.planned_date).localeCompare(String(a.event.planned_date));
+        if(byDate!==0)return byDate;
+        return String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||''));
+      });
+
+    local.previous=candidates[0]?.record||null;
+    local.previousEvent=candidates[0]?.event||null;
+
+    const copiedSourceIsValid=!!local.record?.copied_from_id
+      && local.record.copied_from_id===local.previous?.id;
+    local.pendingCopyFromId=copiedSourceIsValid?local.record.copied_from_id:null;
+  }
+
+  function renderSummary(){
+    const total=currentTotal();
+    const count=answeredCount();
+    const complete=count===IADL_ITEMS.length;
+    const prevTotal=local.previous?.total_score;
+    return `
+      <section class="iadl-summary">
+        <div class="iadl-summary-card">
+          <label>本次得分</label>
+          <strong>${count?total:'—'}</strong>
+          <small>${complete?'正式總分（滿分16分）':'暫計｜已填 '+count+'/'+IADL_ITEMS.length+' 項'}</small>
+        </div>
+        <div class="iadl-summary-card">
+          <label>前次得分</label>
+          <strong>${prevTotal??'—'}</strong>
+          <small>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):'無前次完成紀錄'}</small>
+        </div>
+        <div class="iadl-summary-card">
+          <label>與前次差異</label>
+          <strong style="font-size:15px">${prevTotal===null||prevTotal===undefined||!complete?'—':escapeHTML(diffText(total,Number(prevTotal)))}</strong>
+          <small>${prevTotal===null||prevTotal===undefined?'首次評估或無可比較資料':(complete?'分數越高代表獨立性越好':'完成8項後顯示差異')}</small>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderCopyBox(){
+    if(!local.previous)return '';
+    return `
+      <div class="iadl-copy-box">
+        <div>
+          <strong>前次 IADL：${local.previous.total_score??'—'} 分</strong>
+          <span>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):'已完成紀錄'}</span>
+        </div>
+        <button id="iadlCopyPrevious" class="btn sm">帶入前次結果</button>
+      </div>
+    `;
+  }
+
+  function renderItem(item){
+    const current=selectedScore(item.key);
+    const prev=previousScore(item.key);
+    const changed=isChanged(item.key);
+    const noteValue=String(local.notes?.[item.key]||'');
+    const showNote=changed||!!noteValue||local.expandedNotes.has(item.key);
+    return `
+      <section class="iadl-card ${changed?'changed':''}" data-iadl-card="${item.key}">
+        <div class="iadl-card-head">
+          <div class="iadl-card-title">${escapeHTML(item.label)}</div>
+          <div class="iadl-card-meta">
+            <span class="iadl-max">最高 2 分</span>
+            ${prev!==null?'<span class="iadl-prev">前次 '+prev+' 分</span>':''}
+            ${changed?'<span class="iadl-change">較前次 '+escapeHTML(diffText(current,prev))+'</span>':''}
+          </div>
+        </div>
+        <div class="iadl-options">
+          ${IADL_OPTIONS.map(([score,text])=>`
+            <label class="iadl-option ${current===score?'selected':''}">
+              <input type="radio" name="iadl_${item.key}" value="${score}" ${current===score?'checked':''}>
+              <span class="iadl-score">${score}</span>
+              <span class="iadl-option-text">${escapeHTML(text)}</span>
+            </label>
+          `).join('')}
+        </div>
+        ${!showNote?`
+          <div class="iadl-note"><button type="button" class="btn sm" data-iadl-add-note="${item.key}">＋ 補充備註</button></div>
+        `:''}
+        ${showNote?`
+          <div class="iadl-note">
+            <label>${changed?'本項較前次有變化，可補充原因或觀察：':'備註（選填）：'}</label>
+            <textarea data-iadl-note="${item.key}" placeholder="可補充實際協助內容或本次觀察">${escapeHTML(noteValue)}</textarea>
+          </div>
+        `:''}
+      </section>
+    `;
+  }
+
+  function renderIadlPage(){
+    const row=eventById(local.eventId);
+    const c=row?caseById(row.case_id):null;
+    const form=row?iadlForm(row.id):null;
+    if(!row||!c||!form){
+      window.v52AssessmentApi?.renderAssessmentPage?.();
+      return;
+    }
+
+    const canEdit=canEditEvent(row)&&row.status!=='voided';
+
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,'IADL 工具性日常生活活動能力');
+    $('content').innerHTML=`
+      <div class="iadl-page">
+        <div class="page-head">
+          <div>
+            <h1>${escapeHTML(c.case_name)}｜Lawton IADL</h1>
+            <p>評估日期：${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}</p>
+          </div>
+          <div class="assessment-head-actions">
+            <button id="iadlBack" class="btn">← 返回評估事件</button>
+          </div>
+        </div>
+
+        ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
+        ${renderSummary()}
+        ${renderCopyBox()}
+        ${local.hasLaterCompleted
+          ?'<div class="iadl-copy-notice">此筆評估日期早於個案較新的已完成 IADL 紀錄；系統只會將本次日期以前最近一筆已完成 IADL 視為「前次評估」。</div>'
+          :''}
+        ${(local.record?.copied_at&&!local.record?.confirmed_at&&local.pendingCopyFromId)||(!local.record&&local.pendingCopyFromId)
+          ?'<div class="iadl-copy-notice">已帶入前次資料，尚未完成本次確認。請逐項確認後再按「完成本次確認」。</div>'
+          :''}
+
+        <div class="iadl-items">
+          ${IADL_ITEMS.map(renderItem).join('')}
+        </div>
+
+        <div class="iadl-source-note">IADL 共8項，每項2分、1分、0分；總分越高代表獨立性越好、失能程度越輕。</div>
+
+        ${canEdit?`
+          <div class="iadl-actions">
+            ${form.status!=='completed'?'<button id="iadlSaveDraft" class="btn">儲存草稿</button>':''}
+            <button id="iadlConfirm" class="btn primary">${form.status==='completed'?'儲存修正並確認':'完成本次確認'}</button>
+          </div>
+        `:''}
+      </div>
+    `;
+
+    $('iadlBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+
+    document.querySelectorAll('input[name^="iadl_"]').forEach(input=>{
+      input.addEventListener('change',()=>{
+        const key=input.name.replace(/^iadl_/,'');
+        local.answers[key]=Number(input.value);
+        const scrollY=window.scrollY;
+        renderIadlPage();
+        window.scrollTo({top:scrollY,behavior:'auto'});
+      });
+    });
+
+    document.querySelectorAll('[data-iadl-add-note]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        local.expandedNotes.add(btn.dataset.iadlAddNote);
+        const y=window.scrollY;
+        renderIadlPage();
+        window.scrollTo({top:y,behavior:'auto'});
+      });
+    });
+
+    document.querySelectorAll('[data-iadl-note]').forEach(textarea=>{
+      textarea.addEventListener('input',()=>{
+        local.notes[textarea.dataset.iadlNote]=textarea.value;
+      });
+    });
+
+    $('iadlCopyPrevious')?.addEventListener('click',()=>{
+      if(!local.previous)return;
+      local.answers={...safeObj(local.previous.answers)};
+      local.notes={...safeObj(local.previous.notes)};
+      local.pendingCopyFromId=local.previous.id;
+      renderIadlPage();
+      toast('已帶入前次IADL，請確認本次狀況後再完成','success');
+    });
+
+    $('iadlSaveDraft')?.addEventListener('click',()=>saveIadl(false));
+    $('iadlConfirm')?.addEventListener('click',()=>saveIadl(true));
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+
+  async function saveIadl(finalize){
+    const row=eventById(local.eventId);
+    if(!row||!canEditEvent(row))return toast('您沒有此個案的評估編輯權限','error');
+
+    document.querySelectorAll('[data-iadl-note]').forEach(textarea=>{
+      local.notes[textarea.dataset.iadlNote]=textarea.value;
+    });
+
+    const count=answeredCount();
+    if(finalize&&count!==IADL_ITEMS.length){
+      const missing=IADL_ITEMS.filter(x=>selectedScore(x.key)===null).map(x=>x.label).join('、');
+      return toast('尚有未完成項目：'+missing,'warn');
+    }
+    if(!finalize&&count===0){
+      return toast('至少填寫一項後再儲存草稿','warn');
+    }
+
+    showLoading(true);
+    try{
+      const {error}=await db.rpc('save_assessment_iadl',{
+        p_event_id:row.id,
+        p_answers:local.answers,
+        p_notes:local.notes,
+        p_finalize:!!finalize,
+        p_copied_from_id:local.pendingCopyFromId||null
+      });
+      if(error)throw error;
+
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+      if(finalize){
+        window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);
+        toast('IADL本次確認已完成','success');
+      }else{
+        await loadIadl(row.id);
+        renderIadlPage();
+        toast('IADL草稿已儲存','success');
+      }
+    }catch(err){
+      console.error(err);
+      const msg=String(err?.message||err);
+      if(msg.includes('IADL_INCOMPLETE'))toast('尚有IADL項目未完成','warn');
+      else toast('儲存IADL失敗：'+msg,'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);
+    if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+    if(!iadlForm(eventId))return toast('本次評估未選用IADL','warn');
+
+    showLoading(true);
+    try{
+      await loadIadl(eventId);
+      renderIadlPage();
+    }catch(err){
+      console.error(err);
+      toast('讀取IADL失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  window.v52AssessmentIadl={open};
+})();

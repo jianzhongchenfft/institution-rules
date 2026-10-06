@@ -1,0 +1,519 @@
+// 評估管理／健康共用核心（由 loader 與其他健康片段串接後一次 eval）
+
+(()=>{
+  const HEALTH_ITEMS=[
+    ['consciousness','意識狀況（清醒、混亂、嗜睡）'],
+    ['eating','進食狀況（能否自行進食、吞嚥困難）'],
+    ['elimination','排泄狀況（規律、便秘、失禁等）'],
+    ['mobility','行動能力（走動、上下床、使用輔具）'],
+    ['upper_limb','上肢運動能力（抬手、握力、協調性）'],
+    ['lower_limb','下肢運動能力（行走穩定性、肌力）'],
+    ['daily_activity','日常活動與休閒（看電視、散步、社交活動）'],
+    ['sleep','夜間睡眠狀況（入睡困難、易醒）'],
+    ['appetite_weight','食慾與體重狀況'],
+    ['mood','情緒與精神狀況（焦慮、易怒、無助感）']
+  ];
+
+  const HEALTH_OPTIONS=[
+    ['good','狀況良好',2],
+    ['observe','需觀察',1],
+    ['refer','異常轉介',0]
+  ];
+
+  const MED_CHECKS=[
+    ['storage_safety','藥品放置安全、可避免誤食'],
+    ['expired_medicine','目前無過期藥物'],
+    ['medicine_recognition','個案或協助者能辨識不同藥物（外觀或標示）'],
+    ['follow_prescription','可依醫囑服藥（含時間與劑量）'],
+    ['medication_management_support','藥物管理有適當人員協助（如有需要）']
+  ];
+
+  const EVENT_TYPES=[
+    ['outpatient','門診'],
+    ['emergency','急診'],
+    ['hospitalization','住院'],
+    ['surgery','手術／處置'],
+    ['other','其他']
+  ];
+
+  const CARE_IMPACTS=[
+    ['no_impact','無明顯影響'],
+    ['observe','持續觀察'],
+    ['adjust_plan','需調整機構照顧計畫'],
+    ['contact_external','建議聯繫A單位／醫療端']
+  ];
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-health-style';
+  style.textContent=`
+    .health-page{max-width:1040px;margin:0 auto}
+    .health-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .health-summary-card,.health-section,.health-card{border:1px solid var(--line);border-radius:12px;background:#fff}
+    .health-summary-card{padding:11px 12px}
+    .health-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}
+    .health-summary-card strong{font-size:18px;color:#344054}
+    .health-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px;line-height:1.45}
+    .health-copy{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #d9e9f7;background:#f7fbff;border-radius:11px;padding:11px 12px;margin-bottom:12px}
+    .health-copy strong{font-size:12px;color:#175cd3}.health-copy span{display:block;font-size:10.5px;color:#475467;margin-top:3px;line-height:1.5}
+    .health-notice{padding:10px 12px;border-radius:10px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11.5px;font-weight:800;margin-bottom:12px}
+    .health-section{margin-bottom:12px;overflow:hidden}
+    .health-section-head{padding:11px 12px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .health-section-head h3{font-size:13px;margin:0;color:#344054}
+    .health-section-head p{font-size:10.5px;color:#667085;margin:4px 0 0;line-height:1.5}
+    .health-section-body{padding:12px}
+    .health-subsection{border-top:1px solid #eef0f2;padding-top:13px;margin-top:13px}
+    .health-subsection:first-child{border-top:0;padding-top:0;margin-top:0}
+    .health-subtitle{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+    .health-subtitle strong{font-size:12px;color:#344054}
+    .health-subtitle small{font-size:10px;color:#667085}
+    .health-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .health-field label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
+    .health-field input,.health-field textarea,.health-field select{width:100%;box-sizing:border-box}
+    .health-field textarea{min-height:72px;resize:vertical}
+    .health-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .health-inline label{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800}
+    .health-inline input{width:auto}
+    .health-event-list{display:grid;gap:8px}
+    .health-event{border:1px solid var(--line);border-radius:11px;padding:10px;background:#fff}
+    .health-event-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+    .health-event-head strong{font-size:11.5px;color:#475467}
+    .health-event-grid{display:grid;grid-template-columns:160px 150px 1fr 1fr;gap:8px}
+    .health-event-grid .wide{grid-column:span 2}
+    .health-event-grid label{display:block;font-size:9.5px;font-weight:900;color:#667085;margin-bottom:4px}
+    .health-event-grid input,.health-event-grid select,.health-event-grid textarea{width:100%;box-sizing:border-box}
+    .health-event-grid textarea{min-height:58px}
+    .health-med-checks,.health-items{display:grid;gap:9px}
+    .health-card{overflow:hidden}
+    .health-card.changed{border-color:#e7a98e;box-shadow:0 0 0 2px rgba(220,148,121,.10)}
+    .health-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 11px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .health-card-title{font-size:12px;font-weight:900;color:#344054;line-height:1.5}
+    .health-tags{display:flex;gap:6px;flex-wrap:wrap}
+    .health-tag{font-size:9.5px;font-weight:900;padding:3px 7px;border-radius:999px;background:#f2f4f7;color:#667085}
+    .health-tag.prev{background:#eff8ff;color:#175cd3}.health-tag.change{background:#fff1eb;color:#a45d49}
+    .health-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:10px 11px}
+    .health-option{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:11px;font-weight:800;cursor:pointer}
+    .health-option.selected{border-color:#dc9479;background:#fff8f5}
+    .health-option input{width:auto}.health-score{margin-left:auto;color:#667085;font-size:9.5px}
+    .health-note{padding:0 11px 11px}.health-note textarea{width:100%;box-sizing:border-box;min-height:60px}
+    .health-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    @media(max-width:900px){.health-event-grid{grid-template-columns:1fr 1fr}.health-event-grid .wide{grid-column:span 2}}
+    @media(max-width:720px){
+      .health-summary{grid-template-columns:1fr}.health-grid{grid-template-columns:1fr}.health-options{grid-template-columns:1fr}
+      .health-copy{flex-direction:column;align-items:flex-start}.health-copy .btn{width:100%}.health-actions .btn{flex:1}
+      .health-event-grid{grid-template-columns:1fr}.health-event-grid .wide{grid-column:auto}
+    }
+  `;
+  document.head.appendChild(style);
+
+  const local={
+    eventId:null,record:null,previous:null,previousEvent:null,
+    medicalInfo:{},medicationChecks:{},healthItems:{},healthNotes:{},
+    expandedMedicationNotes:new Set(),
+    expandedHealthNotes:new Set(),
+    fixedMedicationBaseEntries:[],
+    section:'combined',
+    pendingCopyFromId:null,hasLaterCompleted:false
+  };
+
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const healthFormCode=()=> 'health_medication';
+  const formById=id=>(state.assessmentEventForms||[])
+    .find(x=>x.assessment_event_id===id&&x.form_code==='health_medication')||null;
+  const healthSectionMode=row=>row?.assessment_type==='opening'?'baseline':'change';
+  const sectionTitle=(section,row=eventById(local.eventId))=>
+    row?.assessment_type==='opening'?'健康與用藥初始評估':'健康與用藥追蹤評估';
+  const safe=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const safeArray=v=>Array.isArray(v)?v:[];
+
+  const canEdit=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+
+  const healthStatusLabel=v=>HEALTH_OPTIONS.find(x=>x[0]===v)?.[1]||'—';
+  const medStatusLabel=v=>v==='good'?'狀況良好':v==='improve'?'需改善':v==='not_applicable'?'不適用':'—';
+  const answeredCount=()=>HEALTH_ITEMS.filter(([k])=>HEALTH_OPTIONS.some(x=>x[0]===local.healthItems[k])).length;
+  const score=()=>HEALTH_ITEMS.reduce((sum,[k])=>{
+    const opt=HEALTH_OPTIONS.find(x=>x[0]===local.healthItems[k]);
+    return sum+(opt?opt[2]:0);
+  },0);
+
+  const emptyEvent=()=>({date:'',type:'',facility:'',department:'',reason:'',result:''});
+  const newId=prefix=>(globalThis.crypto?.randomUUID?.()||(prefix+'-'+Date.now()+'-'+Math.random().toString(36).slice(2)));
+  const newMedicationChange=()=>({
+    id:newId('medchg'),
+    action:'',
+    duration_type:'',
+    medication_before_entry_id:'',
+    medication_before:'',
+    medication_after:'',
+    note:''
+  });
+  const newMedicationCorrection=()=>({
+    id:newId('medfix'),
+    action:'',
+    reason:'',
+    target_entry_id:'',
+    medication_before:'',
+    medication_after:'',
+    note:''
+  });
+  const newOpeningFixedMedication=()=>({
+    id:newId('medbase'),
+    medication:'',
+    origin_type:'opening_baseline',
+    origin_date:eventById(local.eventId)?.planned_date||null,
+    origin_event_id:local.eventId||null,
+    origin_note:''
+  });
+  const newOpeningTemporaryMedication=()=>({
+    id:newId('medtemp'),
+    medication:'',
+    reason:'',
+    planned_end_date:'',
+    note:''
+  });
+  const isCompleteOpeningTemporaryMedication=item=>!!String(item?.medication||'').trim();
+  const fixedMedicationLines=text=>String(text||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);
+  const cloneEntries=entries=>safeArray(entries).map(x=>({...x}));
+  const entryById=(entries,id)=>safeArray(entries).find(x=>x.id===id)||null;
+  const legacyEntriesFromText=(text,row,originType=null)=>fixedMedicationLines(text).map((medication,index)=>({
+    id:newId('medbase'),
+    medication,
+    origin_type:originType||(row?.assessment_type==='opening'?'opening_baseline':'legacy'),
+    origin_date:row?.assessment_type==='opening'?(row?.planned_date||null):null,
+    origin_event_id:row?.assessment_type==='opening'?(row?.id||null):null,
+    origin_note:'',
+    legacy_index:index
+  }));
+  const normalizeMedicationEntry=(x,row)=>({
+    id:x?.id||newId('medentry'),
+    medication:String(x?.medication||'').trim(),
+    origin_type:x?.origin_type||'legacy',
+    origin_date:x?.origin_date||null,
+    origin_event_id:x?.origin_event_id||null,
+    origin_note:x?.origin_note||''
+  });
+  const medicationEntryTag=entry=>{
+    if(entry?.origin_type==='opening_baseline')return entry.origin_note==='late_entry'?'接案時既有（後補）':'接案時既有';
+    if(entry?.origin_type==='service_change'){
+      return entry.origin_date?rocDate(entry.origin_date+'T00:00:00')+'新增':'服務期間新增';
+    }
+    if(entry?.origin_type==='correction_add')return '資料修正新增';
+    return '既有固定用藥';
+  };
+  const isCompleteMedicationChange=item=>{
+    if(!item?.action||!item?.duration_type)return false;
+    if(item.action==='add')return !!String(item.medication_after||'').trim();
+    if(item.action==='stop'){
+      return item.duration_type==='long_term'
+        ?!!String(item.medication_before_entry_id||'').trim()
+        :!!String(item.medication_before||'').trim();
+    }
+    if(item.action==='adjust'){
+      const beforeOk=item.duration_type==='long_term'
+        ?!!String(item.medication_before_entry_id||'').trim()
+        :!!String(item.medication_before||'').trim();
+      return beforeOk&&!!String(item.medication_after||'').trim();
+    }
+    return false;
+  };
+  const isCompleteMedicationCorrection=item=>{
+    if(!item?.action||!item?.reason)return false;
+    if(item.action==='add')return !!String(item.medication_after||'').trim();
+    if(item.action==='edit')return !!String(item.target_entry_id||'').trim()&&!!String(item.medication_after||'').trim();
+    if(item.action==='remove')return !!String(item.target_entry_id||'').trim();
+    return false;
+  };
+  const applyMedicationCorrection=(entries,item,row)=>{
+    if(!isCompleteMedicationCorrection(item))return;
+    if(item.action==='add'){
+      const med=String(item.medication_after||'').trim();
+      if(!med||entries.some(x=>x.medication===med))return;
+      entries.push({
+        id:'corr-'+item.id,
+        medication:med,
+        origin_type:item.reason==='opening_omission'?'opening_baseline':'correction_add',
+        origin_date:item.reason==='opening_omission'?null:(row?.planned_date||null),
+        origin_event_id:item.reason==='opening_omission'?null:(row?.id||null),
+        origin_note:item.reason==='opening_omission'?'late_entry':''
+      });
+      return;
+    }
+    const target=entryById(entries,item.target_entry_id);
+    if(!target)return;
+    item.medication_before=target.medication;
+    if(item.action==='remove'){
+      entries.splice(entries.indexOf(target),1);
+    }else if(item.action==='edit'){
+      target.medication=String(item.medication_after||'').trim();
+      target.corrected_at=row?.planned_date||null;
+    }
+  };
+  const applyLongTermMedicationChange=(entries,item,row)=>{
+    if(item?.duration_type!=='long_term'||!isCompleteMedicationChange(item))return;
+    if(item.action==='add'){
+      const med=String(item.medication_after||'').trim();
+      if(!med||entries.some(x=>x.medication===med))return;
+      entries.push({
+        id:'chg-'+item.id,
+        medication:med,
+        origin_type:'service_change',
+        origin_date:row?.planned_date||null,
+        origin_event_id:row?.id||null,
+        origin_note:''
+      });
+      return;
+    }
+    const target=entryById(entries,item.medication_before_entry_id);
+    if(!target)return;
+    item.medication_before=target.medication;
+    if(item.action==='stop'){
+      entries.splice(entries.indexOf(target),1);
+    }else if(item.action==='adjust'){
+      const idx=entries.indexOf(target);
+      entries[idx]={
+        id:'chg-'+item.id,
+        medication:String(item.medication_after||'').trim(),
+        origin_type:'service_change',
+        origin_date:row?.planned_date||null,
+        origin_event_id:row?.id||null,
+        origin_note:''
+      };
+    }
+  };
+  const activeMedicationChanges=()=>local.medicalInfo.no_medication_changes===true?[]:safeArray(local.medicalInfo.medication_changes);
+  const activeMedicationCorrections=()=>safeArray(local.medicalInfo.medication_corrections);
+  const medicationEntriesBeforeChange=index=>{
+    const row=eventById(local.eventId);
+    const entries=cloneEntries(local.fixedMedicationBaseEntries);
+    activeMedicationCorrections().forEach(item=>applyMedicationCorrection(entries,item,row));
+    activeMedicationChanges().slice(0,index).forEach(item=>applyLongTermMedicationChange(entries,item,row));
+    return entries;
+  };
+  const rebuildFixedMedicationEntries=()=>{
+    const row=eventById(local.eventId);
+    const entries=cloneEntries(local.fixedMedicationBaseEntries);
+    activeMedicationCorrections().forEach(item=>applyMedicationCorrection(entries,item,row));
+    activeMedicationChanges().forEach(item=>applyLongTermMedicationChange(entries,item,row));
+    local.medicalInfo.fixed_medication_base_entries=cloneEntries(local.fixedMedicationBaseEntries);
+    local.medicalInfo.fixed_medication_entries=cloneEntries(entries);
+    local.medicalInfo.fixed_medications=entries.map(x=>x.medication).join('\n');
+    local.medicalInfo.no_fixed_medications=entries.length===0;
+    return entries;
+  };
+  async function load(eventId){
+    const row=eventById(eventId);
+    if(!row)throw new Error('找不到評估事件');
+
+    const [cur,hist]=await Promise.all([
+      db.from('assessment_health_records').select('*').eq('assessment_event_id',eventId).maybeSingle(),
+      db.from('assessment_health_records').select('*').eq('case_id',row.case_id).not('confirmed_at','is',null).neq('assessment_event_id',eventId).order('confirmed_at',{ascending:false})
+    ]);
+    if(cur.error)throw cur.error;
+    if(hist.error)throw hist.error;
+
+    local.eventId=eventId;
+    local.record=cur.data||null;
+    local.medicalInfo={...safe(local.record?.medical_info)};
+    const currentCase=caseById(row.case_id);
+    if(!Object.prototype.hasOwnProperty.call(local.medicalInfo,'baseline_important_conditions')){
+      local.medicalInfo.baseline_important_conditions=currentCase?.important_conditions||'';
+    }
+    if(!Object.prototype.hasOwnProperty.call(local.medicalInfo,'baseline_ongoing_treatments')){
+      local.medicalInfo.baseline_ongoing_treatments=currentCase?.ongoing_treatments||'';
+    }
+    local.medicalInfo.healthcare_events=safeArray(local.medicalInfo.healthcare_events).map(x=>({...safe(x)}));
+    local.medicalInfo.medication_changes=safeArray(local.medicalInfo.medication_changes).map((x,i)=>({
+      id:x?.id||('legacy-med-'+i),
+      action:x?.action||'',
+      duration_type:x?.duration_type||'',
+      medication_before_entry_id:x?.medication_before_entry_id||'',
+      medication_before:x?.medication_before||'',
+      medication_after:x?.medication_after||'',
+      note:x?.note||''
+    }));
+    local.medicalInfo.medication_corrections=safeArray(local.medicalInfo.medication_corrections).map((x,i)=>({
+      id:x?.id||('legacy-fix-'+i),
+      action:x?.action||'',
+      reason:x?.reason||'',
+      target_entry_id:x?.target_entry_id||'',
+      medication_before:x?.medication_before||'',
+      medication_after:x?.medication_after||'',
+      note:x?.note||''
+    }));
+    local.medicalInfo.opening_temporary_medications=safeArray(local.medicalInfo.opening_temporary_medications).map((x,i)=>({
+      id:x?.id||('legacy-temp-'+i),
+      medication:x?.medication||'',
+      reason:x?.reason||'',
+      planned_end_date:x?.planned_end_date||'',
+      note:x?.note||''
+    }));
+    local.medicationChecks={...safe(local.record?.medication_checks)};
+    local.healthItems={...safe(local.record?.health_items)};
+    local.healthNotes={...safe(local.record?.health_notes)};
+    local.expandedMedicationNotes=new Set();
+    local.expandedHealthNotes=new Set();
+
+    const dated=(hist.data||[])
+      .map(record=>({record,event:eventById(record.assessment_event_id)}))
+      .filter(x=>x.event?.planned_date);
+    const relevantCompleted=dated.filter(x=>{
+      const medicationDone=x.event.assessment_type==='opening'
+        ?!!x.record.baseline_confirmed_at
+        :!!x.record.change_confirmed_at;
+      return medicationDone&&!!x.record.status_confirmed_at;
+    });
+    local.hasLaterCompleted=relevantCompleted.some(x=>x.event.planned_date>row.planned_date);
+    const candidates=relevantCompleted
+      .filter(x=>x.event.planned_date<row.planned_date)
+      .sort((a,b)=>String(b.event.planned_date).localeCompare(String(a.event.planned_date))||String(b.record.updated_at||'').localeCompare(String(a.record.updated_at||'')));
+
+    local.previous=candidates[0]?.record||null;
+    local.previousEvent=candidates[0]?.event||null;
+    local.pendingCopyFromId=(local.record?.copied_from_id&&local.record.copied_from_id===local.previous?.id)?local.record.copied_from_id:null;
+
+    const mode=healthSectionMode(row);
+    const prevMed=safe(local.previous?.medical_info);
+
+    if(mode==='change'&&local.previous){
+      const hasSubstantiveChangeData=
+        !!local.record?.change_confirmed_at
+        ||safeArray(local.medicalInfo.healthcare_events).length>0
+        ||safeArray(local.medicalInfo.medication_changes).length>0
+        ||safeArray(local.medicalInfo.medication_corrections).length>0
+        ||!!local.medicalInfo.unvisited_health_change
+        ||!!local.medicalInfo.care_impact;
+
+      if(!hasSubstantiveChangeData){
+        for(const key of [
+          'regular_followup','regular_followup_reason','medication_method',
+          'medication_assisted_by','medication_regular','medication_followup'
+        ]){
+          if(!String(local.medicalInfo[key]||'').trim())local.medicalInfo[key]=prevMed[key]||'';
+        }
+        local.medicalInfo.medication_changes=[];
+        local.medicalInfo.medication_corrections=[];
+        local.medicalInfo.no_medication_changes=false;
+      }
+    }
+
+    const savedBase=safeArray(local.medicalInfo.fixed_medication_base_entries);
+    const savedEffective=safeArray(local.medicalInfo.fixed_medication_entries);
+    const previousEffective=safeArray(prevMed.fixed_medication_entries);
+    const hasSavedBase=Object.prototype.hasOwnProperty.call(local.medicalInfo,'fixed_medication_base_entries')
+      &&Array.isArray(local.medicalInfo.fixed_medication_base_entries);
+    const hasPreviousEffective=Object.prototype.hasOwnProperty.call(prevMed,'fixed_medication_entries')
+      &&Array.isArray(prevMed.fixed_medication_entries);
+
+    if(mode==='change'&&local.previous){
+      local.fixedMedicationBaseEntries=hasPreviousEffective
+        ?previousEffective.map(x=>normalizeMedicationEntry(x,local.previousEvent))
+        :legacyEntriesFromText(prevMed.fixed_medications||'',local.previousEvent,'legacy');
+    }else if(mode==='baseline'){
+      if(hasSavedBase){
+        local.fixedMedicationBaseEntries=savedBase.map(x=>normalizeMedicationEntry(x,row));
+      }else{
+        local.fixedMedicationBaseEntries=legacyEntriesFromText(
+          local.medicalInfo.fixed_medications||'',
+          row,
+          'opening_baseline'
+        );
+      }
+    }else if(hasSavedBase){
+      local.fixedMedicationBaseEntries=savedBase.map(x=>normalizeMedicationEntry(x,row));
+    }else if(savedEffective.length){
+      local.fixedMedicationBaseEntries=savedEffective.map(x=>normalizeMedicationEntry(x,row));
+    }else if(hasPreviousEffective){
+      local.fixedMedicationBaseEntries=previousEffective.map(x=>normalizeMedicationEntry(x,local.previousEvent));
+    }else{
+      local.fixedMedicationBaseEntries=legacyEntriesFromText(
+        local.medicalInfo.fixed_medications||'',
+        row,
+        'legacy'
+      );
+    }
+
+    rebuildFixedMedicationEntries();
+  }
+
+  function syncInputs(){
+    document.querySelectorAll('[data-health-medical]').forEach(el=>{
+      local.medicalInfo[el.dataset.healthMedical]=el.type==='checkbox'?el.checked:el.value;
+    });
+
+    const events=[];
+    document.querySelectorAll('[data-health-event]').forEach(row=>{
+      const item={};
+      row.querySelectorAll('[data-health-event-field]').forEach(el=>item[el.dataset.healthEventField]=el.value);
+      if(Object.values(item).some(v=>String(v||'').trim()!==''))events.push(item);
+    });
+    local.medicalInfo.healthcare_events=events;
+
+    const openingNoFixedEl=document.getElementById('openingNoFixedMedication');
+    if(openingNoFixedEl){
+      local.medicalInfo.opening_no_fixed_medications=!!openingNoFixedEl.checked;
+      if(openingNoFixedEl.checked){
+        local.fixedMedicationBaseEntries=[];
+      }else{
+        const openingFixedMedications=[];
+        document.querySelectorAll('[data-opening-fixed-med]').forEach(rowEl=>{
+          const id=rowEl.dataset.openingFixedMed||newOpeningFixedMedication().id;
+          const existing=entryById(local.fixedMedicationBaseEntries,id);
+          const medication=rowEl.querySelector('[data-opening-fixed-med-field="medication"]')?.value||'';
+          if(String(medication).trim()){
+            openingFixedMedications.push(existing
+              ?{...existing,medication:String(medication).trim()}
+              :{
+                ...newOpeningFixedMedication(),
+                id,
+                medication:String(medication).trim()
+              });
+          }
+        });
+        local.fixedMedicationBaseEntries=openingFixedMedications;
+      }
+      rebuildFixedMedicationEntries();
+    }
+
+    const openingTemporaryMedications=[];
+    document.querySelectorAll('[data-opening-temp-med]').forEach(rowEl=>{
+      const item={id:rowEl.dataset.openingTempMed||newOpeningTemporaryMedication().id};
+      rowEl.querySelectorAll('[data-opening-temp-med-field]').forEach(el=>item[el.dataset.openingTempMedField]=el.value);
+      if(Object.entries(item).some(([k,v])=>k!=='id'&&String(v||'').trim()!==''))openingTemporaryMedications.push(item);
+    });
+    local.medicalInfo.opening_temporary_medications=openingTemporaryMedications;
+
+    const medicationChanges=[];
+    document.querySelectorAll('[data-med-change]').forEach(rowEl=>{
+      const item={id:rowEl.dataset.medChange||newMedicationChange().id};
+      rowEl.querySelectorAll('[data-med-change-field]').forEach(el=>item[el.dataset.medChangeField]=el.value);
+      if(item.medication_before_entry_id){
+        const target=entryById(rebuildFixedMedicationEntries(),item.medication_before_entry_id);
+        if(target)item.medication_before=target.medication;
+      }
+      if(Object.entries(item).some(([k,v])=>k!=='id'&&String(v||'').trim()!==''))medicationChanges.push(item);
+    });
+    local.medicalInfo.medication_changes=medicationChanges;
+
+    const medicationCorrections=[];
+    document.querySelectorAll('[data-med-correction]').forEach(rowEl=>{
+      const item={id:rowEl.dataset.medCorrection||newMedicationCorrection().id};
+      rowEl.querySelectorAll('[data-med-correction-field]').forEach(el=>item[el.dataset.medCorrectionField]=el.value);
+      if(item.target_entry_id){
+        const target=entryById(local.fixedMedicationBaseEntries,item.target_entry_id)
+          ||entryById(rebuildFixedMedicationEntries(),item.target_entry_id);
+        if(target)item.medication_before=target.medication;
+      }
+      if(Object.entries(item).some(([k,v])=>k!=='id'&&String(v||'').trim()!==''))medicationCorrections.push(item);
+    });
+    local.medicalInfo.medication_corrections=medicationCorrections;
+
+    document.querySelectorAll('[data-health-med-note]').forEach(el=>{
+      const key=el.dataset.healthMedNote;
+      local.medicationChecks[key]={...(local.medicationChecks[key]||{}),note:el.value};
+    });
+
+    document.querySelectorAll('[data-health-note]').forEach(el=>{
+      local.healthNotes[el.dataset.healthNote]=el.value;
+    });
+  }
+
