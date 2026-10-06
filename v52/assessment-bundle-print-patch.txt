@@ -1,0 +1,622 @@
+// V5.2 評估管理：完整評估套表列印
+(()=>{
+  const ORG_NAME='桃園市私立劉信子居家長照機構';
+  const TYPE_LABELS={opening:'開案評估',periodic:'定期評估',condition_change:'狀況變化評估',specific_problem:'特定問題評估'};
+  const REASON_LABELS={
+    new_case:'新案開案',periodic_due:'定期再評估',post_hospital_change:'出院／就醫後狀況改變',
+    function_change:'功能狀況改變',family_change:'家庭／照顧安排改變',
+    care_measure_mismatch:'現行照顧措施已不適用',a_unit_adjustment:'A單位計畫調整',
+    visit_risk_found:'家訪／電訪發現風險',specific_issue:'特定問題評估',other:'其他'
+  };
+  const ADL_ITEMS=[
+    ['feeding','進食',[[10,'可自行完成進食，不須協助。'],[5,'須協助取用／切好食物或穿脫進食輔具。'],[0,'無法自行取食。']]],
+    ['transfer','移位',[[15,'可自行坐起並完成床椅／輪椅移位。'],[10,'移位過程須些微協助／提醒或有安全顧慮。'],[5,'可自行坐起，但須協助移位。'],[0,'須協助才能坐起，或需兩人協助移位。']]],
+    ['grooming','個人衛生',[[5,'可自行完成刷牙、洗臉、洗手、梳頭及刮鬍等。'],[0,'須他人協助完成盥洗。']]],
+    ['toileting','如廁',[[10,'可自行上下馬桶、便後清潔與整理衣物。'],[5,'需協助平衡、整理衣物或使用衛生紙。'],[0,'無法自行完成如廁。']]],
+    ['bathing','洗澡',[[5,'可自行完成盆浴或淋浴。'],[0,'須他人協助完成。']]],
+    ['walking','平地走動',[[15,'可獨立行走50公尺以上。'],[10,'需稍微扶持或口頭指導，可行走50公尺以上。'],[5,'無法行走，但可獨立操作輪椅50公尺以上。'],[0,'需要他人協助。']]],
+    ['stairs','上下樓梯',[[10,'可自行上下樓梯。'],[5,'需稍微扶持或口頭指導。'],[0,'無法上下樓梯。']]],
+    ['dressing','穿脫衣褲鞋襪',[[10,'可自行完成。'],[5,'他人協助下可自行完成一半以上。'],[0,'需要他人完全協助。']]],
+    ['bowel','大便控制',[[10,'不會失禁，必要時可自行使用塞劑。'],[5,'偶爾失禁，或使用塞劑需協助。'],[0,'失禁或需要灌腸。']]],
+    ['bladder','小便控制',[[10,'日夜皆不會尿失禁。'],[5,'偶爾失禁，或使用尿布／尿套需協助。'],[0,'失禁或需要導尿。']]]
+  ];
+  const ADL_LEVELS={complete_dependence:'完全依賴',severe_dependence:'嚴重依賴',moderate_dependence:'中度依賴',mild_dependence:'輕度依賴',independent:'完全獨立'};
+  const IADL_ITEMS=[
+    ['telephone','使用電話'],['shopping','購物'],['meal_prep','準備餐食'],['housekeeping','家務清潔'],
+    ['laundry','洗衣'],['transportation','使用交通工具'],['medication','服藥管理'],['finances','理財']
+  ];
+  const IADL_OPTIONS={2:'可獨立',1:'需部分協助',0:'完全依賴'};
+  const SPMSQ_ITEMS=[
+    ['q1','今天是幾年幾月幾日？'],['q2','今天星期幾？'],['q3','您現在住在哪裡？'],
+    ['q4','您的電話號碼是幾號？（或可辨識之聯絡方式）'],['q5','您今年幾歲？'],['q6','您的出生年月日是？'],
+    ['q7','現任總統是誰？'],['q8','上一任總統是誰？'],['q9','您母親的名字是什麼？'],
+    ['q10','請從20開始，每次減3，連續說下去。']
+  ];
+  const GDS_ITEMS=[
+    ['q1','基本上，您對您的生活滿意嗎？'],['q2','您是否減少很多的活動和興趣的事？'],['q3','您是否覺得您的生活很空虛？'],
+    ['q4','您是否常常感到厭煩？'],['q5','您是否大部份時間精神都很好？'],['q6','您會常常害怕將有不幸的事情發生在您身上嗎？'],
+    ['q7','您是否大部份的時間都感到快樂？'],['q8','您是否常常感到無論做什麼事，都沒有用？'],['q9','您是否比較喜歡待在家裡而較不喜歡外出及不喜歡做新的事？'],
+    ['q10','您是否覺得現在有記憶力不好的困擾？'],['q11','您是否覺得「現在還能活著」是很好的事？'],['q12','您是否覺得您現在活得很沒有價值？'],
+    ['q13','您是否覺得精力很充沛？'],['q14','您是否感覺您現在的情況是沒有希望的？'],['q15','您是否覺得大部份的人都比您更幸福？']
+  ];
+  const HEALTH_ITEMS=[
+    ['consciousness','意識狀況（清醒、混亂、嗜睡）'],['eating','進食狀況（能否自行進食、吞嚥困難）'],
+    ['elimination','排泄狀況（規律、便秘、失禁等）'],['mobility','行動能力（走動、上下床、使用輔具）'],
+    ['upper_limb','上肢運動能力（抬手、握力、協調性）'],['lower_limb','下肢運動能力（行走穩定性、肌力）'],
+    ['daily_activity','日常活動與休閒'],['sleep','夜間睡眠狀況'],['appetite_weight','食慾與體重狀況'],
+    ['mood','情緒與精神狀況']
+  ];
+  const HEALTH_STATUS={good:'狀況良好',observe:'需觀察',refer:'異常轉介'};
+  const MED_CHECKS=[
+    ['storage_safety','藥品放置安全、可避免誤食'],['expired_medicine','目前無過期藥物'],
+    ['medicine_recognition','個案或協助者能辨識不同藥物'],['follow_prescription','可依醫囑服藥（含時間與劑量）'],
+    ['medication_management_support','藥物管理有適當人員協助（如有需要）']
+  ];
+  const MED_STATUS={good:'狀況良好',improve:'需改善',not_applicable:'不適用'};
+  const HOME_SECTIONS=[
+    ['主要活動空間與動線',[
+      ['entrance_clear','主要出入口及行走動線暢通'],['floor_level','地面平整，無明顯危險高低差或門檻'],
+      ['floor_nonslip','地面、地墊具有適當防滑措施'],['walkway_clear','走道無雜物、電線或其他絆倒物'],
+      ['lighting','主要活動區域及走道照明充足'],['furniture_safe','家具擺放穩固，不影響個案移動或轉位']
+    ]],
+    ['浴室與廁所',[
+      ['bath_floor_nonslip','浴廁地面有防滑措施，且無明顯積水風險'],['bath_seat','沐浴時有適合且穩固的座椅／洗澡椅可使用'],
+      ['bath_grab','淋浴區或浴缸旁有適當扶手或可安全抓握處'],['toilet_transfer','馬桶旁有適當扶手、便盆椅或其他安全移位措施'],
+      ['bath_threshold','浴廁出入口及門檻不致造成明顯跌倒風險']
+    ]],
+    ['臥室與夜間安全',[
+      ['bed_transfer','床鋪高度及床邊空間適合個案上下床／轉位'],['night_lighting','床邊或夜間活動時有足夠照明'],
+      ['night_toilet_route','床至廁所的夜間動線安全']
+    ]],
+    ['樓梯',[
+      ['stairs_lighting','樓梯照明充足'],['stairs_handrail','樓梯設有穩固扶手'],['stairs_nonslip','階梯具有適當防滑措施，且無雜物']
+    ]],
+    ['廚房',[
+      ['kitchen_reach','常用物品可安全取得，不需攀爬或踩椅子'],['kitchen_floor_work','廚房地面及工作區無明顯滑倒、燙傷或碰撞風險']
+    ]],
+    ['緊急安全',[
+      ['emergency_contact','個案有可使用的緊急聯絡方式，必要時能取得協助'],['escape_route','主要逃生／出入口通道保持暢通']
+    ]]
+  ];
+  const HOME_STATUS={safe:'安全',needs_improvement:'需改善',not_applicable:'不適用'};
+  const HOUSE_LABELS={
+    housing_type:'住宅型態',primary_floor:'主要活動樓層',uses_stairs:'是否使用樓梯',uses_kitchen:'是否使用廚房',
+    has_level_difference:'是否有明顯高低差／門檻',level_difference_note:'高低差／門檻說明'
+  };
+  const HOUSE_VALUE={
+    house:'透天',apartment:'公寓',building:'大樓',single_story:'平房',other:'其他',
+    yes:'是',no:'否',independent:'自行行走',cane:'拐杖',walker:'助行器',wheelchair:'輪椅',assisted:'需他人協助'
+  };
+  const SUPPORT_DOMAINS=[
+    ['daily_care','日常生活照顧'],['meal_housework','餐食與家務協助'],['medical_transport','就醫陪同／交通協助'],
+    ['medication_health','用藥與健康管理'],['financial','經濟支持'],['emotional','陪伴與情緒支持'],['decision_contact','重要決策／緊急聯絡']
+  ];
+  const DOMAIN_STATUS={adequate:'支持充足',partial:'部分不足',insufficient:'明顯不足',not_applicable:'不適用'};
+  const LIVING_LABELS={alone:'獨居',spouse:'與配偶同住',parents:'與父母同住',children:'與子女同住',grandchildren:'與孫輩同住',relatives:'與其他親屬同住',nonrelative:'與非親屬同住',other:'其他'};
+  const RESOURCE_TYPES={
+    long_term_care:'長照服務',medical:'醫療／居家醫療',welfare:'社福補助／津貼',disability:'身心障礙資源',
+    assistive_device:'輔具／無障礙資源',community:'社區據點',social_work:'社工／個管資源',transport:'交通資源',
+    meal:'餐食資源',charity_religion:'慈善／宗教團體',neighbor_friend:'里鄰／鄰居／朋友',volunteer:'志工／其他社會支持',
+    other_formal:'其他正式資源',other_informal:'其他非正式支持'
+  };
+  const RESOURCE_USAGE={stable:'穩定使用',occasional:'偶爾使用',waiting:'已申請／等待中',stopped:'已中止'};
+  const RESOURCE_SUFFICIENCY={adequate:'足夠',partial:'部分不足',insufficient:'不足'};
+  const NEED_STATUS={pending:'尚未處理',referred:'已轉介',in_progress:'處理中',completed:'已完成',declined:'個案／家屬暫無意願'};
+  const SOCIAL_INTERACTION={regular:'有固定親友／鄰里互動',limited:'互動較少',isolated:'幾乎無穩定社會互動',unable:'無法評估'};
+  const COMMUNITY_PARTICIPATION={participates:'有參與',none:'目前未參與',unwilling:'個案無意願',health_limited:'身體狀況無法參與',not_applicable:'不適用'};
+  const OVERALL_SUPPORT={adequate:'支持充足',needs_attention:'部分不足／需追蹤',weak:'支持薄弱／需介入'};
+  const ECONOMIC={stable:'經濟狀況無虞',watch:'尚可但需留意',difficulty:'有明顯經濟困難'};
+  const CG_ITEMS=[
+    ['behavior_stress','被照顧者的行為／情緒問題已造成明顯照顧困難'],['older_caregiver','照顧者屬高齡照顧者'],
+    ['limited_experience','缺乏照顧經驗或面對新的照顧問題時知能不足'],['no_relief','缺乏替代照顧人力或不易使用協助資源'],
+    ['multiple_dependents','同時需要照顧兩名以上家人'],['caregiver_health','照顧者自身健康或身心狀況已影響照顧能力／意願'],
+    ['resource_financial_crisis','資源資格或突發經濟／生活需求造成照顧壓力'],['recent_care_change','近三個月照顧情境有明顯改變'],
+    ['violence_neglect_risk','照顧關係中曾出現暴力、施暴意念或照顧疏忽風險'],['suicide_risk','照顧者曾出現自殺意念、企圖或相關言語／行為']
+  ];
+  const CG_APPLICABILITY={applicable:'適用：主要照顧者為家人／親友',no_family_caregiver:'不適用：無主要家庭照顧者',paid_caregiver:'不適用：主要照顧者為聘僱看護／非家人',unable:'本次無法評估'};
+  const REFERRAL_ACTIONS={planned:'預計轉介家庭照顧者支持服務',referred:'已完成轉介／聯繫',declined_followup:'照顧者暫無意願，持續追蹤',other:'其他處置'};
+  const SUMMARY_OVERALL={stable:'整體狀況穩定',attention:'有需留意事項',intervention:'有明顯問題／需介入'};
+  const PREV_PROBLEM={improved:'已改善',persistent:'持續存在',worse:'惡化',not_applicable:'不再適用'};
+  const PREV_RECOMMENDATION={completed:'已完成',partial:'部分執行',ongoing:'持續執行',not_done:'未執行',not_applicable:'不再適用'};
+
+  const local={eventId:null,row:null,caseRow:null,forms:[],records:{},previous:{},previousEvents:{},summary:null};
+
+  const safe=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const arr=v=>Array.isArray(v)?v:[];
+  const txt=v=>v===null||v===undefined||v===''?'—':String(v);
+  const html=v=>escapeHTML(txt(v)).replace(/\n/g,'<br>');
+  const yesNo=v=>v===true||v==='yes'?'是':v===false||v==='no'?'否':'—';
+  const optionLabel=(map,v)=>map?.[v]||txt(v);
+  const staffName=id=>(state.assessmentStaff||[]).find(x=>x.id===id)?.display_name||'—';
+  const formStatusLabel=v=>v==='completed'?'已完成':v==='unable'?'無法評估':v==='not_applicable'?'不適用':'未完成';
+  const shortId=id=>id?String(id).replace(/-/g,'').slice(0,10).toUpperCase():'—';
+
+  async function maybeRecord(table,eventId){
+    const r=await db.from(table).select('*').eq('assessment_event_id',eventId).maybeSingle();
+    if(r.error)throw r.error;
+    return r.data||null;
+  }
+
+  async function previousRecord(table,row,predicate=()=>true){
+    const r=await db.from(table).select('*').eq('case_id',row.case_id).not('confirmed_at','is',null).neq('assessment_event_id',row.id).order('confirmed_at',{ascending:false});
+    if(r.error)throw r.error;
+    const candidates=(r.data||[])
+      .filter(predicate)
+      .map(record=>({record,event:(state.assessmentEvents||[]).find(e=>e.id===record.assessment_event_id)}))
+      .filter(x=>x.event?.planned_date&&x.event.planned_date<row.planned_date)
+      .sort((a,b)=>String(b.event.planned_date).localeCompare(String(a.event.planned_date))||String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||'')));
+    return candidates[0]||null;
+  }
+
+  async function load(eventId){
+    const row=(state.assessmentEvents||[]).find(x=>x.id===eventId);
+    if(!row)throw new Error('找不到評估事件');
+    const c=(state.assessmentCases||[]).find(x=>x.id===row.case_id);
+    if(!c)throw new Error('找不到個案資料');
+    const forms=(state.assessmentEventForms||[]).filter(x=>x.assessment_event_id===eventId).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+
+    const [
+      adl,iadl,health,homeSafety,support,spmsq,gds15,caregiver,summary,
+      prevAdl,prevIadl,prevHealth,prevHomeSafety,prevSupport,prevSpmsq,prevGds15,prevCaregiver
+    ]=await Promise.all([
+      maybeRecord('assessment_adl_records',eventId),
+      maybeRecord('assessment_iadl_records',eventId),
+      maybeRecord('assessment_health_records',eventId),
+      maybeRecord('assessment_home_safety_records',eventId),
+      maybeRecord('assessment_support_records',eventId),
+      maybeRecord('assessment_spmsq_records',eventId),
+      maybeRecord('assessment_gds15_records',eventId),
+      maybeRecord('assessment_caregiver_screen_records',eventId),
+      maybeRecord('assessment_event_summaries',eventId),
+      previousRecord('assessment_adl_records',row),
+      previousRecord('assessment_iadl_records',row),
+      previousRecord('assessment_health_records',row),
+      previousRecord('assessment_home_safety_records',row),
+      previousRecord('assessment_support_records',row),
+      previousRecord('assessment_spmsq_records',row,x=>!x.is_unable),
+      previousRecord('assessment_gds15_records',row,x=>x.completion_mode==='completed'),
+      previousRecord('assessment_caregiver_screen_records',row,x=>x.applicability==='applicable')
+    ]);
+
+    local.eventId=eventId;local.row=row;local.caseRow=c;local.forms=forms;local.summary=summary;
+    local.records={adl,iadl,health_medication:health,home_safety:homeSafety,support,spmsq,gds15,caregiver_burden:caregiver};
+    local.previous={
+      adl:prevAdl?.record||null,iadl:prevIadl?.record||null,health_medication:prevHealth?.record||null,
+      home_safety:prevHomeSafety?.record||null,support:prevSupport?.record||null,
+      spmsq:prevSpmsq?.record||null,gds15:prevGds15?.record||null,caregiver_burden:prevCaregiver?.record||null
+    };
+    local.previousEvents={
+      adl:prevAdl?.event||null,iadl:prevIadl?.event||null,health_medication:prevHealth?.event||null,
+      home_safety:prevHomeSafety?.event||null,support:prevSupport?.event||null,
+      spmsq:prevSpmsq?.event||null,gds15:prevGds15?.event||null,caregiver_burden:prevCaregiver?.event||null
+    };
+  }
+
+  function comparison(code,current,previous){
+    if(!previous)return '首次評估／無前次可比較資料';
+    if(code==='adl'){
+      const d=Number(current?.total_score||0)-Number(previous.total_score||0);
+      return `前次 ${previous.total_score??'—'} 分 → 本次 ${current?.total_score??'—'} 分${d===0?'（無變化）':`（${d>0?'+':''}${d} 分）`}`;
+    }
+    if(code==='iadl'){
+      const d=Number(current?.total_score||0)-Number(previous.total_score||0);
+      return `前次 ${previous.total_score??'—'} 分 → 本次 ${current?.total_score??'—'} 分${d===0?'（無變化）':`（${d>0?'+':''}${d} 分）`}`;
+    }
+    if(code==='spmsq'){
+      if(current?.is_unable)return '本次無法評估';
+      const a=Number(previous.error_count||0),b=Number(current?.error_count||0);
+      return `錯誤題數 ${a} → ${b} 題`;
+    }
+    if(code==='gds15'){
+      if(current?.completion_mode!=='completed')return '本次無可比較分數';
+      return `前次 ${previous.total_score??'—'} 分 → 本次 ${current?.total_score??'—'} 分`;
+    }
+    if(code==='health_medication'){
+      const count=r=>Object.values(safe(r?.health_items)).filter(v=>v==='observe'||v==='refer').length;
+      return `需觀察／轉介項目 ${count(previous)} → ${count(current)} 項`;
+    }
+    if(code==='home_safety'){
+      const count=r=>Object.values(safe(r?.answers)).filter(v=>v==='needs_improvement').length;
+      return `需改善項目 ${count(previous)} → ${count(current)} 項`;
+    }
+    if(code==='support'){
+      return `整體支持：${OVERALL_SUPPORT[safe(previous.summary).overall_support]||'—'} → ${OVERALL_SUPPORT[safe(current?.summary).overall_support]||'—'}`;
+    }
+    if(code==='caregiver_burden'){
+      const count=r=>Number(safe(r?.summary).positive_count??Object.values(safe(r?.answers)).filter(v=>v==='yes').length);
+      return `符合指標 ${count(previous)} → ${count(current)} 項`;
+    }
+    return '—';
+  }
+
+  function commonMeta(title,form){
+    const row=local.row,c=local.caseRow,prevEvent=local.previousEvents[form?.form_code];
+    const compare=form?comparison(form.form_code,local.records[form.form_code],local.previous[form.form_code]):'';
+    return `
+      <header class="tool-header">
+        <div class="org">${ORG_NAME}</div>
+        <h1>${html(title)}</h1>
+        <table class="meta"><tbody>
+          <tr><th>個案姓名</th><td>${html(c.case_name)}</td><th>個案編號</th><td>${html(c.case_no)}</td></tr>
+          <tr><th>評估日期</th><td>${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}</td><th>評估類型</th><td>${html(TYPE_LABELS[row.assessment_type]||row.assessment_type)}</td></tr>
+          <tr><th>負責督導</th><td>${html(staffName(row.responsible_staff_id||c.supervisor_id))}</td><th>表單狀態</th><td>${form?html(formStatusLabel(form.status)):'已完成'}</td></tr>
+          ${form?`<tr><th>前次比較</th><td colspan="3">${html(compare)}${prevEvent?.planned_date?`｜前次日期：${rocDate(prevEvent.planned_date+'T00:00:00')}`:''}</td></tr>`:''}
+        </tbody></table>
+      </header>`;
+  }
+
+  function rowTable(rows,heads=['項目','結果','備註']){
+    return `<table class="grid"><thead><tr>${heads.map(h=>`<th>${html(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  }
+
+  function renderAdl(form){
+    const r=local.records.adl;
+    if(!r)return sectionMissing(form.form_name);
+    const answers=safe(r.answers),notes=safe(r.notes);
+    const rows=ADL_ITEMS.map(([key,label,opts])=>{
+      const score=answers[key];
+      const desc=(opts.find(x=>Number(x[0])===Number(score))||[])[1]||'—';
+      return `<tr><td>${html(label)}</td><td>${html(score===null||score===undefined?'—':score+' 分')}</td><td>${html(desc)}${notes[key]?`<div class="note">備註：${html(notes[key])}</div>`:''}</td></tr>`;
+    });
+    return toolPage(commonMeta(form.form_name,form)+rowTable(rows,['項目','得分','本次評估內容'])+`
+      <div class="result-box"><strong>ADL 總分：${html(r.total_score)}／100 分</strong>　｜　${html(ADL_LEVELS[r.dependency_level]||r.dependency_level)}</div>`);
+  }
+
+  function renderIadl(form){
+    const r=local.records.iadl;
+    if(!r)return sectionMissing(form.form_name);
+    const answers=safe(r.answers),notes=safe(r.notes);
+    const rows=IADL_ITEMS.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(answers[key]===undefined?'—':answers[key]+' 分')}</td><td>${html(IADL_OPTIONS[answers[key]]||'—')}${notes[key]?`<div class="note">備註：${html(notes[key])}</div>`:''}</td></tr>`);
+    return toolPage(commonMeta(form.form_name,form)+rowTable(rows,['項目','得分','本次評估內容'])+`
+      <div class="result-box"><strong>IADL 總分：${html(r.total_score)}／16 分</strong></div>`);
+  }
+
+  function renderSpmsq(form){
+    const r=local.records.spmsq;
+    if(!r)return sectionMissing(form.form_name);
+    if(r.is_unable)return toolPage(commonMeta(form.form_name,form)+`<div class="exception"><strong>本次無法評估</strong><br>原因：${html(r.unable_reason)}</div>`);
+    const judge=safe(r.judgments),notes=safe(r.notes);
+    const rows=SPMSQ_ITEMS.map(([key,q],i)=>`<tr><td>${i+1}. ${html(q)}</td><td>${html(judge[key]==='correct'?'正確':judge[key]==='wrong'?'錯誤':judge[key]==='unable_answer'?'無法作答':'—')}</td><td>${html(notes[key])}</td></tr>`);
+    return toolPage(commonMeta(form.form_name,form)+rowTable(rows,['題目','判定','備註'])+`<div class="result-box"><strong>錯誤題數：${html(r.error_count)} 題</strong>　｜　錯誤題數包含「無法作答」項目</div>`);
+  }
+
+  function renderGds(form){
+    const r=local.records.gds15;
+    if(!r)return sectionMissing(form.form_name);
+    if(r.completion_mode!=='completed'){
+      return toolPage(commonMeta(form.form_name,form)+`<div class="exception"><strong>${r.completion_mode==='unable'?'本次無法評估':'本次不適用'}</strong><br>原因：${html(r.exception_reason)}</div>`);
+    }
+    const a=safe(r.answers);
+    const rows=GDS_ITEMS.map(([key,q],i)=>`<tr><td>${i+1}. ${html(q)}</td><td>${html(a[key]==='yes'?'是':a[key]==='no'?'否':'—')}</td></tr>`);
+    const score=Number(r.total_score);
+    const result=score<=6?'適應狀況良好':score<=10?'中度情緒困擾':'高度情緒困擾';
+    return toolPage(commonMeta(form.form_name,form)+rowTable(rows,['題目','回答'])+`<div class="result-box"><strong>GDS-15 總分：${html(r.total_score)}／15 分</strong>　｜　${html(result)}</div>`);
+  }
+
+  function medEntryText(x){
+    if(!x)return '—';
+    if(typeof x==='string')return x||'—';
+    return [x.medication,x.purpose,x.dosage,x.frequency,x.note].filter(Boolean).join('｜')||'—';
+  }
+
+  function renderHealth(form){
+    const r=local.records.health_medication;
+    if(!r)return sectionMissing(form.form_name);
+    const m=safe(r.medical_info),checks=safe(r.medication_checks),items=safe(r.health_items),notes=safe(r.health_notes);
+    const fixed=arr(m.fixed_medication_entries?.length?m.fixed_medication_entries:m.fixed_medication_base_entries);
+    const temp=arr(m.opening_temporary_medications);
+    const events=arr(m.healthcare_events);
+    const medChanges=arr(m.medication_changes);
+    const medCorrections=arr(m.medication_corrections);
+    let body=commonMeta(form.form_name,form);
+    body+=`<h2>一、健康與就醫概況</h2>
+      ${rowTable([
+        `<tr><td>重要疾病／健康狀況</td><td>${html(m.baseline_important_conditions)}</td></tr>`,
+        `<tr><td>持續治療／固定醫療</td><td>${html(m.baseline_ongoing_treatments)}</td></tr>`,
+        `<tr><td>是否固定回診</td><td>${html(yesNo(m.regular_followup))}${m.regular_followup_reason?`｜${html(m.regular_followup_reason)}`:''}</td></tr>`,
+        `<tr><td>服藥方式</td><td>${html(m.medication_method==='self'?'自行':m.medication_method==='assisted'?'他人協助':'—')}${m.medication_assisted_by?`｜協助者：${html(m.medication_assisted_by)}`:''}</td></tr>`,
+        `<tr><td>服藥是否規律</td><td>${html(yesNo(m.medication_regular))}${m.medication_followup?`｜${html(m.medication_followup)}`:''}</td></tr>`,
+        `<tr><td>藥物副作用</td><td>${html(yesNo(m.side_effect))}${m.side_effect_note?`｜${html(m.side_effect_note)}`:''}</td></tr>`
+      ],['項目','內容'])}`;
+    body+=`<h2>二、用藥紀錄</h2>`;
+    if(m.opening_no_fixed_medications===true||m.no_fixed_medications===true)body+=`<div class="plain">固定用藥：目前無固定用藥。</div>`;
+    else if(fixed.length)body+=rowTable(fixed.map((x,i)=>`<tr><td>${i+1}</td><td>${html(medEntryText(x))}</td></tr>`),['#','固定用藥']);
+    else body+=`<div class="plain">固定用藥：${html(m.fixed_medications)}</div>`;
+    if(m.opening_no_temporary_medications===true)body+=`<div class="plain">短期／臨時用藥：本次無。</div>`;
+    else if(temp.length)body+=rowTable(temp.map((x,i)=>`<tr><td>${i+1}</td><td>${html(medEntryText(x))}</td></tr>`),['#','短期／臨時用藥']);
+    if(events.length){
+      body+=`<h3>評估期間就醫事件</h3>`+rowTable(events.map((x,i)=>`<tr><td>${i+1}</td><td>${html(x.date)}</td><td>${html(({outpatient:'門診',emergency:'急診',hospitalization:'住院',surgery:'手術／處置',other:'其他'})[x.type]||x.type)}</td><td>${html([x.facility,x.department,x.reason,x.result].filter(Boolean).join('｜'))}</td></tr>`),['#','日期','類型','醫療機構／結果']);
+    }else if(m.no_healthcare_events===true)body+=`<div class="plain">本評估期間無就醫事件。</div>`;
+    if(medChanges.length){
+      body+=`<h3>用藥變化</h3>`+rowTable(medChanges.map((x,i)=>`<tr><td>${i+1}</td><td>${html(x.action)}</td><td>${html(x.medication_before||'—')}</td><td>${html(x.medication_after||'—')}</td><td>${html(x.note)}</td></tr>`),['#','動作','調整前','調整後','備註']);
+    }else if(m.no_medication_changes===true)body+=`<div class="plain">本評估期間無用藥變化。</div>`;
+    if(medCorrections.length){
+      body+=`<h3>本次用藥資料修正</h3>`+rowTable(medCorrections.map((x,i)=>`<tr><td>${i+1}</td><td>${html(x.action)}</td><td>${html(x.reason)}</td><td>${html(x.medication_after||'—')}</td><td>${html(x.note)}</td></tr>`),['#','動作','修正原因','修正後內容','備註']);
+    }
+    body+=`<h2>三、身體健康狀態 10 項</h2>`+rowTable(HEALTH_ITEMS.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(HEALTH_STATUS[items[key]]||items[key])}</td><td>${html(notes[key])}</td></tr>`),['項目','狀態','備註']);
+    body+=`<div class="result-box"><strong>健康狀態總分：${html(r.total_score)}／20 分</strong></div>`;
+    body+=`<h2>四、用藥安全現況</h2>`+rowTable(MED_CHECKS.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(MED_STATUS[safe(checks[key]).status]||safe(checks[key]).status)}</td><td>${html(safe(checks[key]).note)}</td></tr>`),['項目','狀態','備註']);
+    if(m.unvisited_health_change||m.care_impact||m.care_impact_note){
+      body+=`<h2>五、後續健康／照顧影響</h2>`+rowTable([
+        `<tr><td>未就醫之健康變化</td><td>${html(m.unvisited_health_change)}${m.unvisited_health_change_note?`｜${html(m.unvisited_health_change_note)}`:''}</td></tr>`,
+        `<tr><td>對照顧計畫影響</td><td>${html(({no_impact:'無明顯影響',observe:'持續觀察',adjust_plan:'需調整機構照顧計畫',contact_external:'建議聯繫A單位／醫療端'})[m.care_impact]||m.care_impact)}${m.care_impact_note?`｜${html(m.care_impact_note)}`:''}</td></tr>`
+      ],['項目','內容']);
+    }
+    return toolPage(body);
+  }
+
+  function renderHome(form){
+    const r=local.records.home_safety;
+    if(!r)return sectionMissing(form.form_name);
+    const p=safe(r.home_profile),a=safe(r.answers),n=safe(r.notes),s=safe(r.summary);
+    const mobility=arr(p.mobility_modes).map(x=>HOUSE_VALUE[x]||x).join('、')||'—';
+    let body=commonMeta(form.form_name,form)+`<h2>一、住宅與活動概況</h2>`+rowTable([
+      `<tr><td>住宅型態</td><td>${html(HOUSE_VALUE[p.housing_type]||p.housing_type)}</td><td>主要活動樓層</td><td>${html(p.primary_floor)}</td></tr>`,
+      `<tr><td>移動方式</td><td>${html(mobility)}</td><td>是否使用樓梯</td><td>${html(yesNo(p.uses_stairs))}</td></tr>`,
+      `<tr><td>是否使用廚房</td><td>${html(yesNo(p.uses_kitchen))}</td><td>明顯高低差／門檻</td><td>${html(yesNo(p.has_level_difference))}${p.level_difference_note?`｜${html(p.level_difference_note)}`:''}</td></tr>`
+    ],['項目','內容','項目','內容']);
+    let idx=1;
+    for(const [title,items] of HOME_SECTIONS){
+      body+=`<h2>${idx++}、${html(title)}</h2>`+rowTable(items.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(HOME_STATUS[a[key]]||a[key])}</td><td>${html(n[key])}</td></tr>`),['項目','結果','備註']);
+    }
+    body+=`<h2>評估結論與後續</h2>`+rowTable([
+      `<tr><td>主要環境安全問題／改善建議</td><td>${html(s.recommendations)}</td></tr>`,
+      `<tr><td>說明對象</td><td>${html(({client:'個案',family:'家屬',both:'個案及家屬',not_explained:'未說明'})[s.explained_to]||s.explained_to)}${s.not_explained_reason?`｜${html(s.not_explained_reason)}`:''}</td></tr>`,
+      `<tr><td>個案／家屬回應</td><td>${html(({accept:'接受',consider:'考慮中',unwilling:'暫無意願',other:'其他'})[s.family_response]||s.family_response)}${s.family_response_other?`｜${html(s.family_response_other)}`:''}</td></tr>`,
+      `<tr><td>是否需追蹤</td><td>${html(yesNo(s.followup_required))}${s.followup_note?`｜${html(s.followup_note)}`:''}</td></tr>`
+    ],['項目','內容']);
+    return toolPage(body);
+  }
+
+  function renderSupport(form){
+    const r=local.records.support;
+    if(!r)return sectionMissing(form.form_name);
+    const h=safe(r.household),domains=safe(r.support_domains),res=safe(r.resources),s=safe(r.summary),family=arr(r.family_members);
+    let body=commonMeta(form.form_name,form)+`<h2>一、家庭與居住概況</h2>`+rowTable([
+      `<tr><td>居住安排</td><td>${html(LIVING_LABELS[h.living_arrangement]||h.living_arrangement)}${h.living_other?`｜${html(h.living_other)}`:''}</td></tr>`,
+      `<tr><td>近期重大家庭變化</td><td>${html(yesNo(h.family_change_status))}${h.family_change_note?`｜${html(h.family_change_note)}`:''}</td></tr>`,
+      `<tr><td>家庭狀況摘要</td><td>${html(h.family_summary)}</td></tr>`,
+      `<tr><td>主要照顧者</td><td>${h.primary_caregiver_status==='present'?`${html(h.primary_caregiver_name)}（${html(h.primary_caregiver_relation)}）｜同住：${html(yesNo(h.primary_caregiver_co_resident))}｜可提供：${html(h.primary_caregiver_availability)}｜協助：${html(h.primary_caregiver_role)}`:'無主要照顧者'}</td></tr>`,
+      `<tr><td>替代照顧者／其他重要支持</td><td>${html(yesNo(h.backup_available))}</td></tr>`
+    ],['項目','內容']);
+    body+=`<h2>二、重要支持者</h2>`;
+    body+=family.length?rowTable(family.map((x,i)=>`<tr><td>${i+1}</td><td>${html(x.name)}</td><td>${html(x.relation)}</td><td>${html(yesNo(x.co_resident))}</td><td>${html(x.contact_frequency)}</td><td>${html(x.support_role)}${x.note?`｜${html(x.note)}`:''}</td></tr>`),['#','姓名／稱謂','關係','同住','聯繫頻率','可提供協助']):`<div class="plain">未另外登錄重要支持者。</div>`;
+    body+=`<h2>三、家庭支持功能</h2>`+rowTable(SUPPORT_DOMAINS.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(DOMAIN_STATUS[safe(domains[key]).status]||safe(domains[key]).status)}</td><td>${html(safe(domains[key]).note)}</td></tr>`),['支持面向','狀況','說明']);
+    body+=`<h2>四、經濟與社會資源</h2>`+rowTable([
+      `<tr><td>目前經濟狀況</td><td>${html(ECONOMIC[res.economic_status]||res.economic_status)}${res.economic_note?`｜${html(res.economic_note)}`:''}</td></tr>`,
+      `<tr><td>主要生活／經濟來源</td><td>${html(res.income_sources)}</td></tr>`,
+      `<tr><td>經濟因素是否影響照顧或醫療</td><td>${html(yesNo(res.economic_care_impact))}${res.economic_care_impact_note?`｜${html(res.economic_care_impact_note)}`:''}</td></tr>`,
+      `<tr><td>社會互動</td><td>${html(SOCIAL_INTERACTION[res.social_interaction_status]||res.social_interaction_status)}${res.social_interaction_note?`｜${html(res.social_interaction_note)}`:''}</td></tr>`,
+      `<tr><td>社區／宗教／據點活動</td><td>${html(COMMUNITY_PARTICIPATION[res.community_participation_status]||res.community_participation_status)}${res.community_participation_note?`｜${html(res.community_participation_note)}`:''}</td></tr>`
+    ],['項目','內容']);
+    const social=arr(res.social_resources);
+    body+=`<h3>目前已有資源</h3>`+(social.length?rowTable(social.map((x,i)=>`<tr><td>${i+1}</td><td>${html(RESOURCE_TYPES[x.type]||x.type)}</td><td>${html(x.name)}</td><td>${html(x.assistance)}</td><td>${html(RESOURCE_USAGE[x.usage_status]||x.usage_status)}</td><td>${html(RESOURCE_SUFFICIENCY[x.sufficiency]||x.sufficiency)}${x.insufficiency_note?`｜${html(x.insufficiency_note)}`:''}</td></tr>`),['#','類型','單位／名稱','協助內容','使用狀況','是否足夠']):`<div class="plain">未登錄目前已有資源。</div>`);
+    const needs=arr(res.unmet_needs);
+    body+=`<h3>尚缺資源／轉介需求</h3>`+(needs.length?rowTable(needs.map((x,i)=>`<tr><td>${i+1}</td><td>${html(RESOURCE_TYPES[x.type]||x.type)}</td><td>${html(x.need)}</td><td>${html(x.action)}</td><td>${html(NEED_STATUS[x.status]||x.status)}</td></tr>`),['#','類型','需求內容','處理／轉介方式','狀態']):`<div class="plain">目前無登錄之尚缺資源／轉介需求。</div>`);
+    body+=`<h2>五、整體支持評估與後續</h2>`+rowTable([
+      `<tr><td>整體支持狀況</td><td>${html(OVERALL_SUPPORT[s.overall_support]||s.overall_support)}</td></tr>`,
+      `<tr><td>主要支持問題</td><td>${html(s.key_issues)}</td></tr>`,
+      `<tr><td>目前支持安排／建議</td><td>${html(s.support_plan)}</td></tr>`,
+      `<tr><td>是否需後續追蹤</td><td>${html(yesNo(s.followup_required))}${s.followup_note?`｜${html(s.followup_note)}`:''}</td></tr>`
+    ],['項目','內容']);
+    return toolPage(body);
+  }
+
+  function renderCaregiver(form){
+    const r=local.records.caregiver_burden;
+    if(!r)return sectionMissing(form.form_name);
+    const info=safe(r.caregiver_info),a=safe(r.answers),n=safe(r.notes),s=safe(r.summary);
+    let body=commonMeta(form.form_name,form)+`<h2>一、適用性與照顧者資料</h2>`+rowTable([
+      `<tr><td>評估適用性</td><td>${html(CG_APPLICABILITY[r.applicability]||r.applicability)}</td></tr>`,
+      `<tr><td>主要照顧者</td><td>${r.applicability==='applicable'?`${html(info.name)}｜與個案關係：${html(info.relation)}`:'—'}</td></tr>`,
+      r.applicability==='unable'?`<tr><td>無法評估原因</td><td>${html(s.unable_reason)}</td></tr>`:''
+    ].filter(Boolean),['項目','內容']);
+    if(r.applicability==='applicable'){
+      body+=`<h2>二、高負荷初篩指標</h2>`+rowTable(CG_ITEMS.map(([key,label],i)=>`<tr><td>${i+1}. ${html(label)}</td><td>${html(a[key]==='yes'?'符合':a[key]==='no'?'未符合':'—')}</td><td>${html(n[key])}</td></tr>`),['指標','結果','說明']);
+      const count=Number(s.positive_count??Object.values(a).filter(v=>v==='yes').length);
+      body+=`<div class="result-box"><strong>本次符合 ${count}／10 項</strong>　｜　${s.referral_required===true?'達轉介標準':'目前未達轉介標準'}</div>`;
+      body+=`<h2>三、轉介與處理</h2>`+rowTable([
+        `<tr><td>專業判斷轉介</td><td>${html(yesNo(s.professional_referral))}${s.professional_reason?`｜${html(s.professional_reason)}`:''}</td></tr>`,
+        `<tr><td>轉介／處理狀態</td><td>${html(REFERRAL_ACTIONS[s.referral_action]||s.referral_action)}</td></tr>`,
+        `<tr><td>處理紀錄</td><td>${html(s.action_note)}</td></tr>`,
+        `<tr><td>其他補充</td><td>${html(s.general_note)}</td></tr>`
+      ],['項目','內容']);
+    }
+    return toolPage(body);
+  }
+
+  function renderSummary(){
+    const s=local.summary;
+    if(!s)return sectionMissing('居家服務個案整體評估紀錄表');
+    const row=local.row,c=local.caseRow;
+    const reason=(REASON_LABELS[row.reason_code]||row.reason_code||'—')+(row.reason_note?'｜'+row.reason_note:'');
+    let body=`<header class="tool-header">
+      <div class="org">${ORG_NAME}</div><h1>居家服務個案整體評估紀錄表</h1>
+      <table class="meta"><tbody>
+        <tr><th>個案姓名</th><td>${html(c.case_name)}</td><th>個案編號</th><td>${html(c.case_no)}</td></tr>
+        <tr><th>評估日期</th><td>${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}</td><th>評估類型</th><td>${html(TYPE_LABELS[row.assessment_type]||row.assessment_type)}</td></tr>
+        <tr><th>負責督導</th><td>${html(staffName(row.responsible_staff_id||c.supervisor_id))}</td><th>與家訪同日</th><td>${row.combined_with_home_visit?'是':'否'}</td></tr>
+        <tr><th>評估原因</th><td colspan="3">${html(reason)}</td></tr>
+      </tbody></table>
+    </header>`;
+    if(s.previous_summary_id||s.previous_key_findings_snapshot||s.previous_care_recommendations_snapshot){
+      body+=`<h2>一、前次評估追蹤</h2>`+rowTable([
+        `<tr><td>前次主要問題／需求</td><td>${html(s.previous_key_findings_snapshot)}</td></tr>`,
+        `<tr><td>本次追蹤結果</td><td>${html(PREV_PROBLEM[s.previous_problem_status]||s.previous_problem_status)}</td></tr>`,
+        `<tr><td>追蹤說明</td><td>${html(s.previous_problem_followup_note)}</td></tr>`,
+        `<tr><td>前次服務重點／建議</td><td>${html(s.previous_care_recommendations_snapshot)}</td></tr>`,
+        `<tr><td>本次執行情形</td><td>${html(PREV_RECOMMENDATION[s.previous_recommendation_status]||s.previous_recommendation_status)}</td></tr>`,
+        `<tr><td>執行情形說明</td><td>${html(s.previous_recommendation_followup_note)}</td></tr>`
+      ],['項目','內容']);
+      body+=`<h2>二、本次整體評估與照顧建議</h2>`;
+    }else body+=`<h2>一、本次整體評估與照顧建議</h2>`;
+    body+=rowTable([
+      `<tr><td>整體狀況</td><td>${html(SUMMARY_OVERALL[s.overall_status]||s.overall_status)}</td></tr>`,
+      `<tr><td>主要評估發現／問題與需求</td><td>${html(s.key_findings)}</td></tr>`,
+      `<tr><td>照顧服務重點／建議</td><td>${html(s.care_recommendations)}</td></tr>`,
+      `<tr><td>需調整服務／照顧安排</td><td>${html(yesNo(s.service_adjustment_required))}${s.service_adjustment_note?`｜${html(s.service_adjustment_note)}`:''}</td></tr>`,
+      `<tr><td>需後續追蹤</td><td>${html(yesNo(s.followup_required))}${s.followup_plan?`｜${html(s.followup_plan)}`:''}</td></tr>`,
+      `<tr><td>需對外協調／轉介</td><td>${html(yesNo(s.external_coordination_required))}${s.external_coordination_note?`｜${html(s.external_coordination_note)}`:''}</td></tr>`
+    ],['項目','內容']);
+    body+=`<div class="signature">督導：　　　　　　　　　　　　　　　　日期：</div>`;
+    return toolPage(body);
+  }
+
+  function sectionMissing(title){
+    return toolPage(`<header class="tool-header"><div class="org">${ORG_NAME}</div><h1>${html(title)}</h1></header><div class="exception">本次無已儲存之正式紀錄。</div>`);
+  }
+
+  function toolPage(content){
+    return `<section class="tool-page">${content}</section>`;
+  }
+
+  function renderTool(form){
+    if(form.form_code==='adl')return renderAdl(form);
+    if(form.form_code==='iadl')return renderIadl(form);
+    if(form.form_code==='health_medication')return renderHealth(form);
+    if(form.form_code==='home_safety')return renderHome(form);
+    if(form.form_code==='support')return renderSupport(form);
+    if(form.form_code==='spmsq')return renderSpmsq(form);
+    if(form.form_code==='gds15')return renderGds(form);
+    if(form.form_code==='caregiver_burden')return renderCaregiver(form);
+    return sectionMissing(form.form_name);
+  }
+
+  function selectionHtml(){
+    const summaryChecked=!!local.summary;
+    return `<div style="font-size:11px;color:#667085;line-height:1.6;margin-bottom:10px">
+      預設勾選本次實際使用的全部評估工具；可取消不需要列印的項目。每個工具會自新頁開始。
+    </div>
+    <div style="display:flex;gap:7px;margin-bottom:10px">
+      <button id="bundleSelectAll" type="button" class="btn sm">全選</button>
+      <button id="bundleClearAll" type="button" class="btn sm">取消全選</button>
+    </div>
+    <div style="display:grid;gap:7px">
+      ${summaryChecked?`<label style="display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:9px 10px"><input type="checkbox" data-bundle-section="summary" checked style="width:auto">整體評估總結</label>`:''}
+      ${local.forms.map(form=>`<label style="display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:9px 10px"><input type="checkbox" data-bundle-section="${escapeHTML(form.form_code)}" checked style="width:auto">${escapeHTML(form.form_name)} <small style="color:#98a2b3">（${escapeHTML(formStatusLabel(form.status))}）</small></label>`).join('')}
+    </div>`;
+  }
+
+  function buildHtml(selected){
+    const sections=[];
+    if(selected.includes('summary')&&local.summary)sections.push(renderSummary());
+    for(const form of local.forms){
+      if(selected.includes(form.form_code))sections.push(renderTool(form));
+    }
+    if(!sections.length)throw new Error('請至少選擇一項列印內容');
+
+    const row=local.row,c=local.caseRow;
+    const today=rocDate(isoDate(new Date())+'T00:00:00');
+    return `<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>${html(c.case_name)}｜完整評估套表</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#f3f4f6;color:#111}
+  body{font-family:"DFKai-SB","BiauKai","標楷體",serif;font-size:11.5pt;line-height:1.55}
+  .toolbar{position:sticky;top:0;z-index:20;display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;background:#fff;border-bottom:1px solid #ddd}
+  .toolbar button{border:1px solid #bbb;border-radius:7px;background:#fff;padding:7px 14px;font-size:14px;cursor:pointer}
+  .toolbar button.primary{background:#e9855c;color:#fff;border-color:#e9855c}
+  .paper{width:210mm;margin:14px auto;background:#fff;box-shadow:0 3px 18px rgba(0,0,0,.12)}
+  .tool-page{min-height:297mm;padding:12mm 13mm 16mm;break-before:page;page-break-before:always}
+  .tool-page:first-child{break-before:auto;page-break-before:auto}
+  .tool-header{text-align:center;margin-bottom:12px}
+  .org{font-size:15pt;font-weight:700}
+  h1{font-size:19pt;margin:3px 0 10px}
+  h2{font-size:13.5pt;margin:14px 0 6px;border-bottom:1.5px solid #333;padding-bottom:3px}
+  h3{font-size:11.5pt;margin:11px 0 5px}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  th,td{border:1px solid #555;padding:5px 6px;vertical-align:top;word-break:break-word}
+  th{background:#f2f2f2;font-weight:700;text-align:center}
+  .meta th{width:18%}.meta td{width:32%;text-align:left}
+  .grid thead th{font-size:10.5pt}
+  .grid td{font-size:10.5pt}
+  .note{margin-top:3px;font-size:9.8pt}
+  .result-box,.plain,.exception{border:1px solid #777;padding:7px 8px;margin-top:8px}
+  .exception{min-height:54px}
+  .signature{margin-top:24px;border:1px solid #555;height:62px;padding:34px 12px 8px;text-align:center}
+  @page{
+    size:A4 portrait;
+    margin:15mm 9mm 15mm;
+    @top-center{
+      content:"${ORG_NAME}｜${html(c.case_name)}｜${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}";
+      font-family:"DFKai-SB","BiauKai","標楷體",serif;
+      font-size:8.5pt;
+    }
+    @bottom-center{
+      content:"第 " counter(page) " 頁／共 " counter(pages) " 頁";
+      font-family:"DFKai-SB","BiauKai","標楷體",serif;
+      font-size:8.5pt;
+    }
+  }
+  @media print{
+    html,body{background:#fff}
+    .toolbar{display:none!important}
+    .paper{width:auto;margin:0;box-shadow:none}
+    .tool-page{min-height:0;padding:0}
+    h2,h3{break-after:avoid-page}
+    tr{break-inside:avoid-page}
+  }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button onclick="window.close()">關閉預覽</button>
+  <button class="primary" onclick="window.print()">列印／另存 PDF</button>
+</div>
+<main class="paper">${sections.join('')}</main>
+</body>
+</html>`;
+  }
+
+  function openPreview(selected){
+    const w=window.open('','_blank');
+    if(!w){
+      toast('瀏覽器阻擋了列印預覽視窗，請允許此網站開啟彈出式視窗。','warn');
+      return;
+    }
+    const doc=buildHtml(selected);
+    w.document.open();w.document.write(doc);w.document.close();
+  }
+
+  function showSelection(){
+    openModal({
+      title:'列印完整評估套表',
+      html:selectionHtml(),
+      large:true,
+      confirmText:'產生列印預覽',
+      onConfirm:async()=>{
+        const selected=[...document.querySelectorAll('[data-bundle-section]:checked')].map(x=>x.dataset.bundleSection);
+        if(!selected.length)return toast('請至少勾選一項列印內容','warn');
+        closeModal();
+        openPreview(selected);
+      }
+    });
+    $('bundleSelectAll')?.addEventListener('click',()=>document.querySelectorAll('[data-bundle-section]').forEach(x=>x.checked=true));
+    $('bundleClearAll')?.addEventListener('click',()=>document.querySelectorAll('[data-bundle-section]').forEach(x=>x.checked=false));
+  }
+
+  async function open(eventId){
+    const row=(state.assessmentEvents||[]).find(x=>x.id===eventId);
+    if(!row)return toast('找不到評估事件','error');
+    const forms=(state.assessmentEventForms||[]).filter(x=>x.assessment_event_id===eventId);
+    if(!forms.length)return toast('本次評估尚未建立評估工具','warn');
+    if(forms.some(x=>!['completed','unable','not_applicable'].includes(x.status))){
+      return toast('尚有評估工具未完成，完成後才能列印完整評估套表','warn');
+    }
+    showLoading(true);
+    try{
+      await load(eventId);
+      showSelection();
+    }catch(err){
+      console.error(err);
+      toast('讀取完整評估套表失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  window.v52AssessmentBundlePrint={open};
+})();

@@ -1,0 +1,763 @@
+// V5.2 評估管理：居家環境安全評估
+(()=>{
+  const HOME_SAFETY_SECTIONS=[
+    {
+      key:'movement',
+      title:'一、主要活動空間與動線',
+      items:[
+        ['entrance_clear','主要出入口及行走動線暢通'],
+        ['floor_level','地面平整，無明顯危險高低差或門檻'],
+        ['floor_nonslip','地面、地墊具有適當防滑措施'],
+        ['walkway_clear','走道無雜物、電線或其他絆倒物'],
+        ['lighting','主要活動區域及走道照明充足'],
+        ['furniture_safe','家具擺放穩固，不影響個案移動或轉位']
+      ]
+    },
+    {
+      key:'bathroom',
+      title:'二、浴室與廁所',
+      items:[
+        ['bath_floor_nonslip','浴廁地面有防滑措施，且無明顯積水風險'],
+        ['bath_seat','沐浴時有適合且穩固的座椅／洗澡椅可使用'],
+        ['bath_grab','淋浴區或浴缸旁有適當扶手或可安全抓握處'],
+        ['toilet_transfer','馬桶旁有適當扶手、便盆椅或其他安全移位措施'],
+        ['bath_threshold','浴廁出入口及門檻不致造成明顯跌倒風險']
+      ]
+    },
+    {
+      key:'bedroom',
+      title:'三、臥室與夜間安全',
+      items:[
+        ['bed_transfer','床鋪高度及床邊空間適合個案上下床／轉位'],
+        ['night_lighting','床邊或夜間活動時有足夠照明'],
+        ['night_toilet_route','床至廁所的夜間動線安全']
+      ]
+    },
+    {
+      key:'stairs',
+      title:'四、樓梯',
+      conditional:'uses_stairs',
+      items:[
+        ['stairs_lighting','樓梯照明充足'],
+        ['stairs_handrail','樓梯設有穩固扶手'],
+        ['stairs_nonslip','階梯具有適當防滑措施，且無雜物']
+      ]
+    },
+    {
+      key:'kitchen',
+      title:'五、廚房',
+      conditional:'uses_kitchen',
+      items:[
+        ['kitchen_reach','常用物品可安全取得，不需攀爬或踩椅子'],
+        ['kitchen_floor_work','廚房地面及工作區無明顯滑倒、燙傷或碰撞風險']
+      ]
+    },
+    {
+      key:'emergency',
+      title:'六、緊急安全',
+      items:[
+        ['emergency_contact','個案有可使用的緊急聯絡方式，必要時能取得協助'],
+        ['escape_route','主要逃生／出入口通道保持暢通']
+      ]
+    }
+  ];
+
+  const HOME_SAFETY_ITEMS=HOME_SAFETY_SECTIONS.flatMap(section=>section.items.map(([key,label])=>({key,label,section:section.key})));
+  const ITEM_BY_KEY=Object.fromEntries(HOME_SAFETY_ITEMS.map(item=>[item.key,item]));
+  const STAIR_KEYS=HOME_SAFETY_SECTIONS.find(x=>x.key==='stairs').items.map(x=>x[0]);
+  const KITCHEN_KEYS=HOME_SAFETY_SECTIONS.find(x=>x.key==='kitchen').items.map(x=>x[0]);
+
+  const STATUS_LABELS={
+    safe:'安全',
+    needs_improvement:'需改善',
+    not_applicable:'不適用'
+  };
+
+  const HOUSING_TYPES=[
+    ['house','透天'],
+    ['apartment','公寓'],
+    ['building','大樓'],
+    ['single_story','平房'],
+    ['other','其他']
+  ];
+
+  const MOBILITY_OPTIONS=[
+    ['independent','自行行走'],
+    ['cane','拐杖'],
+    ['walker','助行器'],
+    ['wheelchair','輪椅'],
+    ['assisted','需他人協助'],
+    ['other','其他']
+  ];
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-home-safety-style';
+  style.textContent=`
+    .hs-page{max-width:1040px;margin:0 auto}
+    .hs-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .hs-summary-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:11px 12px}
+    .hs-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}
+    .hs-summary-card strong{font-size:19px;color:#344054}
+    .hs-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px;line-height:1.45}
+    .hs-copy-box{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #d9e9f7;background:#f7fbff;border-radius:11px;padding:11px 12px;margin-bottom:12px}
+    .hs-copy-box strong{display:block;font-size:12px;color:#175cd3}
+    .hs-copy-box span{display:block;font-size:10.5px;color:#475467;margin-top:3px;line-height:1.5}
+    .hs-notice{padding:10px 12px;border-radius:10px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11.5px;font-weight:800;margin-bottom:12px}
+    .hs-profile{border:1px solid var(--line);border-radius:13px;background:#fff;margin-bottom:12px;overflow:hidden}
+    .hs-profile-head,.hs-section-head{padding:11px 12px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .hs-profile-head strong,.hs-section-head strong{font-size:13px;color:#344054}
+    .hs-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;padding:12px}
+    .hs-field label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
+    .hs-field select,.hs-field input,.hs-field textarea{width:100%;box-sizing:border-box}
+    .hs-field.full{grid-column:1/-1}
+    .hs-mobility{display:flex;gap:8px;flex-wrap:wrap}
+    .hs-check{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:#fff;font-size:11px;color:#475467}
+    .hs-check input{width:auto}
+    .hs-sections{display:grid;gap:11px}
+    .hs-section{border:1px solid var(--line);border-radius:13px;background:#fff;overflow:hidden}
+    .hs-section.disabled{opacity:.78}
+    .hs-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .hs-section-head small{font-size:10px;color:#667085}
+    .hs-item{padding:11px 12px;border-bottom:1px solid #f0f1f3}
+    .hs-item:last-child{border-bottom:0}
+    .hs-item.risk{background:#fffafa}
+    .hs-item-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+    .hs-item-title{font-size:11.5px;font-weight:850;color:#344054;line-height:1.5}
+    .hs-change{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:9.5px;font-weight:900;white-space:nowrap}
+    .hs-change.new-risk{background:#fff1eb;color:#a45d49}
+    .hs-change.persistent{background:#fff4e5;color:#b54708}
+    .hs-change.improved{background:#ecfdf3;color:#027a48}
+    .hs-change.no-longer{background:#f2f4f7;color:#475467}
+    .hs-options{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px}
+    .hs-option{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:9px;padding:7px 9px;cursor:pointer;background:#fff;font-size:10.5px;font-weight:800;color:#475467}
+    .hs-option input{width:auto}
+    .hs-option.selected.safe{border-color:#8fd6aa;background:#f2fff7;color:#027a48}
+    .hs-option.selected.needs_improvement{border-color:#efb3a0;background:#fff7f4;color:#a45d49}
+    .hs-option.selected.not_applicable{border-color:#cfd4dc;background:#f8f9fb;color:#667085}
+    .hs-item-note{width:100%;box-sizing:border-box}
+    .hs-risk-box{border:1px solid #fedf89;background:#fffcf5;border-radius:12px;padding:11px 12px;margin-top:12px}
+    .hs-risk-box.no-risk{border-color:#abefc6;background:#f6fef9}
+    .hs-risk-box strong{font-size:12px;color:#344054}
+    .hs-risk-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .hs-risk-pill{border-radius:999px;padding:4px 8px;background:#fff1eb;color:#a45d49;font-size:10px;font-weight:850}
+    .hs-summary-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:12px;border:1px solid var(--line);border-radius:13px;background:#fff;padding:12px}
+    .hs-summary-form .full{grid-column:1/-1}
+    .hs-summary-form label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
+    .hs-summary-form select,.hs-summary-form input,.hs-summary-form textarea{width:100%;box-sizing:border-box}
+    .hs-summary-form textarea{min-height:82px;resize:vertical}
+    .hs-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    .hs-source-note{font-size:10.5px;color:#667085;line-height:1.55;margin:10px 0 2px}
+    @media(max-width:760px){
+      .hs-summary{grid-template-columns:1fr 1fr}
+      .hs-copy-box{align-items:flex-start;flex-direction:column}
+      .hs-copy-box .btn{width:100%}
+      .hs-profile-grid,.hs-summary-form{grid-template-columns:1fr}
+      .hs-field.full,.hs-summary-form .full{grid-column:1}
+      .hs-section-head,.hs-item-top{align-items:flex-start;flex-direction:column}
+      .hs-options{display:grid;grid-template-columns:repeat(3,1fr)}
+      .hs-option{justify-content:center}
+      .hs-actions .btn{flex:1}
+    }
+  `;
+  if(!document.getElementById(style.id))document.head.appendChild(style);
+
+  const local={
+    eventId:null,
+    record:null,
+    previous:null,
+    previousEvent:null,
+    homeProfile:{},
+    answers:{},
+    notes:{},
+    summary:{},
+    expandedNotes:new Set(),
+    pendingCopyFromId:null,
+    hasLaterCompleted:false
+  };
+
+  const safeObj=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const eventForms=id=>(state.assessmentEventForms||[]).filter(x=>x.assessment_event_id===id);
+  const homeSafetyForm=id=>eventForms(id).find(x=>x.form_code==='home_safety')||null;
+  const canEditEvent=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+
+  function answerStatus(key){return local.answers?.[key]||null;}
+  function previousStatus(key){return local.previous?.answers?.[key]||null;}
+  function riskKeys(){return HOME_SAFETY_ITEMS.filter(item=>answerStatus(item.key)==='needs_improvement').map(item=>item.key);}
+  function previousRiskKeys(){
+    const answers=safeObj(local.previous?.answers);
+    return HOME_SAFETY_ITEMS.filter(item=>answers[item.key]==='needs_improvement').map(item=>item.key);
+  }
+  function answeredCount(){return HOME_SAFETY_ITEMS.filter(item=>!!answerStatus(item.key)).length;}
+  function changeKind(key){
+    const now=answerStatus(key);
+    const prev=previousStatus(key);
+    if(!now||!prev)return null;
+    if(now==='needs_improvement'&&prev==='needs_improvement')return {key:'persistent',label:'持續風險'};
+    if(now==='needs_improvement'&&prev!=='needs_improvement')return {key:'new-risk',label:'新增風險'};
+    if(prev==='needs_improvement'&&now==='safe')return {key:'improved',label:'已改善'};
+    if(prev==='needs_improvement'&&now==='not_applicable')return {key:'no-longer',label:'不再適用'};
+    return null;
+  }
+  function countChange(kind){return HOME_SAFETY_ITEMS.filter(item=>changeKind(item.key)?.key===kind).length;}
+  function isAutoNotApplicable(key){
+    return (STAIR_KEYS.includes(key)&&local.homeProfile.uses_stairs==='no')
+      ||(KITCHEN_KEYS.includes(key)&&local.homeProfile.uses_kitchen==='no');
+  }
+
+  async function loadHomeSafety(eventId){
+    const row=eventById(eventId);
+    if(!row)throw new Error('找不到評估事件');
+
+    const [currentRes,historyRes]=await Promise.all([
+      db.from('assessment_home_safety_records')
+        .select('*')
+        .eq('assessment_event_id',eventId)
+        .maybeSingle(),
+      db.from('assessment_home_safety_records')
+        .select('*')
+        .eq('case_id',row.case_id)
+        .not('confirmed_at','is',null)
+        .neq('assessment_event_id',eventId)
+        .order('confirmed_at',{ascending:false})
+    ]);
+    if(currentRes.error)throw currentRes.error;
+    if(historyRes.error)throw historyRes.error;
+
+    local.eventId=eventId;
+    local.record=currentRes.data||null;
+    local.homeProfile={...safeObj(local.record?.home_profile)};
+    local.answers={...safeObj(local.record?.answers)};
+    local.notes={...safeObj(local.record?.notes)};
+    local.summary={...safeObj(local.record?.summary)};
+    local.expandedNotes=new Set();
+
+    const dated=(historyRes.data||[])
+      .map(record=>({record,event:eventById(record.assessment_event_id)}))
+      .filter(x=>x.event?.planned_date);
+
+    local.hasLaterCompleted=dated.some(x=>x.event.planned_date>row.planned_date);
+    const candidates=dated
+      .filter(x=>x.event.planned_date<row.planned_date)
+      .sort((a,b)=>{
+        const byDate=String(b.event.planned_date).localeCompare(String(a.event.planned_date));
+        if(byDate!==0)return byDate;
+        return String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||''));
+      });
+
+    local.previous=candidates[0]?.record||null;
+    local.previousEvent=candidates[0]?.event||null;
+    const copiedSourceIsValid=!!local.record?.copied_from_id&&local.record.copied_from_id===local.previous?.id;
+    local.pendingCopyFromId=copiedSourceIsValid?local.record.copied_from_id:null;
+  }
+
+  function renderSummaryCards(){
+    const risk=riskKeys().length;
+    const prev=previousRiskKeys().length;
+    const newRisk=countChange('new-risk');
+    const improved=countChange('improved');
+    const persistent=countChange('persistent');
+    return `
+      <section class="hs-summary">
+        <div class="hs-summary-card">
+          <label>本次需改善</label>
+          <strong>${risk}</strong>
+          <small>共 ${HOME_SAFETY_ITEMS.length} 項｜已填 ${answeredCount()} 項</small>
+        </div>
+        <div class="hs-summary-card">
+          <label>前次需改善</label>
+          <strong>${local.previous?prev:'—'}</strong>
+          <small>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00'):'無前次完成紀錄'}</small>
+        </div>
+        <div class="hs-summary-card">
+          <label>新增風險</label>
+          <strong>${local.previous?newRisk:'—'}</strong>
+          <small>${local.previous?'較前次新增的需改善項目':'首次評估不比較'}</small>
+        </div>
+        <div class="hs-summary-card">
+          <label>已改善</label>
+          <strong>${local.previous?improved:'—'}</strong>
+          <small>${local.previous?'持續風險 '+persistent+' 項':'完成後建立後續比較基準'}</small>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderCopyBox(){
+    if(!local.previous)return '';
+    return `
+      <div class="hs-copy-box">
+        <div>
+          <strong>前次居家環境安全評估：需改善 ${previousRiskKeys().length} 項</strong>
+          <span>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00')+'｜':''}可帶入住宅概況與21項結果，再逐項確認本次狀況。</span>
+        </div>
+        <button id="homeSafetyCopyPrevious" type="button" class="btn sm">帶入前次評估</button>
+      </div>
+    `;
+  }
+
+  function housingOptions(){
+    return '<option value="">請選擇</option>'+HOUSING_TYPES.map(([value,label])=>`<option value="${value}" ${local.homeProfile.housing_type===value?'selected':''}>${label}</option>`).join('');
+  }
+
+  function renderProfile(){
+    const mobility=Array.isArray(local.homeProfile.mobility_modes)?local.homeProfile.mobility_modes:[];
+    return `
+      <section class="hs-profile">
+        <div class="hs-profile-head"><strong>住宅與活動概況</strong></div>
+        <div class="hs-profile-grid">
+          <div class="hs-field">
+            <label>住宅類型 *</label>
+            <select data-hs-profile="housing_type">${housingOptions()}</select>
+          </div>
+          <div class="hs-field">
+            <label>個案主要活動樓層 *</label>
+            <input data-hs-profile="primary_floor" value="${escapeHTML(local.homeProfile.primary_floor||'')}" placeholder="例如：一樓">
+          </div>
+          ${local.homeProfile.housing_type==='other'?`
+            <div class="hs-field full">
+              <label>其他住宅類型</label>
+              <input data-hs-profile="housing_other" value="${escapeHTML(local.homeProfile.housing_other||'')}" placeholder="請說明">
+            </div>
+          `:''}
+          <div class="hs-field">
+            <label>是否需經常上下樓梯 *</label>
+            <select data-hs-profile="uses_stairs">
+              <option value="">請選擇</option>
+              <option value="yes" ${local.homeProfile.uses_stairs==='yes'?'selected':''}>是</option>
+              <option value="no" ${local.homeProfile.uses_stairs==='no'?'selected':''}>否</option>
+            </select>
+          </div>
+          <div class="hs-field">
+            <label>是否有明顯門檻或高低差 *</label>
+            <select data-hs-profile="has_level_difference">
+              <option value="">請選擇</option>
+              <option value="yes" ${local.homeProfile.has_level_difference==='yes'?'selected':''}>有</option>
+              <option value="no" ${local.homeProfile.has_level_difference==='no'?'selected':''}>無</option>
+            </select>
+          </div>
+          ${local.homeProfile.has_level_difference==='yes'?`
+            <div class="hs-field full">
+              <label>門檻／高低差位置與情形</label>
+              <input data-hs-profile="level_difference_note" value="${escapeHTML(local.homeProfile.level_difference_note||'')}" placeholder="例如：浴室入口有明顯門檻，高約5公分">
+            </div>
+          `:''}
+          <div class="hs-field full">
+            <label>主要移動方式 *（可複選）</label>
+            <div class="hs-mobility">
+              ${MOBILITY_OPTIONS.map(([value,label])=>`
+                <label class="hs-check">
+                  <input type="checkbox" data-hs-mobility="${value}" ${mobility.includes(value)?'checked':''}>
+                  ${label}
+                </label>
+              `).join('')}
+            </div>
+          </div>
+          ${mobility.includes('other')?`
+            <div class="hs-field full">
+              <label>其他移動方式</label>
+              <input data-hs-profile="mobility_other" value="${escapeHTML(local.homeProfile.mobility_other||'')}" placeholder="請說明">
+            </div>
+          `:''}
+          <div class="hs-field">
+            <label>個案是否會自行進入廚房或備餐 *</label>
+            <select data-hs-profile="uses_kitchen">
+              <option value="">請選擇</option>
+              <option value="yes" ${local.homeProfile.uses_kitchen==='yes'?'selected':''}>是</option>
+              <option value="no" ${local.homeProfile.uses_kitchen==='no'?'selected':''}>否</option>
+            </select>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderItem(key,label,disabled){
+    const current=answerStatus(key);
+    const prev=previousStatus(key);
+    const change=changeKind(key);
+    const noteValue=String(local.notes?.[key]||'');
+    const manualNotApplicable=current==='not_applicable'&&!isAutoNotApplicable(key);
+    const noteRequired=current==='needs_improvement'||manualNotApplicable;
+    const showNote=noteRequired||!!noteValue||local.expandedNotes.has(key);
+    const notePlaceholder=current==='needs_improvement'
+      ?'請說明需改善的狀況'
+      :manualNotApplicable
+        ?'請說明不適用原因'
+        :'補充備註（選填）';
+    return `
+      <div class="hs-item ${current==='needs_improvement'?'risk':''}" data-hs-item="${key}">
+        <div class="hs-item-top">
+          <div class="hs-item-title">${escapeHTML(label)}</div>
+          <div>
+            ${prev?`<span style="font-size:9.5px;color:#667085;margin-right:6px">前次：${escapeHTML(STATUS_LABELS[prev]||prev)}</span>`:''}
+            ${change?`<span class="hs-change ${change.key}">${change.label}</span>`:''}
+          </div>
+        </div>
+        <div class="hs-options">
+          ${['safe','needs_improvement','not_applicable'].map(status=>`
+            <label class="hs-option ${status} ${current===status?'selected':''}">
+              <input type="radio" name="hs_${key}" value="${status}" ${current===status?'checked':''} ${disabled?'disabled':''}>
+              ${STATUS_LABELS[status]}
+            </label>
+          `).join('')}
+        </div>
+        ${!showNote&&!disabled&&!['needs_improvement','not_applicable'].includes(current)
+          ?`<button type="button" class="btn sm" data-hs-add-note="${key}">＋ 補充備註</button>`
+          :''}
+        ${showNote?`
+          <div style="margin-top:7px">
+            <label style="display:block;font-size:10px;font-weight:850;color:#667085;margin-bottom:4px">備註${noteRequired?' *':''}</label>
+            <input class="hs-item-note" data-hs-note="${key}" value="${escapeHTML(noteValue)}" placeholder="${escapeHTML(notePlaceholder)}">
+          </div>
+        `:''}
+      </div>
+    `;
+  }
+
+  function renderSection(section){
+    const conditionalValue=section.conditional?local.homeProfile?.[section.conditional]:null;
+    const disabled=conditionalValue==='no';
+    const note=section.key==='stairs'&&disabled
+      ?'已選擇不需經常使用樓梯，本區自動列為不適用'
+      :section.key==='kitchen'&&disabled
+        ?'已選擇不自行進入廚房或備餐，本區自動列為不適用'
+        :'';
+    return `
+      <section class="hs-section ${disabled?'disabled':''}">
+        <div class="hs-section-head">
+          <strong>${escapeHTML(section.title)}</strong>
+          ${note?`<small>${escapeHTML(note)}</small>`:''}
+        </div>
+        ${section.items.map(([key,label])=>renderItem(key,label,disabled)).join('')}
+      </section>
+    `;
+  }
+
+  function renderRiskBox(){
+    const risks=riskKeys();
+    if(!risks.length){
+      return `
+        <div class="hs-risk-box no-risk">
+          <strong>本次目前未標記需改善項目</strong>
+        </div>
+      `;
+    }
+    return `
+      <div class="hs-risk-box">
+        <strong>本次發現需改善 ${risks.length} 項</strong>
+        <div class="hs-risk-list">
+          ${risks.map(key=>`<span class="hs-risk-pill">${escapeHTML(ITEM_BY_KEY[key]?.label||key)}</span>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderSummaryForm(){
+    const response=local.summary.family_response||'';
+    const explained=local.summary.explained_to||'';
+    const followup=local.summary.followup_required||'';
+    return `
+      ${renderRiskBox()}
+      <section class="hs-summary-form">
+        <div class="full">
+          <label>主要環境安全問題／改善建議${riskKeys().length?' *':''}</label>
+          <textarea data-hs-summary="recommendations" placeholder="例如：建議浴廁增設防滑措施及扶手，夜間由床至廁所動線加強照明。">${escapeHTML(local.summary.recommendations||'')}</textarea>
+        </div>
+        <div>
+          <label>說明對象${riskKeys().length?' *':''}</label>
+          <select data-hs-summary="explained_to">
+            <option value="">請選擇</option>
+            <option value="client" ${explained==='client'?'selected':''}>已向個案說明</option>
+            <option value="family" ${explained==='family'?'selected':''}>已向家屬說明</option>
+            <option value="both" ${explained==='both'?'selected':''}>已向個案及家屬說明</option>
+            <option value="not_explained" ${explained==='not_explained'?'selected':''}>未說明</option>
+          </select>
+        </div>
+        <div>
+          <label>個案／家屬回應${riskKeys().length?' *':''}</label>
+          <select data-hs-summary="family_response">
+            <option value="">請選擇</option>
+            <option value="agree" ${response==='agree'?'selected':''}>同意改善</option>
+            <option value="partial" ${response==='partial'?'selected':''}>部分同意</option>
+            <option value="unwilling" ${response==='unwilling'?'selected':''}>暫無意願改善</option>
+            <option value="unable" ${response==='unable'?'selected':''}>無能力自行改善</option>
+            <option value="other" ${response==='other'?'selected':''}>其他</option>
+            <option value="not_needed" ${response==='not_needed'?'selected':''}>本次無需改善</option>
+          </select>
+        </div>
+        ${explained==='not_explained'?`
+          <div class="full">
+            <label>未說明原因 *</label>
+            <input data-hs-summary="not_explained_reason" value="${escapeHTML(local.summary.not_explained_reason||'')}" placeholder="請說明原因">
+          </div>
+        `:''}
+        ${response==='other'?`
+          <div class="full">
+            <label>其他回應</label>
+            <input data-hs-summary="family_response_other" value="${escapeHTML(local.summary.family_response_other||'')}" placeholder="請說明">
+          </div>
+        `:''}
+        <div>
+          <label>是否需後續追蹤${riskKeys().length?' *':''}</label>
+          <select data-hs-summary="followup_required">
+            <option value="">請選擇</option>
+            <option value="yes" ${followup==='yes'?'selected':''}>是</option>
+            <option value="no" ${followup==='no'?'selected':''}>否</option>
+          </select>
+        </div>
+        ${followup==='yes'?`
+          <div>
+            <label>後續追蹤重點</label>
+            <input data-hs-summary="followup_note" value="${escapeHTML(local.summary.followup_note||'')}" placeholder="例如：下次家訪確認扶手裝設情形">
+          </div>
+        `:''}
+      </section>
+    `;
+  }
+
+  function renderHomeSafetyPage(){
+    const row=eventById(local.eventId);
+    const c=row?caseById(row.case_id):null;
+    const form=row?homeSafetyForm(row.id):null;
+    if(!row||!c||!form){
+      window.v52AssessmentApi?.renderAssessmentPage?.();
+      return;
+    }
+
+    const canEdit=canEditEvent(row)&&row.status!=='voided';
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,'居家環境安全評估');
+
+    $('content').innerHTML=`
+      <div class="hs-page">
+        <div class="page-head">
+          <div>
+            <h1>${escapeHTML(c.case_name)}｜居家環境安全評估</h1>
+            <p>評估日期：${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}　狀態：${escapeHTML(({pending:'待進行',in_progress:'評估中',forms_completed:'表單完成／待總結',completed:'已完成',voided:'作廢'})[row.status]||row.status)}</p>
+          </div>
+          <div class="assessment-head-actions">
+            <button id="homeSafetyBack" type="button" class="btn">← 返回評估事件</button>
+          </div>
+        </div>
+
+        ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
+        ${renderSummaryCards()}
+        ${renderCopyBox()}
+        ${local.hasLaterCompleted
+          ?'<div class="hs-notice">此筆評估日期早於個案較新的已完成居家環境安全評估；系統只會將本次日期以前最近一筆已完成紀錄視為「前次評估」。</div>'
+          :''}
+        ${local.pendingCopyFromId&&!local.record?.confirmed_at
+          ?'<div class="hs-notice">已帶入前次資料，請逐項確認本次環境狀況後再完成本次確認。</div>'
+          :''}
+
+        ${renderProfile()}
+
+        <div class="hs-sections">
+          ${HOME_SAFETY_SECTIONS.map(renderSection).join('')}
+        </div>
+
+        ${renderSummaryForm()}
+
+        <div class="hs-source-note">
+          本表用於居家安全風險辨識及後續追蹤，不計算總分；「需改善」項目應搭配改善建議及後續追蹤判斷。
+        </div>
+
+        ${canEdit?`
+          <div class="hs-actions">
+            ${form.status!=='completed'?'<button id="homeSafetySaveDraft" type="button" class="btn">儲存草稿</button>':''}
+            <button id="homeSafetyConfirm" type="button" class="btn primary">${form.status==='completed'?'儲存修正並確認':'完成本次確認'}</button>
+          </div>
+        `:''}
+      </div>
+    `;
+
+    bindHomeSafetyEvents(row);
+  }
+
+  function rerenderPreservingScroll(){
+    const y=window.scrollY;
+    renderHomeSafetyPage();
+    requestAnimationFrame(()=>window.scrollTo({top:y,behavior:'auto'}));
+  }
+
+  function setConditionalGroup(profileKey,value){
+    const keys=profileKey==='uses_stairs'?STAIR_KEYS:profileKey==='uses_kitchen'?KITCHEN_KEYS:[];
+    if(value==='no'){
+      keys.forEach(key=>{local.answers[key]='not_applicable';});
+    }else if(value==='yes'){
+      keys.forEach(key=>{
+        if(local.answers[key]==='not_applicable')delete local.answers[key];
+      });
+    }
+  }
+
+  function bindHomeSafetyEvents(row){
+    $('homeSafetyBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+
+    document.querySelectorAll('[data-hs-profile]').forEach(el=>{
+      const key=el.dataset.hsProfile;
+      const rerenderKeys=['housing_type','has_level_difference','uses_stairs','uses_kitchen'];
+      el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{
+        local.homeProfile[key]=el.value;
+        if(key==='uses_stairs'||key==='uses_kitchen')setConditionalGroup(key,el.value);
+        if(rerenderKeys.includes(key))rerenderPreservingScroll();
+      });
+    });
+
+    document.querySelectorAll('[data-hs-mobility]').forEach(input=>{
+      input.addEventListener('change',()=>{
+        const selected=[...document.querySelectorAll('[data-hs-mobility]:checked')].map(x=>x.dataset.hsMobility);
+        local.homeProfile.mobility_modes=selected;
+        rerenderPreservingScroll();
+      });
+    });
+
+    document.querySelectorAll('input[name^="hs_"]').forEach(input=>{
+      input.addEventListener('change',()=>{
+        const key=input.name.replace(/^hs_/,'');
+        local.answers[key]=input.value;
+        rerenderPreservingScroll();
+      });
+    });
+
+    document.querySelectorAll('[data-hs-add-note]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        local.expandedNotes.add(btn.dataset.hsAddNote);
+        rerenderPreservingScroll();
+      });
+    });
+
+    document.querySelectorAll('[data-hs-note]').forEach(input=>{
+      input.addEventListener('input',()=>{
+        local.notes[input.dataset.hsNote]=input.value;
+      });
+    });
+
+    document.querySelectorAll('[data-hs-summary]').forEach(el=>{
+      const key=el.dataset.hsSummary;
+      const rerenderKeys=['explained_to','family_response','followup_required'];
+      el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{
+        local.summary[key]=el.value;
+        if(rerenderKeys.includes(key))rerenderPreservingScroll();
+      });
+    });
+
+    $('homeSafetyCopyPrevious')?.addEventListener('click',()=>{
+      if(!local.previous)return;
+      const hasCurrent=Object.keys(local.answers||{}).length||Object.keys(local.homeProfile||{}).length;
+      if(hasCurrent&&!confirm('帶入前次評估會覆蓋目前尚未儲存的住宅概況與21項結果，是否繼續？'))return;
+      local.homeProfile={...safeObj(local.previous.home_profile)};
+      local.answers={...safeObj(local.previous.answers)};
+      local.notes={...safeObj(local.previous.notes)};
+      local.summary={};
+      local.pendingCopyFromId=local.previous.id;
+      rerenderPreservingScroll();
+      toast('已帶入前次居家環境安全評估，請逐項確認本次狀況','success');
+    });
+
+    $('homeSafetySaveDraft')?.addEventListener('click',()=>saveHomeSafety(false));
+    $('homeSafetyConfirm')?.addEventListener('click',()=>saveHomeSafety(true));
+  }
+
+  function validateFinalize(){
+    if(!local.homeProfile.housing_type)return '請選擇住宅類型';
+    if(!String(local.homeProfile.primary_floor||'').trim())return '請填寫個案主要活動樓層';
+    if(!local.homeProfile.uses_stairs)return '請選擇是否需經常上下樓梯';
+    if(!local.homeProfile.has_level_difference)return '請選擇是否有明顯門檻或高低差';
+    if(!Array.isArray(local.homeProfile.mobility_modes)||!local.homeProfile.mobility_modes.length)return '請至少選擇一項主要移動方式';
+    if(!local.homeProfile.uses_kitchen)return '請選擇個案是否會自行進入廚房或備餐';
+
+    const missing=HOME_SAFETY_ITEMS.filter(item=>!answerStatus(item.key));
+    if(missing.length)return '尚有未完成項目：'+missing.map(x=>x.label).join('、');
+
+    const missingRiskNotes=HOME_SAFETY_ITEMS.filter(item=>
+      answerStatus(item.key)==='needs_improvement'
+      && !String(local.notes?.[item.key]||'').trim()
+    );
+    if(missingRiskNotes.length)return '以下項目選擇「需改善」，請填寫備註：'+missingRiskNotes.map(x=>x.label).join('、');
+
+    const missingNaNotes=HOME_SAFETY_ITEMS.filter(item=>
+      answerStatus(item.key)==='not_applicable'
+      && !isAutoNotApplicable(item.key)
+      && !String(local.notes?.[item.key]||'').trim()
+    );
+    if(missingNaNotes.length)return '以下項目選擇「不適用」，請填寫原因：'+missingNaNotes.map(x=>x.label).join('、');
+
+    if(riskKeys().length){
+      if(!String(local.summary.recommendations||'').trim())return '本次有需改善項目，請填寫主要環境安全問題／改善建議';
+      if(!local.summary.explained_to)return '本次有需改善項目，請選擇說明對象';
+      if(local.summary.explained_to==='not_explained'&&!String(local.summary.not_explained_reason||'').trim())return '請填寫未說明原因';
+      if(!local.summary.family_response)return '本次有需改善項目，請選擇個案／家屬回應';
+      if(!local.summary.followup_required)return '本次有需改善項目，請選擇是否需後續追蹤';
+    }
+    return null;
+  }
+
+  async function saveHomeSafety(finalize){
+    const row=eventById(local.eventId);
+    if(!row||!canEditEvent(row))return toast('您沒有此個案的評估編輯權限','error');
+
+    if(finalize){
+      const problem=validateFinalize();
+      if(problem)return toast(problem,'warn');
+    }else{
+      const hasData=Object.keys(local.homeProfile||{}).length||Object.keys(local.answers||{}).length||Object.keys(local.notes||{}).length||Object.keys(local.summary||{}).length;
+      if(!hasData)return toast('至少填寫一項後再儲存草稿','warn');
+    }
+
+    const scrollY=window.scrollY;
+    showLoading(true);
+    try{
+      const {error}=await db.rpc('save_assessment_home_safety',{
+        p_event_id:row.id,
+        p_home_profile:local.homeProfile,
+        p_answers:local.answers,
+        p_notes:local.notes,
+        p_summary:local.summary,
+        p_finalize:!!finalize,
+        p_copied_from_id:local.pendingCopyFromId||local.record?.copied_from_id||null
+      });
+      if(error)throw error;
+
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+      if(finalize){
+        window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);
+        toast('居家環境安全評估已完成','success');
+      }else{
+        await loadHomeSafety(row.id);
+        renderHomeSafetyPage();
+        requestAnimationFrame(()=>window.scrollTo({top:scrollY,behavior:'auto'}));
+        toast('居家環境安全評估草稿已儲存','success');
+      }
+    }catch(err){
+      console.error(err);
+      const msg=String(err?.message||err);
+      if(msg.includes('HOME_SAFETY_INCOMPLETE'))toast('尚有居家環境安全評估項目未完成','warn');
+      else toast('儲存居家環境安全評估失敗：'+msg,'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);
+    if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+    if(!homeSafetyForm(eventId))return toast('本次評估未選用居家環境安全評估','warn');
+
+    showLoading(true);
+    try{
+      await loadHomeSafety(eventId);
+      renderHomeSafetyPage();
+      window.scrollTo({top:0,behavior:'auto'});
+    }catch(err){
+      console.error(err);
+      toast('讀取居家環境安全評估失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  window.v52AssessmentHomeSafety={open};
+})();

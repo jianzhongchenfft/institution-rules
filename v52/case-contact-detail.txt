@@ -1,0 +1,306 @@
+
+// V5.2 家、電訪 V1：透過公開 hook 整合個案頁、紀錄檢視與列印
+(function(){
+  var api=window.caseContactApi;
+  if(!api)return;
+
+  function ccField(label,value,wide){
+    var v=(value===null||value===undefined||value==='')?'—':value;
+    return '<div class="case-data-item'+(wide?' wide':'')+'"><label>'+escapeHTML(label)+'</label><div>'+escapeHTML(String(v))+'</div></div>';
+  }
+  function ccEmpty(text){return '<div class="case-empty-inline">'+escapeHTML(text)+'</div>';}
+  function ccPlanDate(v){return v?rocDate(v+'T00:00:00'):'日期未辨識';}
+  function ccServiceStatus(c){
+    var key=c?.service_status||'active';
+    if(key==='suspended')return {key:'due',text:'暫停'};
+    if(key==='closed')return {key:'overdue',text:'已結案'};
+    return {key:'normal',text:'服務中'};
+  }
+
+  async function ccEnrichCaseDetailData(data){
+    var records=api.recordsForCase(data.c.id);
+    data.contactRecords=records;
+    var ids=records.map(function(x){return x.id;});
+    data.ccPeople=[];data.ccFormal=[];data.ccHome=[];data.ccPhone=[];data.ccSatisfaction=[];data.ccLinks=[];
+    if(!ids.length)return data;
+    var rs=await Promise.all([
+      db.from('case_contact_record_people').select('*').in('record_id',ids).order('created_at'),
+      db.from('case_contact_formal_details').select('*').in('record_id',ids),
+      db.from('case_home_visit_details').select('*').in('record_id',ids),
+      db.from('case_phone_details').select('*').in('record_id',ids),
+      db.from('case_contact_satisfaction').select('*').in('record_id',ids),
+      db.from('case_record_links').select('*').in('from_id',ids)
+    ]);
+    var bad=rs.find(function(x){return x.error;});if(bad&&bad.error)throw bad.error;
+    data.ccPeople=rs[0].data||[];data.ccFormal=rs[1].data||[];data.ccHome=rs[2].data||[];
+    data.ccPhone=rs[3].data||[];data.ccSatisfaction=rs[4].data||[];data.ccLinks=rs[5].data||[];
+    return data;
+  }
+
+  function ccExtendTimeline(items,data){
+    (data.contactRecords||[]).forEach(function(r){
+      var d=(r.record_date||'1970-01-01')+'T12:00:00';
+      items.push({date:d,title:api.typeLabel(r.record_type)+(r.status==='draft'?'（草稿）':r.status==='voided'?'（已作廢）':''),text:r.summary||api.reasonLabel(r.record_type,r.reason_code)||'聯繫紀錄',sort:new Date(d).getTime()});
+    });
+    return items;
+  }
+
+  function ccCycleCard(c,label,obj,planType){
+    var plan=api.currentPlan(c.id,planType);
+    return '<div class="cc-cycle-card"><div class="cc-cycle-head"><div><strong>'+escapeHTML(label)+'</strong><div class="cc-cycle-meta">'+
+      (obj.last?'最近完成：'+rocDate((obj.last.record_date||obj.last.planned_date)+'T00:00:00'):'尚無完成紀錄')+
+      '<br>制度期限：'+(obj.due?rocDate(obj.due+'T00:00:00'):'—')+
+      '<br>預定執行日：'+(plan?rocDate(plan.planned_date+'T00:00:00'):'尚未安排')+
+      '</div></div><span class="cc-chip '+obj.key+'">'+escapeHTML(obj.text)+'</span></div>'+
+      (api.canEditCase(c)?'<div style="margin-top:8px;text-align:right"><button class="btn sm" data-cc-plan="'+planType+'">'+(plan?'修改預定日':'安排日期')+'</button></div>':'')+
+      '</div>';
+  }
+
+  function ccRenderOverviewTab(data){
+    var c=data.c,currentPlan=data.plans.find(function(p){return p.is_current;})||null;
+    var currentServices=data.services.filter(function(x){return x.is_current;});
+    var currentBudgets=data.budgets.filter(function(x){return x.is_current;});
+    var latest=api.latestContact(c.id),pending=api.pendingFollowups(c.id),serviceStatus=ccServiceStatus(c);
+    var contact=data.contacts.find(function(x){return x.is_primary_contact;})||data.contacts[0]||null;
+    var serviceText=currentServices.length?currentServices.map(function(x){return x.service_code+(x.approved_quantity!=null?' ×'+x.approved_quantity:'');}).join('、'):'—';
+    var budgetText=currentBudgets.length?currentBudgets.map(function(x){return x.category+' 剩餘 '+(x.remaining_amount??'—');}).join('、'):'—';
+    var hc=api.cycle(c,'home_visit'),pc=api.cycle(c,'formal_phone'),ac=api.assessmentCycle(c);
+    return [
+      '<div class="case-overview-grid">',
+        '<div class="case-overview-card"><label>服務狀態</label><strong>'+escapeHTML(serviceStatus.text)+'</strong><small>服務類別：'+escapeHTML(c.service_usage_type||'—')+'</small></div>',
+        '<div class="case-overview-card"><label>CMS</label><strong>'+escapeHTML(c.cms_level||'—')+'</strong><small>照管平台計畫：'+escapeHTML(currentPlan?ccPlanDate(currentPlan.plan_date):'尚無')+'</small></div>',
+        '<div class="case-overview-card"><label>負責督導</label><strong>'+escapeHTML(api.staffName(c.supervisor_id))+'</strong><small>'+escapeHTML(c.a_unit_name||'A單位未設定')+'</small></div>',
+        '<div class="case-overview-card"><label>待追蹤事項</label><strong>'+pending.length+' 項</strong><small>'+(pending[0]?escapeHTML(pending[0].content):'目前無待追蹤事項')+'</small></div>',
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>近期家、電訪</strong><button class="btn sm" data-case-tab-jump="visits">查看家、電訪</button></div>',
+        '<div class="cc-status-grid"><span class="cc-chip '+hc.key+'">家訪 '+escapeHTML(hc.text)+'</span><span class="cc-chip '+pc.key+'">正式電訪 '+escapeHTML(pc.text)+'</span><span class="cc-chip '+ac.key+'">評估 '+escapeHTML(ac.text)+'</span></div>',
+        latest?'<div style="margin-top:10px"><strong>'+rocDate(latest.record_date+'T00:00:00')+'　'+escapeHTML(api.typeLabel(latest.record_type))+'</strong><div class="case-panel-note" style="margin-top:5px">'+escapeHTML(latest.summary||api.reasonLabel(latest.record_type,latest.reason_code))+'</div></div>':ccEmpty('尚無家、電訪或一般電話聯繫紀錄'),
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>目前核定服務</strong><button class="btn sm" data-case-tab-jump="services">查看服務核定</button></div>',
+        currentServices.length?'<div class="approved-chip-wrap">'+currentServices.map(function(x){return '<span class="approved-chip">'+escapeHTML(x.service_code)+(x.service_name?' '+escapeHTML(x.service_name):'')+(x.approved_quantity!=null?' ×'+escapeHTML(x.approved_quantity):'')+'</span>';}).join('')+'</div>':ccEmpty('尚無目前核定服務'),
+        '<div class="case-panel-note" style="margin-top:9px">額度：'+escapeHTML(budgetText)+'</div>',
+      '</div>',
+      '<div class="case-overview-grid">',
+        '<div class="case-panel-card" style="grid-column:span 2"><div class="case-panel-head"><strong>最近聯繫</strong></div>'+
+          (latest?'<div><strong>'+rocDate(latest.record_date+'T00:00:00')+'　'+escapeHTML(api.typeLabel(latest.record_type))+'</strong><div class="case-panel-note" style="margin-top:6px">'+escapeHTML(latest.summary||'未填摘要')+'</div></div>':ccEmpty('尚無聯繫紀錄'))+
+        '</div>',
+        '<div class="case-panel-card" style="grid-column:span 2"><div class="case-panel-head"><strong>主要聯絡資訊</strong><button class="btn sm" data-case-tab-jump="basic">查看基本資料</button></div>'+
+          (contact?'<div><strong>'+escapeHTML(contact.contact_name)+(contact.relationship?'・'+escapeHTML(contact.relationship):'')+'</strong><div class="case-panel-note" style="margin-top:6px">'+escapeHTML(contact.phone||'未填電話')+(contact.is_primary_caregiver?'｜主要照顧者':'')+'</div></div>':ccEmpty('尚無聯絡人資料'))+
+        '</div>',
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><strong>目前照管平台照顧計畫</strong><button class="btn sm" data-case-tab-jump="platform-plan">查看版本</button></div>',
+        currentPlan?'<div class="case-data-grid">'+ccField('計畫日期',ccPlanDate(currentPlan.plan_date))+ccField('A單位',currentPlan.a_unit_name||c.a_unit_name)+ccField('A個管',currentPlan.case_manager_name||c.case_manager_name)+ccField('核定服務',serviceText,true)+'</div>':ccEmpty('尚無照管平台照顧計畫'),
+      '</div>'
+    ].join('');
+  }
+
+  function ccRenderVisitsTab(data){
+    var c=data.c,records=data.contactRecords||[],pending=api.pendingFollowups(c.id);
+    var hc=api.cycle(c,'home_visit'),pc=api.cycle(c,'formal_phone'),ac=api.assessmentCycle(c);
+    var qPlan=api.currentPlan(c.id,'quarterly_bundle');
+    var rows=records.length?records.map(function(r){
+      var people=(data.ccPeople||[]).filter(function(x){return x.record_id===r.id;});
+      var names=people.map(function(x){return x.name_snapshot+(x.relationship_snapshot?'（'+x.relationship_snapshot+'）':'');}).join('、');
+      return '<div class="visit-item"><div class="visit-item-top"><div><strong>'+
+        rocDate(r.record_date+'T00:00:00')+'　'+escapeHTML(api.typeLabel(r.record_type))+
+        ' <span class="cc-record-badge '+r.status+'">'+escapeHTML(api.recordStatusLabel(r.status))+'</span></strong>'+
+        '<div class="visit-item-sub">執行人員：'+escapeHTML(r.performed_by_name_snapshot||api.staffName(r.performed_by_staff_id))+
+        (names?'｜對象：'+escapeHTML(names):'')+'｜原因：'+escapeHTML(api.reasonLabel(r.record_type,r.reason_code))+'</div></div>'+
+        '<div class="cc-record-actions"><button class="btn sm" data-cc-record="'+r.id+'">查看</button></div></div>'+
+        (r.summary?'<div class="visit-summary">'+escapeHTML(r.summary)+'</div>':'')+
+        (r.record_type==='formal_phone'&&r.counts_for_cycle===false?'<div class="followup-box">本次未成功聯繫，不計入每月正式電訪週期。</div>':'')+
+      '</div>';
+    }).join(''):ccEmpty('尚無家、電訪或一般電話聯繫紀錄');
+
+    return [
+      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>家、電訪</strong><div class="case-panel-note">家訪每3個月、正式電訪每1個月；一般電話聯繫不計入正式電訪週期。</div></div>',
+        '<div class="section-actions">'+(api.canEditCase(c)?'<button class="btn sm" data-add-visit="home">＋ 家訪</button><button class="btn sm primary" data-add-visit="phone">＋ 正式電訪</button><button class="btn sm" data-cc-add-general>＋ 一般電話聯繫</button>':'')+'</div></div>',
+        '<div class="case-overview-grid">',
+          ccCycleCard(c,'家訪｜每3個月',hc,'quarterly_bundle'),
+          ccCycleCard(c,'正式電訪｜每1個月',pc,'formal_phone'),
+          '<div class="cc-cycle-card"><div class="cc-cycle-head"><div><strong>評估｜每3個月</strong><div class="cc-cycle-meta">'+(ac.last?'最近完成：'+rocDate(ac.last.planned_date+'T00:00:00'):'尚無完成紀錄')+'<br>制度期限：'+(ac.due?rocDate(ac.due+'T00:00:00'):'—')+'<br>3個月工作預定日：'+(qPlan?rocDate(qPlan.planned_date+'T00:00:00'):'尚未安排')+'</div></div><span class="cc-chip '+ac.key+'">'+escapeHTML(ac.text)+'</span></div></div>',
+          '<div class="cc-cycle-card"><div class="cc-cycle-head"><div><strong>一般電話聯繫</strong><div class="cc-cycle-meta">供提醒家訪、簽約、服務異動與日常聯繫使用。<br>不會刷新正式電訪期限。</div></div><span class="cc-chip muted">日常紀錄</span></div></div>',
+        '</div>',
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>待追蹤事項</strong><div class="case-panel-note">家訪、電訪與一般聯繫建立的待辦會集中顯示。</div></div><span class="cc-chip '+(pending.length?'followup':'normal')+'">'+pending.length+' 項</span></div>',
+        pending.length?'<div class="cc-follow-list">'+pending.map(function(x){var late=x.due_date&&x.due_date<isoDate();return '<div class="cc-follow-row"><strong>'+escapeHTML(x.content)+'</strong><small>'+(x.due_date?(late?'已逾期｜':'預計 ')+rocDate(x.due_date+'T00:00:00'):'未設定日期')+'｜負責 '+escapeHTML(api.staffName(x.responsible_staff_id))+'</small></div>';}).join('')+'</div>':ccEmpty('目前無待追蹤事項'),
+      '</div>',
+      '<div class="case-panel-card"><div class="case-panel-head"><div><strong>歷史紀錄</strong><div class="case-panel-note">家訪、正式電訪、一般電話聯繫共用同一條歷程。</div></div><div class="section-actions"><button class="btn sm" data-cc-print-general>列印一般電話明細</button></div></div><div class="visit-history">'+rows+'</div></div>'
+    ].join('');
+  }
+
+  function ccFormalDetailHtml(bundle){
+    var d=bundle.formal;if(!d)return '';
+    var services=Array.isArray(d.service_snapshot)?d.service_snapshot:[];
+    var sats=bundle.satisfaction||[];
+    var satHtml=sats.length?'<table class="case-table-simple"><thead><tr><th>項目</th><th>結果</th><th>補充／原因</th></tr></thead><tbody>'+sats.map(function(x){
+      var label=({service_time:'服務時間安排',worker_attitude:'居服員服務態度',service_fit:'服務內容符合需求',punctuality:'服務準時性',service_quality:'服務品質',supervisor_support:'督導／聯絡窗口協助'})[x.item_code]||x.item_code;
+      return '<tr><td>'+escapeHTML(label)+'</td><td>'+escapeHTML(api.ratingLabel(x.rating_code))+'</td><td>'+escapeHTML(x.note||'—')+'</td></tr>';
+    }).join('')+'</tbody></table>':'';
+    return '<div class="import-detail-block"><strong>正式追蹤內容</strong><div class="case-data-grid" style="margin-top:8px">'+
+      ccField('服務使用情形',({normal:'正常使用',partial:'部分未使用',changed:'已有變化',suspended:'全面暫停',other:'其他'})[d.service_usage_status]||'—')+
+      ccField('服務是否符合需求',({fit:'符合',mostly_fit:'大致符合需留意',adjust:'建議調整'})[d.service_fit_status]||'—')+
+      ccField('近期重大事件',d.has_major_event?(d.major_event_note||'有'):'無',true)+
+      ccField('主要關切事項',d.has_primary_concern?(d.primary_concern_note||'有'):'無',true)+
+      ccField('評估處理',({none:'否',completed:'已完成本次評估',create_now:'立即建立本次評估',schedule_later:'待安排評估'})[d.assessment_action]||'—')+
+      ccField('本次處理／建議',d.action_note||'—',true)+
+      '</div>'+
+      (services.length?'<div style="margin-top:10px"><div class="case-panel-note">當次服務快照</div><div class="approved-chip-wrap" style="margin-top:5px">'+services.map(function(x){return '<span class="approved-chip">'+escapeHTML(x.service_code||'')+(x.service_name?' '+escapeHTML(x.service_name):'')+(x.approved_quantity!=null?' ×'+escapeHTML(x.approved_quantity):'')+'</span>';}).join('')+'</div></div>':'')+
+      (satHtml?'<div style="margin-top:10px"><div class="case-panel-note">服務滿意度</div>'+satHtml+'</div>':'')+
+      '</div>';
+  }
+
+  function ccPhoneDetailHtml(bundle){
+    var d=bundle.phone;if(!d)return '';
+    var type=bundle.main?.record_type||'formal_phone';
+    var contentLabel=type==='general_phone'
+      ?'聯繫內容／結果'
+      :(d.contact_success?'本次通話內容／重點':'未成功聯繫補充說明');
+    return '<div class="import-detail-block"><strong>聯繫結果</strong><div class="case-data-grid" style="margin-top:8px">'+
+      ccField('是否成功聯繫',d.contact_success?'成功':'未成功')+
+      (d.contact_success?'':ccField('未成功原因',(({no_answer:'未接聽',off:'關機',busy:'忙線',invalid:'電話錯誤／無效',other:'其他'})[d.failure_reason]||'—')+(d.failure_reason==='other'&&d.failure_note?'：'+d.failure_note:'')))+
+      (!d.contact_success?ccField('再次聯繫',d.needs_recontact?(d.recontact_date?rocDate(d.recontact_date+'T00:00:00'):'是'):'否'):'')+
+      ccField(contentLabel,d.contact_content||'—',true)+'</div></div>';
+  }
+
+  function ccHomeDetailHtml(bundle){
+    var d=bundle.home;if(!d)return '';
+    return '<div class="import-detail-block"><strong>家訪現場確認</strong><div class="case-data-grid" style="margin-top:8px">'+
+      ccField('家訪地點',({home:'案家',hospital:'醫院',facility:'住宿式機構',other:'其他'})[d.visit_location]||'—')+
+      ccField('排班執行情形',({normal:'正常',adjusted:'偶有調整',problem:'有明顯問題'})[d.schedule_execution_status]||'—')+
+      ccField('服務內容執行情形',({as_planned:'依照顧計畫執行',partial:'部分未執行',extra_need:'有額外需求',other:'其他'})[d.service_execution_status]||'—')+
+      ccField('服務執行困難',d.has_execution_difficulty?(d.execution_difficulty_note||'有'):'無',true)+'</div></div>';
+  }
+
+  function ccProcessedFollowupsHtml(bundle){
+    var rows=bundle.processedFollowups||[];
+    if(!rows.length)return '';
+    return '<div class="import-detail-block"><strong>本次處理的前次追蹤事項</strong><div class="cc-follow-list" style="margin-top:8px">'+rows.map(function(x){
+      var item=(state.caseFollowupItems||[]).find(function(i){return i.id===x.followup_item_id;});
+      return '<div class="cc-follow-row"><strong>'+escapeHTML(item?.content||'追蹤事項')+'</strong><small>結果：'+escapeHTML(api.followResultLabel(x.result_code))+(x.note?'｜'+escapeHTML(x.note):'')+(x.next_due_date?'｜下次 '+rocDate(x.next_due_date+'T00:00:00'):'')+'</small></div>';
+    }).join('')+'</div></div>';
+  }
+
+  function ccCurrentMonthRange(){
+    var now=new Date(),y=now.getFullYear(),m=now.getMonth();
+    function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+    return {start:iso(new Date(y,m,1)),end:iso(new Date(y,m+1,0))};
+  }
+
+  function ccGeneralPhonePrint(data,startDate,endDate){
+    var c=data.c,rows=(data.contactRecords||[]).filter(function(r){
+      return r.record_type==='general_phone'&&r.status==='completed'
+        &&(!startDate||r.record_date>=startDate)
+        &&(!endDate||r.record_date<=endDate);
+    });
+    if(!rows.length){toast('此期間沒有可列印的一般電話聯繫紀錄。','warn');return false;}
+    rows.sort(function(a,b){return String(a.record_date).localeCompare(String(b.record_date))||new Date(a.created_at)-new Date(b.created_at);});
+    var w=window.open('','_blank');if(!w){toast('瀏覽器阻擋列印視窗，請允許彈出式視窗。','warn');return false;}
+    var trs=rows.map(function(r){
+      var people=(data.ccPeople||[]).filter(function(x){return x.record_id===r.id;}).map(function(x){return x.name_snapshot+(x.relationship_snapshot?'（'+x.relationship_snapshot+'）':'');}).join('、');
+      var phone=(data.ccPhone||[]).find(function(x){return x.record_id===r.id;});
+      var content=phone?.contact_content||r.summary||'—';
+      return '<tr><td>'+rocDate(r.record_date+'T00:00:00')+'</td><td>'+escapeHTML(people||'—')+'</td><td>'+escapeHTML(api.reasonLabel(r.record_type,r.reason_code))+'</td><td>'+escapeHTML(content)+'</td><td>'+escapeHTML(r.performed_by_name_snapshot||api.staffName(r.performed_by_staff_id))+'</td></tr>';
+    }).join('');
+    var period=(startDate&&endDate)?rocDate(startDate+'T00:00:00')+' ～ '+rocDate(endDate+'T00:00:00'):'全部期間';
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>個案聯繫紀錄明細</title><style>@page{size:A4 portrait;margin:12mm 14mm}body{font-family:"BiauKai","DFKai-SB",serif;font-size:12px;line-height:1.45;color:#222}h1{text-align:center;font-size:19px;margin:0 0 6px}.sub{text-align:center;margin-bottom:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:5px 6px;vertical-align:top}th{background:#f5f5f5}</style></head><body><h1>桃園市私立劉信子居家長照機構<br>個案聯繫紀錄明細</h1><div class="sub">個案：'+escapeHTML(c.case_name)+'　期間：'+escapeHTML(period)+'</div><table><thead><tr><th>日期</th><th>聯絡對象</th><th>聯繫原因</th><th>聯繫內容／結果</th><th>聯繫人員</th></tr></thead><tbody>'+trs+'</tbody></table></body></html>');
+    w.document.close();setTimeout(function(){w.focus();w.print();},250);
+    return true;
+  }
+
+  function ccOpenGeneralPhonePrintModal(data){
+    var range=ccCurrentMonthRange();
+    openModal({
+      title:'列印一般電話聯繫明細',
+      confirmText:'開啟列印',
+      html:'<div class="form-grid">'+
+        '<div class="field"><label>列印期間 *</label><select id="ccGeneralPrintMode"><option value="month">本月</option><option value="custom">自訂期間</option></select></div>'+
+        '<div class="field full" id="ccGeneralPrintCustom" style="display:none"><div class="form-grid"><div class="field"><label>開始日期 *</label><input id="ccGeneralPrintStart" type="date" value="'+range.start+'"></div><div class="field"><label>結束日期 *</label><input id="ccGeneralPrintEnd" type="date" value="'+range.end+'"></div></div></div>'+
+        '<div class="field full"><div class="case-panel-note">「本月」會列印本月1日至月底的一般電話聯繫；正式電訪不會列入此明細。</div></div>'+
+      '</div>',
+      onConfirm:function(){
+        var mode=$('ccGeneralPrintMode')?.value||'month',start=range.start,end=range.end;
+        if(mode==='custom'){
+          start=$('ccGeneralPrintStart')?.value||'';
+          end=$('ccGeneralPrintEnd')?.value||'';
+          if(!start||!end){toast('請選擇開始與結束日期','warn');return false;}
+          if(start>end){toast('開始日期不可晚於結束日期','warn');return false;}
+        }
+        return ccGeneralPhonePrint(data,start,end);
+      }
+    });
+    $('ccGeneralPrintMode')?.addEventListener('change',function(e){
+      var box=$('ccGeneralPrintCustom');if(box)box.style.display=e.target.value==='custom'?'':'none';
+    });
+  }
+
+  function ccPrintRecord(c,bundle){
+    if(bundle.main.record_type==='general_phone')return toast('一般電話聯繫請使用期間聯繫明細，不製作單筆正式表。','warn');
+    var m=bundle.main,d=bundle.formal||{},people=(bundle.people||[]).map(function(x){return x.name_snapshot+(x.relationship_snapshot?'（'+x.relationship_snapshot+'）':'');}).join('、');
+    var sats=bundle.satisfaction||[],title=m.record_type==='home_visit'?'家訪紀錄表':'電訪紀錄表';
+    var satRows=sats.map(function(x){var label=({service_time:'服務時間安排',worker_attitude:'居服員服務態度',service_fit:'服務內容符合需求',punctuality:'服務準時性',service_quality:'服務品質',supervisor_support:'督導／聯絡窗口協助'})[x.item_code]||x.item_code;return '<tr><td>'+escapeHTML(label)+'</td><td>'+escapeHTML(api.ratingLabel(x.rating_code))+'</td><td>'+escapeHTML(x.note||'—')+'</td></tr>';}).join('');
+    var w=window.open('','_blank');if(!w)return toast('瀏覽器阻擋列印視窗，請允許彈出式視窗。','warn');
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+title+'</title><style>@page{size:A4;margin:12mm 16mm}body{font-family:"BiauKai","DFKai-SB",serif;font-size:13px;line-height:1.55;color:#222}h1{text-align:center;font-size:20px;margin:0 0 12px}table{width:100%;border-collapse:collapse;margin:7px 0 12px}th,td{border:1px solid #555;padding:5px 7px;vertical-align:top}th{background:#f5f5f5;width:18%}.sec{font-weight:bold;font-size:14px;margin:12px 0 4px}.summary{border:1px solid #555;padding:8px;min-height:55px;white-space:pre-wrap}.sign{margin-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:20px}.muted{font-size:10px;color:#666;margin-top:10px}</style></head><body>');
+    w.document.write('<h1>桃園市私立劉信子居家長照機構<br>'+title+'</h1>');
+    w.document.write('<table><tr><th>個案姓名</th><td>'+escapeHTML(c.case_name)+'</td><th>日期</th><td>'+rocDate(m.record_date+'T00:00:00')+'</td></tr><tr><th>'+(m.record_type==='home_visit'?'家訪人員':'電訪人員')+'</th><td>'+escapeHTML(m.performed_by_name_snapshot||api.staffName(m.performed_by_staff_id))+'</td><th>原因</th><td>'+escapeHTML(api.reasonLabel(m.record_type,m.reason_code))+'</td></tr><tr><th>'+(m.record_type==='home_visit'?'在場／受訪對象':'聯絡對象')+'</th><td colspan="3">'+escapeHTML(people||'—')+'</td></tr></table>');
+    if(bundle.phone){
+      var phoneLabel=bundle.phone.contact_success?'本次通話內容／重點':'未成功聯繫補充說明';
+      var failureText=({no_answer:'未接聽',off:'關機',busy:'忙線',invalid:'電話錯誤／無效',other:'其他'})[bundle.phone.failure_reason]||'—';
+      if(bundle.phone.failure_reason==='other'&&bundle.phone.failure_note)failureText+='：'+bundle.phone.failure_note;
+      w.document.write('<div class="sec">聯繫結果</div><table><tr><th>聯繫結果</th><td>'+(bundle.phone.contact_success?'成功聯繫':'未成功聯繫')+'</td><th>再次聯繫</th><td>'+(bundle.phone.needs_recontact?(bundle.phone.recontact_date?rocDate(bundle.phone.recontact_date+'T00:00:00'):'是'):'否')+'</td></tr>'+(!bundle.phone.contact_success?'<tr><th>未成功原因</th><td colspan="3">'+escapeHTML(failureText)+'</td></tr>':'')+(bundle.phone.contact_content?'<tr><th>'+phoneLabel+'</th><td colspan="3">'+escapeHTML(bundle.phone.contact_content)+'</td></tr>':'')+'</table>');
+    }
+    if(d)w.document.write('<div class="sec">服務使用與追蹤</div><table><tr><th>服務使用情形</th><td>'+escapeHTML(({normal:'正常使用',partial:'部分未使用',changed:'已有變化',suspended:'全面暫停',other:'其他'})[d.service_usage_status]||'—')+'</td><th>服務符合需求</th><td>'+escapeHTML(({fit:'符合',mostly_fit:'大致符合需留意',adjust:'建議調整'})[d.service_fit_status]||'—')+'</td></tr><tr><th>近期重大事件</th><td colspan="3">'+escapeHTML(d.has_major_event?(d.major_event_note||'有'):'無')+'</td></tr><tr><th>主要關切事項</th><td colspan="3">'+escapeHTML(d.has_primary_concern?(d.primary_concern_note||'有'):'無')+'</td></tr><tr><th>本次處理／建議</th><td colspan="3">'+escapeHTML(d.action_note||'—')+'</td></tr></table>');
+    if(satRows)w.document.write('<div class="sec">服務滿意度</div><table><thead><tr><th>項目</th><th>結果</th><th>補充／原因</th></tr></thead><tbody>'+satRows+'</tbody></table>');
+    var processed=bundle.processedFollowups||[];
+    if(processed.length)w.document.write('<div class="sec">前次追蹤事項</div><table><thead><tr><th>事項</th><th>本次結果</th><th>本次追蹤狀況</th></tr></thead><tbody>'+processed.map(function(x){var item=(state.caseFollowupItems||[]).find(function(i){return i.id===x.followup_item_id;});return '<tr><td>'+escapeHTML(item?.content||'追蹤事項')+'</td><td>'+escapeHTML(api.followResultLabel(x.result_code))+'</td><td>'+escapeHTML(x.note||'—')+(x.next_due_date?'<br>下次：'+rocDate(x.next_due_date+'T00:00:00'):'')+'</td></tr>';}).join('')+'</tbody></table>');
+    if((bundle.createdFollowups||[]).length)w.document.write('<div class="sec">新增後續追蹤事項</div><table><thead><tr><th>事項</th><th>預計追蹤日</th><th>負責人</th></tr></thead><tbody>'+(bundle.createdFollowups||[]).map(function(x){return '<tr><td>'+escapeHTML(x.content)+'</td><td>'+(x.due_date?rocDate(x.due_date+'T00:00:00'):'未設定')+'</td><td>'+escapeHTML(api.staffName(x.responsible_staff_id))+'</td></tr>';}).join('')+'</tbody></table>');
+    if(m.notes)w.document.write('<div class="sec">補充備註</div><div class="summary">'+escapeHTML(m.notes)+'</div>');
+    w.document.write('<div class="sec">紀錄摘要</div><div class="summary">'+escapeHTML(m.summary||'')+'</div>');
+    if(m.record_type==='home_visit')w.document.write('<div class="sign"><div>服務使用者簽名：________________</div><div>家屬簽名：________________</div><div>家訪人員簽章：________________</div><div>業務負責人核章：________________</div></div>');
+    else w.document.write('<div class="sign"><div>電訪人員簽章：________________</div><div>業務負責人核章：________________</div></div>');
+    w.document.write('<div class="muted">完成日期：'+(m.completed_at?rocDate(m.completed_at):'—')+(m.updated_at&&m.completed_at&&m.updated_at!==m.completed_at?'　最後修改：'+rocDate(m.updated_at):'')+'</div></body></html>');
+    w.document.close();setTimeout(function(){w.focus();w.print();},250);
+  }
+
+  async function ccOpenRecordDetail(c,recordId){
+    showLoading(true);
+    try{
+      var b=await api.loadBundle(recordId),m=b.main,people=(b.people||[]).map(function(x){return x.name_snapshot+(x.relationship_snapshot?'（'+x.relationship_snapshot+'）':'');}).join('、');
+      var created=b.createdFollowups||[];
+      var html='<div class="case-data-grid">'+ccField('類型',api.typeLabel(m.record_type))+ccField('日期',rocDate(m.record_date+'T00:00:00'))+ccField('狀態',api.recordStatusLabel(m.status))+ccField('執行人員',m.performed_by_name_snapshot||api.staffName(m.performed_by_staff_id))+ccField('負責督導',m.supervisor_name_snapshot||api.staffName(m.supervisor_staff_id))+ccField('原因',api.reasonLabel(m.record_type,m.reason_code))+ccField('聯絡／在場對象',people||'—',true)+(m.notes?ccField('補充備註',m.notes,true):'')+'</div>'+
+        ccPhoneDetailHtml(b)+ccHomeDetailHtml(b)+ccFormalDetailHtml(b)+ccProcessedFollowupsHtml(b)+
+        (created.length?'<div class="import-detail-block"><strong>本次建立的追蹤事項</strong><div class="cc-follow-list" style="margin-top:8px">'+created.map(function(x){return '<div class="cc-follow-row"><strong>'+escapeHTML(x.content)+'</strong><small>'+(x.due_date?'預計 '+rocDate(x.due_date+'T00:00:00'):'未設定日期')+'｜'+escapeHTML(x.status)+'</small></div>';}).join('')+'</div></div>':'')+
+        '<div class="import-detail-block"><strong>紀錄摘要</strong><div class="visit-summary">'+escapeHTML(m.summary||'—')+'</div></div>'+
+        (m.status==='voided'?'<div class="import-warning"><strong>此紀錄已作廢</strong><br>原因：'+escapeHTML(m.void_reason||'—')+'</div>':'')+
+        '<div class="cc-record-actions" style="margin-top:14px">'+
+          (m.status!=='voided'&&api.canEditCase(c)?'<button id="ccEditRecord" class="btn">編輯紀錄</button>':'')+
+          (m.status==='completed'&&m.record_type!=='general_phone'?'<button id="ccPrintRecord" class="btn">列印</button>':'')+
+          (m.status!=='voided'&&api.canEditCase(c)?'<button id="ccVoidRecord" class="btn">作廢</button>':'')+
+        '</div>';
+      openModal({title:api.typeLabel(m.record_type)+'｜'+c.case_name,large:true,showConfirm:false,html:html});
+      $('ccEditRecord')?.addEventListener('click',function(){closeModal();api.openRecordForm(c,m.record_type,m.id);});
+      $('ccVoidRecord')?.addEventListener('click',function(){closeModal();api.voidRecord(c,m.id);});
+      $('ccPrintRecord')?.addEventListener('click',function(){ccPrintRecord(c,b);});
+    }catch(e){console.error(e);toast('讀取紀錄失敗：'+(e?.message||e),'error');}
+    finally{showLoading(false);}
+  }
+
+  function ccBindCaseDetailPanel(data,tab){
+    document.querySelectorAll('[data-cc-record]').forEach(function(btn){btn.addEventListener('click',function(){ccOpenRecordDetail(data.c,btn.dataset.ccRecord);});});
+    document.querySelectorAll('[data-cc-plan]').forEach(function(btn){btn.addEventListener('click',function(){api.setRoutinePlan(data.c,btn.dataset.ccPlan);});});
+    document.querySelectorAll('[data-cc-add-general]').forEach(function(btn){btn.addEventListener('click',function(){api.openRecordForm(data.c,'general_phone');});});
+    document.querySelectorAll('[data-cc-print-general]').forEach(function(btn){btn.addEventListener('click',function(){ccOpenGeneralPhonePrintModal(data);});});
+  }
+
+  Object.assign(api,{
+    enrichCaseDetailData:ccEnrichCaseDetailData,
+    extendCaseTimeline:ccExtendTimeline,
+    renderOverviewTab:ccRenderOverviewTab,
+    renderVisitsTab:ccRenderVisitsTab,
+    bindCaseDetailPanel:ccBindCaseDetailPanel,
+    openRecordDetail:ccOpenRecordDetail,
+    printRecord:ccPrintRecord,
+    printGeneralPhoneSummary:ccGeneralPhonePrint,
+    openGeneralPhonePrintModal:ccOpenGeneralPhonePrintModal
+  });
+})();

@@ -1,0 +1,305 @@
+
+// V5.2 家、電訪 V1：核心資料、週期與管理總覽
+(function(){
+  var ccStyle=document.createElement('style');
+  ccStyle.id='v52-case-contact-v1-style';
+  ccStyle.textContent=
+    '.cc-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}'+
+    '.cc-stat-filter{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;user-select:none}.cc-stat-filter:hover{border-color:#dc9479;box-shadow:0 3px 10px rgba(16,24,40,.08)}.cc-stat-filter:focus{outline:2px solid rgba(220,148,121,.35);outline-offset:2px}.cc-stat-filter.active{border-color:#dc9479;box-shadow:0 0 0 2px rgba(220,148,121,.14);background:#fff8f5}.cc-stat-filter.active .stat-foot:after{content:" ・ 已套用";font-weight:900;color:#9b4f3d}'+
+    '.cc-status-grid{display:flex;gap:6px;flex-wrap:wrap}'+
+    '.cc-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;white-space:nowrap}'+
+    '.cc-chip.normal{background:#eef7f1;color:#237a4b}.cc-chip.due{background:#fffaeb;color:#b54708}.cc-chip.overdue{background:#fef3f2;color:#b42318}.cc-chip.muted{background:#f2f4f7;color:#667085}.cc-chip.followup{background:#eff8ff;color:#175cd3}'+
+    '.cc-recent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:12px}.cc-recent-card{border:1px solid var(--line);border-radius:11px;background:#fafafa;padding:10px}.cc-recent-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:4px}.cc-recent-card strong{font-size:11.5px;color:#344054}.cc-recent-card small{display:block;margin-top:4px;color:#667085;line-height:1.45}'+
+    '.cc-follow-list{display:grid;gap:7px}.cc-follow-row{border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fff;font-size:11px;line-height:1.5}.cc-follow-row strong{font-size:11.5px}.cc-follow-row small{display:block;color:#667085;margin-top:3px}'+
+    '.cc-record-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.cc-record-badge{font-size:9.5px;font-weight:900;border-radius:999px;padding:3px 7px;background:#f2f4f7;color:#667085}.cc-record-badge.draft{background:#fffaeb;color:#b54708}.cc-record-badge.voided{background:#f2f4f7;color:#98a2b3}.cc-record-badge.completed{background:#eef7f1;color:#237a4b}'+
+    '.cc-cycle-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}.cc-cycle-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.cc-cycle-head strong{font-size:12.5px}.cc-cycle-meta{font-size:10.5px;color:#667085;margin-top:4px;line-height:1.5}'+
+    '.cc-notes-wrap{display:none;margin-top:7px}.cc-notes-wrap.show{display:block}'+
+    '.cc-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px}.cc-check{display:flex;align-items:center;gap:8px;min-height:38px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;font-size:11.5px;font-weight:700;cursor:pointer}.cc-check input[type="checkbox"]{width:16px!important;height:16px!important;min-width:16px!important;flex:0 0 16px;margin:0!important;accent-color:#dc9479}'+
+    '.cc-sat-list{display:grid;gap:10px}.cc-sat-row{border:1px solid var(--line);border-radius:11px;padding:10px;background:#fff}.cc-sat-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}.cc-sat-title{font-size:11.5px;font-weight:900;color:#344054}.cc-sat-options{display:flex;flex-wrap:wrap;gap:6px}.cc-sat-choice{cursor:pointer}.cc-sat-choice input{position:absolute;opacity:0;pointer-events:none}.cc-sat-choice span{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:5px 9px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:10.5px;font-weight:800;color:#475467;white-space:nowrap}.cc-sat-choice input:checked+span{background:#fff1eb;border-color:#dc9479;color:#9b4f3d}.cc-sat-note-wrap{display:none;margin-top:8px}.cc-sat-note-wrap.show{display:block}.cc-sat-note-wrap textarea{width:100%}.cc-sat-required{color:#b42318;font-weight:900}'+
+    '.cc-time-selects{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;gap:7px;align-items:center}.cc-time-sep{font-size:11px;font-weight:900;color:#667085}.cc-other-people{display:grid;gap:8px;margin-top:8px}.cc-other-person-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fafafa}.cc-other-person-row .field{margin:0}.cc-other-person-row .btn{min-height:38px}'+
+    '@media(max-width:900px){.cc-stats{grid-template-columns:1fr 1fr}.cc-recent-grid{grid-template-columns:1fr}.cc-check-grid{grid-template-columns:1fr}.cc-sat-options{gap:5px}.cc-sat-choice span{padding:5px 8px;font-size:10px}.cc-other-person-row{grid-template-columns:1fr}.cc-other-person-row .btn{justify-self:start}}';
+  document.head.appendChild(ccStyle);
+
+  Object.assign(state,{
+    caseContactRecords:[],
+    caseFollowupItems:[],
+    caseRoutinePlans:[],
+    caseAssessmentEvents:[],
+    caseContactDataLoaded:false,
+    caseDashboardFilter:''
+  });
+
+  function ccCanUse(){
+    return !!state.profile && ['supervisor','business_manager','organization_manager','admin'].includes(state.profile.role);
+  }
+  function ccCanEditCase(c){
+    if(!state.profile||!c)return false;
+    return ['supervisor','business_manager','organization_manager','admin'].includes(state.profile.role);
+  }
+  function ccStaffName(id){
+    return (state.caseStaff||[]).find(function(s){return s.id===id;})?.display_name||'尚未指派';
+  }
+  function ccTypeLabel(type){
+    return ({home_visit:'家訪',formal_phone:'正式電訪',general_phone:'一般電話聯繫'})[type]||'聯繫紀錄';
+  }
+  function ccReasonLabel(type,code){
+    var home={routine:'例行家訪',new_case:'新案家訪',service_change:'服務需求變化',prior_followup:'前次事項追蹤',event_followup:'事件後續追蹤',suspension:'暫停服務追蹤',resume:'恢復服務追蹤',other:'其他'};
+    var formal={routine:'例行電訪',service_arrangement:'服務安排確認',prior_followup:'前次事項追蹤',hospital_care:'住院或就醫關懷',suspension:'暫停服務追蹤',resume:'恢復服務追蹤',family_feedback:'家屬反映事項',event_followup:'事件後續追蹤',opening_contact:'簽約或開案聯繫',other:'其他'};
+    var general={visit_reminder:'預約／提醒家訪',opening_contact:'簽約／開案聯繫',service_time:'服務時間通知',service_change_notice:'服務異動通知',document_reminder:'文件／資料提醒',reply_inquiry:'回覆個案或家屬詢問',admin_contact:'一般行政聯繫',other:'其他'};
+    var map=type==='home_visit'?home:type==='formal_phone'?formal:general;
+    return map[code]||code||'—';
+  }
+  function ccDate(value){
+    if(!value)return null;
+    var d=new Date(String(value).length===10?value+'T00:00:00':value);
+    return Number.isNaN(d.getTime())?null:d;
+  }
+  function ccIso(d){
+    if(!d)return null;
+    var y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+day;
+  }
+  function ccAddMonths(dateStr,months){
+    var d=ccDate(dateStr);if(!d)return null;
+    var day=d.getDate(), target=new Date(d.getFullYear(),d.getMonth()+months,1);
+    var last=new Date(target.getFullYear(),target.getMonth()+1,0).getDate();
+    target.setDate(Math.min(day,last));
+    return ccIso(target);
+  }
+  function ccDaysBetween(a,b){
+    var da=ccDate(a),db=ccDate(b);if(!da||!db)return null;
+    da.setHours(0,0,0,0);db.setHours(0,0,0,0);
+    return Math.round((db-da)/86400000);
+  }
+  function ccCompletedRecords(caseId,type){
+    return (state.caseContactRecords||[])
+      .filter(function(r){return r.case_id===caseId && r.record_type===type && r.status==='completed' && r.counts_for_cycle!==false;})
+      .sort(function(a,b){return String(b.record_date).localeCompare(String(a.record_date))||new Date(b.created_at)-new Date(a.created_at);});
+  }
+  function ccLatest(caseId,type){return ccCompletedRecords(caseId,type)[0]||null;}
+  function ccLatestContact(caseId){
+    return (state.caseContactRecords||[]).filter(function(r){return r.case_id===caseId&&r.status==='completed';})
+      .sort(function(a,b){return String(b.record_date).localeCompare(String(a.record_date))||new Date(b.created_at)-new Date(a.created_at);})[0]||null;
+  }
+  function ccPendingFollowups(caseId){
+    return (state.caseFollowupItems||[]).filter(function(x){return x.case_id===caseId&&['pending','in_progress'].includes(x.status);})
+      .sort(function(a,b){return String(a.due_date||'9999-12-31').localeCompare(String(b.due_date||'9999-12-31'));});
+  }
+  function ccLatestFullAssessment(caseId){
+    return (state.caseAssessmentEvents||[]).filter(function(x){
+      return x.case_id===caseId && ['forms_completed','completed'].includes(x.status)
+        && (['opening','periodic'].includes(x.assessment_type)||x.counts_as_full_reassessment);
+    }).sort(function(a,b){return String(b.planned_date||'').localeCompare(String(a.planned_date||''));})[0]||null;
+  }
+  function ccCycle(caseRow,type){
+    var today=ccIso(new Date()), months=type==='formal_phone'?1:3, warning=type==='formal_phone'?7:14;
+    if(type==='home_visit' && caseRow.service_status==='suspended')return {key:'muted',text:'暫停服務中',due:null,last:ccLatest(caseRow.id,type)};
+    if(caseRow.service_status==='closed')return {key:'muted',text:'已結案',due:null,last:ccLatest(caseRow.id,type)};
+    var last=ccLatest(caseRow.id,type);
+    var basis=last?.record_date||caseRow.open_date||null;
+    if(!basis)return {key:'muted',text:'尚無起算日',due:null,last:last};
+    var due=ccAddMonths(basis,months);
+    var days=ccDaysBetween(today,due);
+    if(days===null)return {key:'muted',text:'尚無期限',due:due,last:last};
+    if(days<0)return {key:'overdue',text:'逾期 '+Math.abs(days)+' 天',due:due,last:last};
+    if(days===0)return {key:'overdue',text:'今天到期',due:due,last:last};
+    if(days<=warning)return {key:'due',text:'剩 '+days+' 天',due:due,last:last};
+    return {key:'normal',text:'正常',due:due,last:last};
+  }
+  function ccAssessmentCycle(caseRow){
+    if(caseRow.service_status==='suspended')return {key:'muted',text:'暫停服務中',due:null,last:ccLatestFullAssessment(caseRow.id)};
+    if(caseRow.service_status==='closed')return {key:'muted',text:'已結案',due:null,last:ccLatestFullAssessment(caseRow.id)};
+    var last=ccLatestFullAssessment(caseRow.id);
+    var basis=last?.planned_date||caseRow.open_date||null;
+    if(!basis)return {key:'muted',text:'尚無起算日',due:null,last:last};
+    var due=ccAddMonths(basis,3),today=ccIso(new Date()),days=ccDaysBetween(today,due);
+    if(days<0)return {key:'overdue',text:'逾期 '+Math.abs(days)+' 天',due:due,last:last};
+    if(days===0)return {key:'overdue',text:'今天到期',due:due,last:last};
+    if(days<=14)return {key:'due',text:'剩 '+days+' 天',due:due,last:last};
+    return {key:'normal',text:'正常',due:due,last:last};
+  }
+  function ccWorstStatus(c){
+    var h=ccCycle(c,'home_visit'),p=ccCycle(c,'formal_phone'),a=ccAssessmentCycle(c);
+    var f=ccPendingFollowups(c.id), today=ccIso(new Date());
+    var overdueF=f.some(function(x){return x.due_date&&x.due_date<today;});
+    if(overdueF||[h,p,a].some(function(x){return x.key==='overdue';}))return {key:'overdue',text:'有逾期項目'};
+    if([h,p,a].some(function(x){return x.key==='due';}))return {key:'due',text:'即將到期'};
+    if(f.length)return {key:'followup',text:'待追蹤 '+f.length};
+    if(c.service_status==='closed'||c.service_status==='suspended')return {key:'muted',text:c.service_status==='closed'?'已結案':'暫停服務'};
+    return {key:'normal',text:'正常'};
+  }
+  function ccCurrentPlan(caseId,type){
+    return (state.caseRoutinePlans||[]).filter(function(x){return x.case_id===caseId&&x.plan_type===type&&x.status==='planned';})
+      .sort(function(a,b){return String(a.planned_date).localeCompare(String(b.planned_date));})[0]||null;
+  }
+
+  async function ccLoadData(silent){
+    if(!ccCanUse())return;
+    if(!silent)showLoading(true);
+    try{
+      var results=await Promise.all([
+        db.rpc('get_case_staff_directory'),
+        db.from('care_cases').select('id,case_no,case_name,national_id,birth_date,gender,address,phone,supervisor_id,open_date,cms_level,service_status,service_usage_type,payment_method,notes,created_at').order('case_no',{ascending:true,nullsFirst:false}).order('case_name'),
+        db.from('case_contact_records').select('*').order('record_date',{ascending:false}).order('created_at',{ascending:false}),
+        db.from('case_approved_services').select('case_id,service_group,service_code,service_name,approved_quantity').eq('is_current',true).order('service_code'),
+        db.from('case_followup_items').select('*').order('due_date',{ascending:true,nullsFirst:false}).order('created_at'),
+        db.from('case_routine_plans').select('*').eq('status','planned').order('planned_date'),
+        db.from('assessment_events').select('id,case_id,assessment_type,planned_date,status,counts_as_full_reassessment,combined_with_home_visit,completed_at,voided_at').neq('status','voided').order('planned_date',{ascending:false})
+      ]);
+      var bad=results.find(function(x){return x.error;});if(bad&&bad.error)throw bad.error;
+      state.caseStaff=results[0].data||[];
+      state.cases=results[1].data||[];
+      state.caseContactRecords=results[2].data||[];
+      state.caseServices=results[3].data||[];
+      state.caseFollowupItems=results[4].data||[];
+      state.caseRoutinePlans=results[5].data||[];
+      state.caseAssessmentEvents=results[6].data||[];
+      state.caseVisits=state.caseContactRecords;
+      if(!state.caseSupervisorFilter)state.caseSupervisorFilter=state.profile?.can_supervise?'mine':'all';
+      state.caseContactDataLoaded=true;
+    }catch(err){
+      console.error(err);toast('讀取家、電訪資料失敗：'+(err?.message||err),'error');
+    }finally{if(!silent)showLoading(false);}
+  }
+
+  function ccCurrentScope(){
+    var list=[...(state.cases||[])],filter=state.caseSupervisorFilter||(state.profile?.can_supervise?'mine':'all');
+    if(filter==='mine')list=list.filter(function(c){return c.supervisor_id===state.profile?.id;});
+    else if(filter!=='all')list=list.filter(function(c){return c.supervisor_id===filter;});
+    return list;
+  }
+  function ccServiceSummary(caseId){
+    var items=(state.caseServices||[]).filter(function(x){return x.case_id===caseId;});
+    return items.length?items.map(function(x){return x.service_code+(x.approved_quantity!=null?' ×'+x.approved_quantity:'');}).join('、'):'—';
+  }
+  function ccDateText(v){return v?rocDate(v+'T00:00:00'):'—';}
+
+  function ccRenderPage(){
+    if(state.page!=='cases')return;
+    var supervisors=(state.caseStaff||[]).filter(function(s){return s.can_supervise||s.role==='supervisor';});
+    var scope=ccCurrentScope(),q=(state.caseQuery||'').trim().toLowerCase();
+    var rows=scope.filter(function(c){
+      if(!q)return true;
+      return [c.case_no,c.case_name,c.national_id,c.address,ccStaffName(c.supervisor_id),ccServiceSummary(c.id)]
+        .some(function(v){return String(v||'').toLowerCase().includes(q);});
+    });
+    if(state.caseStatusFilter&&state.caseStatusFilter!=='all'){
+      rows=rows.filter(function(c){return (c.service_status||'active')===state.caseStatusFilter;});
+    }
+    if(state.caseDashboardFilter){
+      rows=rows.filter(function(c){
+        if(state.caseDashboardFilter==='overdue')return ccWorstStatus(c).key==='overdue';
+        if(state.caseDashboardFilter==='due')return ccWorstStatus(c).key==='due';
+        if(state.caseDashboardFilter==='formal_phone')return ['overdue','due'].includes(ccCycle(c,'formal_phone').key);
+        if(state.caseDashboardFilter==='followup')return ccPendingFollowups(c.id).length>0;
+        return true;
+      });
+    }
+    rows.sort(function(a,b){
+      var rank={overdue:0,due:1,followup:2,normal:3,muted:4};
+      var sa=ccWorstStatus(a),sb=ccWorstStatus(b);
+      return rank[sa.key]-rank[sb.key]||String(a.case_no||a.case_name).localeCompare(String(b.case_no||b.case_name),'zh-Hant');
+    });
+    var overdue=scope.filter(function(c){return ccWorstStatus(c).key==='overdue';}).length;
+    var due=scope.filter(function(c){return ccWorstStatus(c).key==='due';}).length;
+    var phoneDue=scope.filter(function(c){return ['overdue','due'].includes(ccCycle(c,'formal_phone').key);}).length;
+    var follow=scope.reduce(function(n,c){return n+ccPendingFollowups(c.id).length;},0);
+
+    $('content').innerHTML=
+      '<div class="page-head"><div><h1>👤 個案管理</h1><p>家、電訪採正式家訪、正式電訪與一般電話聯繫分流；一般電話不計入正式電訪週期。</p></div><div class="actions"><button id="addCaseBtn" class="btn primary">＋ 新增個案</button></div></div>'+
+      '<section class="cc-stats">'+
+        '<article class="stat-card cc-stat-filter '+(state.caseDashboardFilter==='overdue'?'active':'')+'" role="button" tabindex="0" data-cc-dashboard-filter="overdue" aria-pressed="'+(state.caseDashboardFilter==='overdue')+'"><div class="stat-head"><span>逾期項目</span><span class="stat-icon">⚠️</span></div><div class="stat-value">'+overdue+'</div><div class="stat-foot">家訪、正式電訪、評估或追蹤逾期</div></article>'+
+        '<article class="stat-card cc-stat-filter '+(state.caseDashboardFilter==='due'?'active':'')+'" role="button" tabindex="0" data-cc-dashboard-filter="due" aria-pressed="'+(state.caseDashboardFilter==='due')+'"><div class="stat-head"><span>即將到期</span><span class="stat-icon">📅</span></div><div class="stat-value">'+due+'</div><div class="stat-foot">家訪／評估14天、電訪7天內</div></article>'+
+        '<article class="stat-card cc-stat-filter '+(state.caseDashboardFilter==='formal_phone'?'active':'')+'" role="button" tabindex="0" data-cc-dashboard-filter="formal_phone" aria-pressed="'+(state.caseDashboardFilter==='formal_phone')+'"><div class="stat-head"><span>正式電訪待辦</span><span class="stat-icon">☎️</span></div><div class="stat-value">'+phoneDue+'</div><div class="stat-foot">每1個月一次</div></article>'+
+        '<article class="stat-card cc-stat-filter '+(state.caseDashboardFilter==='followup'?'active':'')+'" role="button" tabindex="0" data-cc-dashboard-filter="followup" aria-pressed="'+(state.caseDashboardFilter==='followup')+'"><div class="stat-head"><span>待追蹤事項</span><span class="stat-icon">🔎</span></div><div class="stat-value">'+follow+'</div><div class="stat-foot">跨家訪與電訪持續追蹤</div></article>'+
+      '</section>'+
+      '<div class="case-toolbar">'+
+        '<span class="case-filter-label">督導</span><select id="caseSupervisorFilter">'+
+          (state.profile?.can_supervise?'<option value="mine" '+(state.caseSupervisorFilter==='mine'?'selected':'')+'>我的個案</option>':'')+
+          '<option value="all" '+(state.caseSupervisorFilter==='all'?'selected':'')+'>全部個案</option>'+
+          supervisors.map(function(s){return '<option value="'+s.id+'" '+(state.caseSupervisorFilter===s.id?'selected':'')+'>'+escapeHTML(s.display_name)+'</option>';}).join('')+
+        '</select>'+
+        '<div class="searchbox"><input id="caseSearch" placeholder="搜尋個案編號、姓名、地址、督導或服務碼" value="'+escapeHTML(state.caseQuery||'')+'"></div>'+
+        '<select id="caseStatusFilter"><option value="all">全部狀態</option><option value="active" '+(state.caseStatusFilter==='active'?'selected':'')+'>服務中</option><option value="suspended" '+(state.caseStatusFilter==='suspended'?'selected':'')+'>暫停</option><option value="closed" '+(state.caseStatusFilter==='closed'?'selected':'')+'>已結案</option></select>'+
+        '<button id="reloadCases" class="btn">↻ 重新整理</button>'+
+      '</div><div id="caseList"></div>';
+
+    function toggleDashboardFilter(value){
+      state.caseDashboardFilter=state.caseDashboardFilter===value?'':value;
+      ccRenderPage();
+    }
+    document.querySelectorAll('[data-cc-dashboard-filter]').forEach(function(card){
+      card.addEventListener('click',function(){toggleDashboardFilter(card.dataset.ccDashboardFilter);});
+      card.addEventListener('keydown',function(e){
+        if(e.key==='Enter'||e.key===' '){
+          e.preventDefault();
+          toggleDashboardFilter(card.dataset.ccDashboardFilter);
+        }
+      });
+    });
+
+    $('caseSupervisorFilter').addEventListener('change',function(e){state.caseSupervisorFilter=e.target.value;ccRenderPage();});
+    $('caseStatusFilter').addEventListener('change',function(e){state.caseStatusFilter=e.target.value;ccRenderPage();});
+    var search=$('caseSearch'),composing=false;
+    search.addEventListener('compositionstart',function(){composing=true;});
+    search.addEventListener('compositionend',function(e){composing=false;state.caseQuery=e.target.value;ccRenderPage();});
+    search.addEventListener('input',function(e){if(composing||e.isComposing)return;state.caseQuery=e.target.value;ccRenderPage();});
+    $('reloadCases').addEventListener('click',async function(){await ccLoadData();ccRenderPage();toast('已重新整理','success');});
+    $('addCaseBtn').addEventListener('click',function(){if(typeof window.openCaseCreateFlow==='function')window.openCaseCreateFlow();});
+
+    var list=$('caseList');
+    if(!rows.length){list.innerHTML='<div class="empty"><div class="icon">👤</div><h3>目前沒有可顯示的個案</h3></div>';return;}
+    list.innerHTML='<div class="case-table-shell"><table class="case-table"><thead><tr><th>個案</th><th>負責督導</th><th>最近家訪</th><th>最近正式電訪</th><th>最近聯繫</th><th>期限／追蹤</th><th>狀態</th></tr></thead><tbody>'+
+      rows.map(function(c){
+        var h=ccLatest(c.id,'home_visit'),p=ccLatest(c.id,'formal_phone'),latest=ccLatestContact(c.id);
+        var hc=ccCycle(c,'home_visit'),pc=ccCycle(c,'formal_phone'),ac=ccAssessmentCycle(c),f=ccPendingFollowups(c.id),status=ccWorstStatus(c);
+        return '<tr>'+
+          '<td><button class="case-name-btn" data-case-id="'+c.id+'">'+escapeHTML(c.case_name)+'</button><div class="visit-item-sub">'+escapeHTML(c.case_no||'—')+'｜'+escapeHTML(ccServiceSummary(c.id))+'</div></td>'+
+          '<td>'+escapeHTML(ccStaffName(c.supervisor_id))+'</td>'+
+          '<td>'+(h?ccDateText(h.record_date):'—')+'</td>'+
+          '<td>'+(p?ccDateText(p.record_date):'—')+'</td>'+
+          '<td>'+(latest?ccDateText(latest.record_date)+' '+escapeHTML(ccTypeLabel(latest.record_type)):'—')+'</td>'+
+          '<td><div class="cc-status-grid"><span class="cc-chip '+hc.key+'">家訪 '+(hc.due?ccDateText(hc.due):hc.text)+'</span><span class="cc-chip '+pc.key+'">電訪 '+(pc.due?ccDateText(pc.due):pc.text)+'</span><span class="cc-chip '+ac.key+'">評估 '+(ac.due?ccDateText(ac.due):ac.text)+'</span>'+(f.length?'<span class="cc-chip followup">追蹤 '+f.length+'</span>':'')+'</div></td>'+
+          '<td><span class="case-status '+status.key+'">'+escapeHTML(status.text)+'</span></td>'+
+        '</tr>';
+      }).join('')+'</tbody></table></div>';
+    list.querySelectorAll('[data-case-id]').forEach(function(btn){btn.addEventListener('click',function(){if(typeof window.openCaseDetailPage==='function')window.openCaseDetailPage(btn.dataset.caseId,'visits');});});
+  }
+
+  var ccBaseNavigate=navigate;
+  navigate=function(id){
+    if(id!=='cases')return ccBaseNavigate(id);
+    window.currentCaseDetailId=null;window.currentCaseDetailTab=null;
+    var m=modules.find(function(x){return x.id==='cases';})||modules[0];
+    state.page='cases';renderNav();$('topTitle').textContent=m.label;$('crumb').textContent=m.crumb;$('sidebar').classList.remove('open');
+    window.scrollTo({top:0,behavior:'auto'});
+    if(!ccCanUse()){
+      $('content').innerHTML='<div class="empty"><div class="icon">🔒</div><h3>此帳號沒有個案管理權限</h3></div>';return;
+    }
+    $('content').innerHTML='<div class="empty compact"><div class="icon">☎️</div><h3>正在載入家、電訪資料</h3><p>請稍候。</p></div>';
+    ccLoadData().then(ccRenderPage);
+  };
+
+  window.caseContactApi={
+    canUse:ccCanUse,canEditCase:ccCanEditCase,staffName:ccStaffName,typeLabel:ccTypeLabel,reasonLabel:ccReasonLabel,
+    dateOnly:ccDate,addMonths:ccAddMonths,loadData:ccLoadData,renderPage:ccRenderPage,
+    latest:ccLatest,latestContact:ccLatestContact,pendingFollowups:ccPendingFollowups,
+    cycle:ccCycle,assessmentCycle:ccAssessmentCycle,currentPlan:ccCurrentPlan,
+    recordsForCase:function(caseId){return (state.caseContactRecords||[]).filter(function(r){return r.case_id===caseId;}).sort(function(a,b){return String(b.record_date).localeCompare(String(a.record_date))||new Date(b.created_at)-new Date(a.created_at);});},
+    latestFullAssessment:ccLatestFullAssessment
+  };
+
+  window.caseVisitsApi={
+    loadCaseVisitData:ccLoadData,
+    pendingFollowUpsFor:ccPendingFollowups,
+    caseStatusInfo:ccWorstStatus,
+    caseTypeLabel:function(t){return ccTypeLabel(t==='home'?'home_visit':t==='phone'?'formal_phone':t);},
+    caseStaffName:ccStaffName,
+    isFollowUpResolved:function(){return false;},
+    openVisitModal:function(c,type){
+      var mapped=type==='home'?'home_visit':type==='phone'?'formal_phone':type||'home_visit';
+      if(window.caseContactApi&&window.caseContactApi.openRecordForm)window.caseContactApi.openRecordForm(c,mapped);
+    },
+    renderCaseVisitsPage:ccRenderPage
+  };
+})();

@@ -1,0 +1,598 @@
+// V5.2 評估管理：支持系統 V2
+(()=>{
+  const SUPPORT_DOMAINS=[
+    ['daily_care','日常生活照顧'],
+    ['meal_housework','餐食與家務協助'],
+    ['medical_transport','就醫陪同／交通協助'],
+    ['medication_health','用藥與健康管理'],
+    ['financial','經濟支持'],
+    ['emotional','陪伴與情緒支持'],
+    ['decision_contact','重要決策／緊急聯絡']
+  ];
+  const DOMAIN_STATUS=[
+    ['adequate','支持充足'],
+    ['partial','部分不足'],
+    ['insufficient','明顯不足'],
+    ['not_applicable','不適用']
+  ];
+  const LIVING_OPTIONS=[
+    ['alone','獨居'],
+    ['spouse','與配偶同住'],
+    ['parents','與父母同住'],
+    ['children','與子女同住'],
+    ['grandchildren','與孫輩同住'],
+    ['relatives','與其他親屬同住'],
+    ['nonrelative','與非親屬同住'],
+    ['other','其他']
+  ];
+  const RESOURCE_TYPES=[
+    ['long_term_care','長照服務'],
+    ['medical','醫療／居家醫療'],
+    ['welfare','社福補助／津貼'],
+    ['disability','身心障礙資源'],
+    ['assistive_device','輔具／無障礙資源'],
+    ['community','社區據點'],
+    ['social_work','社工／個管資源'],
+    ['transport','交通資源'],
+    ['meal','餐食資源'],
+    ['charity_religion','慈善／宗教團體'],
+    ['neighbor_friend','里鄰／鄰居／朋友'],
+    ['volunteer','志工／其他社會支持'],
+    ['other_formal','其他正式資源'],
+    ['other_informal','其他非正式支持']
+  ];
+  const FORMAL_RESOURCE_TYPES=new Set([
+    'long_term_care','medical','welfare','disability','assistive_device',
+    'community','social_work','transport','meal','charity_religion','other_formal'
+  ]);
+  const INFORMAL_RESOURCE_TYPES=new Set([
+    'neighbor_friend','volunteer','other_informal'
+  ]);
+  function resourceNatureForType(type){
+    if(FORMAL_RESOURCE_TYPES.has(type))return 'formal';
+    if(INFORMAL_RESOURCE_TYPES.has(type))return 'informal';
+    return '';
+  }
+  function resourceNatureLabel(type){
+    const nature=resourceNatureForType(type);
+    return nature==='formal'?'正式資源':nature==='informal'?'非正式支持':'';
+  }
+  const RESOURCE_USAGE=[
+    ['stable','穩定使用'],
+    ['occasional','偶爾使用'],
+    ['waiting','已申請／等待中'],
+    ['stopped','已中止']
+  ];
+  const RESOURCE_SUFFICIENCY=[
+    ['adequate','足夠'],
+    ['partial','部分不足'],
+    ['insufficient','不足']
+  ];
+  const NEED_STATUS=[
+    ['pending','尚未處理'],
+    ['referred','已轉介'],
+    ['in_progress','處理中'],
+    ['completed','已完成'],
+    ['declined','個案／家屬暫無意願']
+  ];
+  const SOCIAL_INTERACTION=[
+    ['regular','有固定親友／鄰里互動'],
+    ['limited','互動較少'],
+    ['isolated','幾乎無穩定社會互動'],
+    ['unable','無法評估']
+  ];
+  const COMMUNITY_PARTICIPATION=[
+    ['participates','有參與'],
+    ['none','目前未參與'],
+    ['unwilling','個案無意願'],
+    ['health_limited','身體狀況無法參與'],
+    ['not_applicable','不適用']
+  ];
+  const OVERALL_LABELS={
+    adequate:'支持充足',
+    needs_attention:'部分不足／需追蹤',
+    weak:'支持薄弱／需介入'
+  };
+  const ECONOMIC_LABELS={
+    stable:'經濟狀況無虞',
+    watch:'尚可但需留意',
+    difficulty:'有明顯經濟困難'
+  };
+  const statusLabel=v=>DOMAIN_STATUS.find(x=>x[0]===v)?.[1]||'—';
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-support-style';
+  style.textContent=`
+    .support-page{max-width:1040px;margin:0 auto}
+    .support-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .support-summary-card,.support-section,.support-row{border:1px solid var(--line);border-radius:12px;background:#fff}
+    .support-summary-card{padding:11px 12px}
+    .support-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}
+    .support-summary-card strong{font-size:16px;color:#344054}
+    .support-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px;line-height:1.45}
+    .support-copy{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #d9e9f7;background:#f7fbff;border-radius:11px;padding:11px 12px;margin-bottom:12px}
+    .support-copy strong{display:block;font-size:12px;color:#175cd3}
+    .support-copy span{display:block;font-size:10.5px;color:#475467;margin-top:3px;line-height:1.5}
+    .support-notice{padding:10px 12px;border-radius:10px;background:#fffaeb;border:1px solid #fedf89;color:#93370d;font-size:11px;font-weight:800;margin-bottom:12px}
+    .support-section{overflow:hidden;margin-bottom:12px}
+    .support-section-head{padding:11px 12px;background:#faf8f7;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center}
+    .support-section-head strong{font-size:13px;color:#344054}
+    .support-section-head small{display:block;font-size:10px;color:#667085;margin-top:3px;line-height:1.45}
+    .support-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;padding:12px}
+    .support-field.full{grid-column:1/-1}
+    .support-field label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
+    .support-field input,.support-field select,.support-field textarea{width:100%;box-sizing:border-box}
+    .support-field textarea{min-height:76px;resize:vertical}
+    .support-readonly{border:1px solid var(--line);background:#f8f9fb;border-radius:9px;padding:8px 10px;font-size:11px;color:#475467;min-height:18px}
+    .support-list{display:grid;gap:9px;padding:12px}
+    .support-row{padding:10px}
+    .support-row-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+    .support-row-head strong{font-size:11.5px;color:#344054}
+    .support-row-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .support-row-grid .wide{grid-column:1/-1}
+    .support-row-grid .span2{grid-column:span 2}
+    .support-row-grid input,.support-row-grid select,.support-row-grid textarea{width:100%;box-sizing:border-box}
+    .support-row-grid textarea{min-height:62px}
+    .support-domain{padding:11px 12px;border-bottom:1px solid #f0f1f3}
+    .support-domain:last-child{border-bottom:0}
+    .support-domain.concern{background:#fffafa}
+    .support-domain-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+    .support-domain-title{font-size:11.5px;font-weight:850;color:#344054}
+    .support-tags{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+    .support-tag{font-size:9.5px;font-weight:900;padding:3px 7px;border-radius:999px;background:#f2f4f7;color:#667085}
+    .support-tag.prev{background:#eff8ff;color:#175cd3}.support-tag.better{background:#ecfdf3;color:#027a48}
+    .support-tag.worse{background:#fff1eb;color:#a45d49}.support-tag.persist{background:#fff4e5;color:#b54708}
+    .support-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+    .support-option{display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--line);border-radius:9px;padding:8px 7px;cursor:pointer;font-size:10.5px;font-weight:800;color:#475467}
+    .support-option input{width:auto}.support-option.selected{border-color:#dc9479;background:#fff8f5}
+    .support-note{margin-top:8px}.support-note label{display:block;font-size:10px;font-weight:850;color:#667085;margin-bottom:4px}
+    .support-note textarea{width:100%;box-sizing:border-box;min-height:62px}
+    .support-empty{padding:12px;font-size:11px;color:#667085}
+    .support-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    @media(max-width:760px){
+      .support-summary{grid-template-columns:1fr 1fr}.support-copy{align-items:flex-start;flex-direction:column}.support-copy .btn{width:100%}
+      .support-grid,.support-row-grid{grid-template-columns:1fr}.support-field.full,.support-row-grid .wide,.support-row-grid .span2{grid-column:1}
+      .support-options{grid-template-columns:1fr 1fr}.support-domain-head{flex-direction:column}.support-tags{justify-content:flex-start}.support-actions .btn{flex:1}
+    }
+  `;
+  if(!document.getElementById(style.id))document.head.appendChild(style);
+
+  const local={
+    eventId:null,record:null,previous:null,previousEvent:null,
+    household:{},familyMembers:[],supportDomains:{},resources:{},summary:{},
+    expandedDomainNotes:new Set(),
+    pendingCopyFromId:null,hasLaterCompleted:false
+  };
+
+  const safe=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const safeArray=v=>Array.isArray(v)?v:[];
+  const newId=prefix=>(globalThis.crypto?.randomUUID?.()||(prefix+'-'+Date.now()+'-'+Math.random().toString(36).slice(2)));
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const eventForms=id=>(state.assessmentEventForms||[]).filter(x=>x.assessment_event_id===id);
+  const supportForm=id=>eventForms(id).find(x=>x.form_code==='support')||null;
+  const canEditEvent=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+  const domainStatus=key=>local.supportDomains?.[key]?.status||null;
+  const previousDomainStatus=key=>local.previous?.support_domains?.[key]?.status||null;
+  const concernCount=()=>SUPPORT_DOMAINS.filter(([key])=>['partial','insufficient'].includes(domainStatus(key))).length;
+  const openNeedsCount=()=>safeArray(local.resources.unmet_needs).filter(x=>!['completed','declined'].includes(x.status)).length;
+
+  function domainChange(key){
+    const now=domainStatus(key),prev=previousDomainStatus(key);
+    if(!now||!prev)return null;
+    if(now===prev)return ['partial','insufficient'].includes(now)?{kind:'persist',label:'持續需留意'}:null;
+    const rank={insufficient:1,partial:2,adequate:3};
+    if(!(now in rank)||!(prev in rank))return null;
+    return rank[now]>rank[prev]?{kind:'better',label:'支持改善'}:{kind:'worse',label:'支持減弱'};
+  }
+
+  async function loadSupport(eventId){
+    const row=eventById(eventId);
+    if(!row)throw new Error('找不到評估事件');
+    const [cur,hist]=await Promise.all([
+      db.from('assessment_support_records').select('*').eq('assessment_event_id',eventId).maybeSingle(),
+      db.from('assessment_support_records').select('*').eq('case_id',row.case_id).not('confirmed_at','is',null).neq('assessment_event_id',eventId).order('confirmed_at',{ascending:false})
+    ]);
+    if(cur.error)throw cur.error;if(hist.error)throw hist.error;
+
+    local.eventId=eventId;local.record=cur.data||null;
+    local.household={...safe(local.record?.household)};
+    local.familyMembers=safeArray(local.record?.family_members).map((x,i)=>({
+      id:x?.id||('family-'+i),name:x?.name||'',relation:x?.relation||'',co_resident:x?.co_resident||'',
+      contact_frequency:x?.contact_frequency||'',support_role:x?.support_role||'',note:x?.note||''
+    }));
+    local.supportDomains={...safe(local.record?.support_domains)};
+    local.resources={...safe(local.record?.resources)};
+    local.resources.social_resources=safeArray(local.resources.social_resources).map((x,i)=>{
+      let type=x?.type||'';
+      if(type==='other')type=x?.nature==='informal'?'other_informal':'other_formal';
+      return {
+        id:x?.id||('resource-'+i),nature:resourceNatureForType(type),type,name:x?.name||'',
+        assistance:x?.assistance||'',usage_status:x?.usage_status||'',sufficiency:x?.sufficiency||'',insufficiency_note:x?.insufficiency_note||''
+      };
+    });
+    local.resources.unmet_needs=safeArray(local.resources.unmet_needs).map((x,i)=>({
+      id:x?.id||('need-'+i),type:x?.type||'',need:x?.need||'',action:x?.action||'',status:x?.status||''
+    }));
+    local.summary={...safe(local.record?.summary)};
+    local.expandedDomainNotes=new Set();
+
+    const dated=(hist.data||[]).map(record=>({record,event:eventById(record.assessment_event_id)})).filter(x=>x.event?.planned_date);
+    local.hasLaterCompleted=dated.some(x=>x.event.planned_date>row.planned_date);
+    const candidates=dated.filter(x=>x.event.planned_date<row.planned_date)
+      .sort((a,b)=>String(b.event.planned_date).localeCompare(String(a.event.planned_date))||String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||'')));
+    local.previous=candidates[0]?.record||null;local.previousEvent=candidates[0]?.event||null;
+    local.pendingCopyFromId=(local.record?.copied_from_id&&local.record.copied_from_id===local.previous?.id)?local.record.copied_from_id:null;
+  }
+
+  function options(list,selected,placeholder='請選擇'){
+    return `<option value="">${escapeHTML(placeholder)}</option>`+list.map(([v,l])=>`<option value="${v}" ${selected===v?'selected':''}>${escapeHTML(l)}</option>`).join('');
+  }
+
+  function renderSummary(){
+    const primary=local.household.primary_caregiver_status==='present'?(local.household.primary_caregiver_name||'有主要照顧者'):local.household.primary_caregiver_status==='none'?'無主要照顧者':'尚未填寫';
+    return `<section class="support-summary">
+      <div class="support-summary-card"><label>整體支持</label><strong>${escapeHTML(OVERALL_LABELS[local.summary.overall_support]||'尚未評估')}</strong><small>由督導綜合判斷，不計分</small></div>
+      <div class="support-summary-card"><label>家庭支持需留意</label><strong>${concernCount()} 項</strong><small>部分不足＋明顯不足</small></div>
+      <div class="support-summary-card"><label>目前社會資源</label><strong>${safeArray(local.resources.social_resources).length} 項</strong><small>正式＋非正式資源</small></div>
+      <div class="support-summary-card"><label>待處理資源需求</label><strong>${openNeedsCount()} 項</strong><small>${escapeHTML(primary)}</small></div>
+    </section>`;
+  }
+
+  function renderCopyBox(){
+    if(!local.previous)return '';
+    return `<div class="support-copy"><div><strong>前次支持系統：${escapeHTML(OVERALL_LABELS[local.previous?.summary?.overall_support]||'已完成')}</strong>
+      <span>${local.previousEvent?.planned_date?rocDate(local.previousEvent.planned_date+'T00:00:00')+'｜':''}帶入後請重新確認家庭支持、社會資源與尚缺需求。</span></div>
+      <button id="supportCopyPrevious" type="button" class="btn sm">帶入前次資料</button></div>`;
+  }
+
+  function renderHousehold(){
+    const h=local.household,c=caseById(eventById(local.eventId)?.case_id);
+    const welfareIdentity=({
+      '低收入戶':'第一類',
+      '中低收入戶':'第二類',
+      '一般戶':'第三類'
+    })[c?.welfare_identity]||c?.welfare_identity||'主檔未登錄';
+    return `<section class="support-section">
+      <div class="support-section-head"><div><strong>一、家庭與居住概況</strong><small>記錄會影響支持與照顧安排的家庭資訊。</small></div></div>
+      <div class="support-grid">
+        <div class="support-field"><label>居住安排 *</label><select data-support-household="living_arrangement">${options(LIVING_OPTIONS,h.living_arrangement)}</select></div>
+        ${h.living_arrangement==='other'?`<div class="support-field"><label>其他居住安排</label><input data-support-household="living_other" value="${escapeHTML(h.living_other||'')}" placeholder="請說明"></div>`:''}
+        <div class="support-field"><label>長照福利身分（個案主檔）</label><div class="support-readonly">${escapeHTML(welfareIdentity)}</div></div>
+        <div class="support-field"><label>近期是否有重大家庭變化 *</label><select data-support-household="family_change_status">
+          <option value="">請選擇</option><option value="no" ${h.family_change_status==='no'?'selected':''}>無</option><option value="yes" ${h.family_change_status==='yes'?'selected':''}>有</option>
+        </select></div>
+        ${h.family_change_status==='yes'?`<div class="support-field full"><label>重大家庭變化說明 *</label><textarea data-support-household="family_change_note" placeholder="例如：主要照顧者住院、家人搬遷、家屬死亡、工作變動等。">${escapeHTML(h.family_change_note||'')}</textarea></div>`:''}
+        <div class="support-field full"><label>家庭狀況摘要</label><textarea data-support-household="family_summary" placeholder="簡要說明同住情形、家庭互動、照顧安排與重要背景。">${escapeHTML(h.family_summary||'')}</textarea></div>
+      </div>
+    </section>`;
+  }
+
+  function renderCaregivers(){
+    const h=local.household;
+    return `<section class="support-section">
+      <div class="support-section-head"><div><strong>二、主要照顧者與重要支持者</strong><small>只記錄實際參與照顧或能提供支持的重要人物，不取代家系圖。</small></div>
+        <button id="supportAddFamilyMember" type="button" class="btn sm">＋ 新增支持者</button></div>
+      <div class="support-grid">
+        <div class="support-field"><label>是否有主要照顧者 *</label><select data-support-household="primary_caregiver_status">
+          <option value="">請選擇</option><option value="present" ${h.primary_caregiver_status==='present'?'selected':''}>有</option><option value="none" ${h.primary_caregiver_status==='none'?'selected':''}>無</option>
+        </select></div>
+        ${h.primary_caregiver_status==='present'?`
+          <div class="support-field"><label>姓名／稱謂 *</label><input data-support-household="primary_caregiver_name" value="${escapeHTML(h.primary_caregiver_name||'')}" placeholder="例如：徐先生"></div>
+          <div class="support-field"><label>與個案關係 *</label><input data-support-household="primary_caregiver_relation" value="${escapeHTML(h.primary_caregiver_relation||'')}" placeholder="例如：案次子"></div>
+          <div class="support-field"><label>是否同住</label><select data-support-household="primary_caregiver_co_resident"><option value="">請選擇</option><option value="yes" ${h.primary_caregiver_co_resident==='yes'?'selected':''}>是</option><option value="no" ${h.primary_caregiver_co_resident==='no'?'selected':''}>否</option></select></div>
+          <div class="support-field"><label>可提供照顧時間／頻率</label><input data-support-household="primary_caregiver_availability" value="${escapeHTML(h.primary_caregiver_availability||'')}" placeholder="例如：每日下班後、假日"></div>
+          <div class="support-field"><label>主要協助內容</label><input data-support-household="primary_caregiver_role" value="${escapeHTML(h.primary_caregiver_role||'')}" placeholder="例如：就醫、備餐、用藥管理"></div>`:''}
+        <div class="support-field"><label>是否有替代照顧者／其他重要支持者 *</label><select data-support-household="backup_available">
+          <option value="">請選擇</option><option value="yes" ${h.backup_available==='yes'?'selected':''}>有</option><option value="no" ${h.backup_available==='no'?'selected':''}>無</option>
+        </select></div>
+      </div>
+      <div class="support-list">
+        ${local.familyMembers.length?local.familyMembers.map((m,index)=>`<div class="support-row" data-support-family="${escapeHTML(m.id)}">
+          <div class="support-row-head"><strong>重要支持者 ${index+1}</strong><button type="button" class="btn sm" data-remove-support-family="${escapeHTML(m.id)}">移除</button></div>
+          <div class="support-row-grid">
+            <input data-support-family-field="name" value="${escapeHTML(m.name||'')}" placeholder="姓名／稱謂">
+            <input data-support-family-field="relation" value="${escapeHTML(m.relation||'')}" placeholder="與個案關係">
+            <select data-support-family-field="co_resident"><option value="">是否同住</option><option value="yes" ${m.co_resident==='yes'?'selected':''}>同住</option><option value="no" ${m.co_resident==='no'?'selected':''}>不同住</option></select>
+            <input data-support-family-field="contact_frequency" value="${escapeHTML(m.contact_frequency||'')}" placeholder="聯繫／探視頻率">
+            <input class="span2" data-support-family-field="support_role" value="${escapeHTML(m.support_role||'')}" placeholder="可提供哪些協助">
+            <input class="wide" data-support-family-field="note" value="${escapeHTML(m.note||'')}" placeholder="其他備註（選填）">
+          </div></div>`).join(''):'<div class="support-empty">目前未新增其他重要支持者。</div>'}
+      </div>
+    </section>`;
+  }
+
+  function renderDomain([key,label]){
+    const cur=local.supportDomains[key]||{},prev=local.previous?.support_domains?.[key]||{},change=domainChange(key);
+    const noteValue=String(cur.note||''),noteRequired=['partial','insufficient','not_applicable'].includes(cur.status);
+    const showNote=noteRequired||!!noteValue||local.expandedDomainNotes.has(key);
+    const placeholder=cur.status==='partial'?'請說明目前不足之處':cur.status==='insufficient'?'請說明明顯不足或需介入的情形':cur.status==='not_applicable'?'請說明不適用原因':'補充備註（選填）';
+    return `<div class="support-domain ${['partial','insufficient'].includes(cur.status)?'concern':''}">
+      <div class="support-domain-head"><div class="support-domain-title">${escapeHTML(label)}</div><div class="support-tags">
+        ${prev.status?`<span class="support-tag prev">前次：${escapeHTML(statusLabel(prev.status))}</span>`:''}${change?`<span class="support-tag ${change.kind}">${escapeHTML(change.label)}</span>`:''}
+      </div></div>
+      <div class="support-options">${DOMAIN_STATUS.map(([v,l])=>`<label class="support-option ${cur.status===v?'selected':''}"><input type="radio" name="support_domain_${key}" value="${v}" ${cur.status===v?'checked':''}>${l}</label>`).join('')}</div>
+      ${!showNote&&!['partial','insufficient','not_applicable'].includes(cur.status)?`<div class="support-note"><button type="button" class="btn sm" data-support-domain-add-note="${key}">＋ 補充備註</button></div>`:''}
+      ${showNote?`<div class="support-note"><label>備註${noteRequired?' *':''}</label><textarea data-support-domain-note="${key}" placeholder="${escapeHTML(placeholder)}">${escapeHTML(noteValue)}</textarea></div>`:''}
+    </div>`;
+  }
+
+  function renderDomains(){
+    return `<section class="support-section"><div class="support-section-head"><div><strong>三、家庭支持功能</strong><small>評估家人或重要他人是否能提供實際協助。</small></div></div>${SUPPORT_DOMAINS.map(renderDomain).join('')}</section>`;
+  }
+
+  function renderEconomy(){
+    const r=local.resources;
+    return `<section class="support-section"><div class="support-section-head"><div><strong>四、經濟狀況</strong><small>經濟身分由主檔顯示，本區記錄實際經濟支持與照顧影響。</small></div></div>
+      <div class="support-grid">
+        <div class="support-field"><label>目前經濟狀況 *</label><select data-support-resource="economic_status">
+          <option value="">請選擇</option><option value="stable" ${r.economic_status==='stable'?'selected':''}>經濟狀況無虞</option><option value="watch" ${r.economic_status==='watch'?'selected':''}>尚可但需留意</option><option value="difficulty" ${r.economic_status==='difficulty'?'selected':''}>有明顯經濟困難</option>
+        </select></div>
+        ${['watch','difficulty'].includes(r.economic_status)?`<div class="support-field"><label>經濟狀況說明 *</label><input data-support-resource="economic_note" value="${escapeHTML(r.economic_note||'')}" placeholder="請說明目前壓力或困難"></div>`:''}
+        <div class="support-field full"><label>主要生活／經濟來源</label><textarea data-support-resource="income_sources" placeholder="例如：老人年金、津貼、退休金、子女提供生活費、個人存款。">${escapeHTML(r.income_sources||'')}</textarea></div>
+        <div class="support-field"><label>是否因經濟因素影響照顧或醫療 *</label><select data-support-resource="economic_care_impact">
+          <option value="">請選擇</option><option value="no" ${r.economic_care_impact==='no'?'selected':''}>否</option><option value="yes" ${r.economic_care_impact==='yes'?'selected':''}>是</option>
+        </select></div>
+        ${r.economic_care_impact==='yes'?`<div class="support-field"><label>影響情形 *</label><input data-support-resource="economic_care_impact_note" value="${escapeHTML(r.economic_care_impact_note||'')}" placeholder="請說明影響照顧、就醫或生活之處"></div>`:''}
+      </div>
+    </section>`;
+  }
+
+  function renderSocialResourceRow(item,index){
+    const natureLabel=resourceNatureLabel(item.type);
+    return `<div class="support-row" data-support-resource-row="${escapeHTML(item.id)}">
+      <div class="support-row-head">
+        <div><strong>資源 ${index+1}</strong>${natureLabel?`<span class="support-tag" style="margin-left:7px">${escapeHTML(natureLabel)}</span>`:''}</div>
+        <button type="button" class="btn sm" data-remove-support-resource="${escapeHTML(item.id)}">移除</button>
+      </div>
+      <div class="support-row-grid">
+        <select data-support-resource-row-field="type">${options(RESOURCE_TYPES,item.type,'資源類型')}</select>
+        <input class="span2" data-support-resource-row-field="name" value="${escapeHTML(item.name||'')}" placeholder="單位／資源名稱">
+        <input class="wide" data-support-resource-row-field="assistance" value="${escapeHTML(item.assistance||'')}" placeholder="目前提供什麼協助">
+        <select data-support-resource-row-field="usage_status">${options(RESOURCE_USAGE,item.usage_status,'使用狀況')}</select>
+        <select data-support-resource-row-field="sufficiency">${options(RESOURCE_SUFFICIENCY,item.sufficiency,'是否足夠')}</select>
+        ${['partial','insufficient'].includes(item.sufficiency)?`<input class="wide" data-support-resource-row-field="insufficiency_note" value="${escapeHTML(item.insufficiency_note||'')}" placeholder="不足原因／仍缺少什麼 *">`:''}
+      </div>
+    </div>`;
+  }
+
+  function renderSocialResources(){
+    const r=local.resources;
+    return `<section class="support-section">
+      <div class="support-section-head"><div><strong>五、社會資源與社會支持</strong><small>分別記錄已在使用的正式資源與家庭以外的非正式支持。</small></div>
+        <button id="supportAddSocialResource" type="button" class="btn sm">＋ 新增資源</button></div>
+      <div class="support-list">${safeArray(r.social_resources).length?safeArray(r.social_resources).map(renderSocialResourceRow).join(''):'<div class="support-empty">目前尚未新增社會資源。</div>'}</div>
+      <div class="support-grid" style="border-top:1px solid var(--line)">
+        <div class="support-field"><label>目前社會互動情形 *</label><select data-support-resource="social_interaction_status">${options(SOCIAL_INTERACTION,r.social_interaction_status)}</select></div>
+        ${['limited','isolated','unable'].includes(r.social_interaction_status)?`<div class="support-field"><label>社會互動說明 *</label><input data-support-resource="social_interaction_note" value="${escapeHTML(r.social_interaction_note||'')}" placeholder="請說明互動不足、孤立或無法評估原因"></div>`:''}
+        <div class="support-field"><label>是否參與社區、宗教、據點或其他活動 *</label><select data-support-resource="community_participation_status">${options(COMMUNITY_PARTICIPATION,r.community_participation_status)}</select></div>
+        ${r.community_participation_status&&r.community_participation_status!=='participates'?`<div class="support-field"><label>活動參與補充</label><input data-support-resource="community_participation_note" value="${escapeHTML(r.community_participation_note||'')}" placeholder="可補充原因或目前情形"></div>`:''}
+      </div>
+    </section>`;
+  }
+
+  function renderNeedRow(item,index){
+    return `<div class="support-row" data-support-need-row="${escapeHTML(item.id)}">
+      <div class="support-row-head"><strong>需求／轉介 ${index+1}</strong><button type="button" class="btn sm" data-remove-support-need="${escapeHTML(item.id)}">移除</button></div>
+      <div class="support-row-grid">
+        <select data-support-need-row-field="type">${options(RESOURCE_TYPES,item.type,'需求類型')}</select>
+        <input class="span2" data-support-need-row-field="need" value="${escapeHTML(item.need||'')}" placeholder="需求內容">
+        <input class="span2" data-support-need-row-field="action" value="${escapeHTML(item.action||'')}" placeholder="預計處理／轉介方式">
+        <select data-support-need-row-field="status">${options(NEED_STATUS,item.status,'處理狀態')}</select>
+      </div>
+    </div>`;
+  }
+
+  function renderUnmetNeeds(){
+    const r=local.resources,has=r.unmet_needs_status;
+    return `<section class="support-section">
+      <div class="support-section-head"><div><strong>六、尚缺資源／轉介需求</strong><small>和「目前已有資源」分開，方便後續追蹤處理進度。</small></div>
+        ${has==='yes'?'<button id="supportAddNeed" type="button" class="btn sm">＋ 新增需求</button>':''}</div>
+      <div class="support-grid">
+        <div class="support-field"><label>目前是否有尚未滿足的資源需求 *</label><select data-support-resource="unmet_needs_status">
+          <option value="">請選擇</option><option value="no" ${has==='no'?'selected':''}>無</option><option value="yes" ${has==='yes'?'selected':''}>有</option>
+        </select></div>
+      </div>
+      ${has==='yes'?`<div class="support-list" style="border-top:1px solid var(--line)">${safeArray(r.unmet_needs).length?safeArray(r.unmet_needs).map(renderNeedRow).join(''):'<div class="support-empty">已選擇「有需求」，請至少新增一筆需求。</div>'}</div>`:''}
+    </section>`;
+  }
+
+  function renderOverall(){
+    const s=local.summary;
+    return `<section class="support-section"><div class="support-section-head"><div><strong>七、整體支持評估與後續</strong><small>此處不計分，由督導依前述家庭與社會支持狀況綜合判斷。</small></div></div>
+      <div class="support-grid">
+        <div class="support-field"><label>整體支持狀況 *</label><select data-support-summary="overall_support">
+          <option value="">請選擇</option><option value="adequate" ${s.overall_support==='adequate'?'selected':''}>支持充足</option><option value="needs_attention" ${s.overall_support==='needs_attention'?'selected':''}>部分不足／需追蹤</option><option value="weak" ${s.overall_support==='weak'?'selected':''}>支持薄弱／需介入</option>
+        </select></div>
+        <div class="support-field"><label>是否需後續追蹤 *</label><select data-support-summary="followup_required"><option value="">請選擇</option><option value="yes" ${s.followup_required==='yes'?'selected':''}>是</option><option value="no" ${s.followup_required==='no'?'selected':''}>否</option></select></div>
+        ${['needs_attention','weak'].includes(s.overall_support)?`<div class="support-field full"><label>主要支持問題 *</label><textarea data-support-summary="key_issues" placeholder="請說明目前最需要注意的家庭或社會支持缺口。">${escapeHTML(s.key_issues||'')}</textarea></div>`:''}
+        <div class="support-field full"><label>目前支持安排／建議</label><textarea data-support-summary="support_plan" placeholder="例如：持續由案次子處理就醫接送，並連結社福資源；假日由案長子替代照顧。">${escapeHTML(s.support_plan||'')}</textarea></div>
+        ${s.followup_required==='yes'?`<div class="support-field full"><label>後續追蹤重點 *</label><textarea data-support-summary="followup_note" placeholder="請記錄下次需確認的家庭支持、資源申請或轉介情形。">${escapeHTML(s.followup_note||'')}</textarea></div>`:''}
+      </div>
+    </section>`;
+  }
+
+  function renderSupportPage(){
+    const row=eventById(local.eventId),c=row?caseById(row.case_id):null,form=row?supportForm(row.id):null;
+    if(!row||!c||!form)return window.v52AssessmentApi?.renderAssessmentPage?.();
+    const canEdit=canEditEvent(row)&&row.status!=='voided';
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,'支持系統');
+    $('content').innerHTML=`<div class="support-page">
+      <div class="page-head"><div><h1>${escapeHTML(c.case_name)}｜支持系統</h1><p>評估日期：${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}　狀態：${escapeHTML(({pending:'待進行',in_progress:'評估中',forms_completed:'表單完成／待總結',completed:'已完成',voided:'作廢'})[row.status]||row.status)}</p></div>
+      <div class="assessment-head-actions"><button id="supportBack" type="button" class="btn">← 返回評估事件</button></div></div>
+      ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}${renderSummary()}${renderCopyBox()}
+      ${local.hasLaterCompleted?'<div class="support-notice">此筆評估日期早於個案較新的已完成支持系統紀錄；前次比較仍以本次日期以前最近一筆已完成紀錄為準。</div>':''}
+      ${local.pendingCopyFromId&&!local.record?.confirmed_at?'<div class="support-notice">已帶入前次資料，請重新確認目前家庭支持、社會資源與尚缺需求。</div>':''}
+      ${renderHousehold()}${renderCaregivers()}${renderDomains()}${renderEconomy()}${renderSocialResources()}${renderUnmetNeeds()}${renderOverall()}
+      ${canEdit?`<div class="support-actions">${form.status!=='completed'?'<button id="supportSaveDraft" type="button" class="btn">儲存草稿</button>':''}<button id="supportConfirm" type="button" class="btn primary">${form.status==='completed'?'儲存修正並確認':'完成本次確認'}</button></div>`:''}
+    </div>`;
+    bindEvents(row);
+  }
+
+  function rerenderPreservingScroll(){const y=window.scrollY;renderSupportPage();requestAnimationFrame(()=>window.scrollTo({top:y,behavior:'auto'}));}
+
+  function syncFamilyMembers(){
+    const items=[];document.querySelectorAll('[data-support-family]').forEach(rowEl=>{
+      const item={id:rowEl.dataset.supportFamily||newId('family')};
+      rowEl.querySelectorAll('[data-support-family-field]').forEach(el=>item[el.dataset.supportFamilyField]=el.value);
+      if(Object.entries(item).some(([k,v])=>k!=='id'&&String(v||'').trim()!==''))items.push(item);
+    });local.familyMembers=items;
+  }
+  function syncSocialResources(){
+    const items=[];document.querySelectorAll('[data-support-resource-row]').forEach(rowEl=>{
+      const item={id:rowEl.dataset.supportResourceRow||newId('resource')};
+      rowEl.querySelectorAll('[data-support-resource-row-field]').forEach(el=>item[el.dataset.supportResourceRowField]=el.value);
+      item.nature=resourceNatureForType(item.type);
+      if(Object.entries(item).some(([k,v])=>k!=='id'&&String(v||'').trim()!==''))items.push(item);
+    });local.resources.social_resources=items;
+  }
+  function syncNeeds(){
+    const items=[];document.querySelectorAll('[data-support-need-row]').forEach(rowEl=>{
+      const item={id:rowEl.dataset.supportNeedRow||newId('need')};
+      rowEl.querySelectorAll('[data-support-need-row-field]').forEach(el=>item[el.dataset.supportNeedRowField]=el.value);
+      if(Object.entries(item).some(([k,v])=>k!=='id'&&String(v||'').trim()!==''))items.push(item);
+    });local.resources.unmet_needs=items;
+  }
+  function syncDynamicRows(){syncFamilyMembers();syncSocialResources();syncNeeds();}
+
+  function bindEvents(row){
+    $('supportBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+
+    document.querySelectorAll('[data-support-household]').forEach(el=>{
+      const key=el.dataset.supportHousehold,rerenderKeys=['living_arrangement','family_change_status','primary_caregiver_status','backup_available'];
+      el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{local.household[key]=el.value;if(rerenderKeys.includes(key))rerenderPreservingScroll();});
+    });
+
+    $('supportAddFamilyMember')?.addEventListener('click',()=>{syncDynamicRows();local.familyMembers=[...local.familyMembers,{id:newId('family'),name:'',relation:'',co_resident:'',contact_frequency:'',support_role:'',note:''}];rerenderPreservingScroll();});
+    document.querySelectorAll('[data-remove-support-family]').forEach(btn=>btn.addEventListener('click',()=>{syncDynamicRows();local.familyMembers=local.familyMembers.filter(x=>x.id!==btn.dataset.removeSupportFamily);rerenderPreservingScroll();}));
+    document.querySelectorAll('[data-support-family-field]').forEach(el=>el.addEventListener(el.tagName==='SELECT'?'change':'input',syncFamilyMembers));
+
+    document.querySelectorAll('input[name^="support_domain_"]').forEach(input=>input.addEventListener('change',()=>{const key=input.name.replace('support_domain_','');local.supportDomains[key]={...(local.supportDomains[key]||{}),status:input.value};rerenderPreservingScroll();}));
+    document.querySelectorAll('[data-support-domain-add-note]').forEach(btn=>btn.addEventListener('click',()=>{local.expandedDomainNotes.add(btn.dataset.supportDomainAddNote);rerenderPreservingScroll();}));
+    document.querySelectorAll('[data-support-domain-note]').forEach(el=>el.addEventListener('input',()=>{const key=el.dataset.supportDomainNote;local.supportDomains[key]={...(local.supportDomains[key]||{}),note:el.value};}));
+
+    document.querySelectorAll('[data-support-resource]').forEach(el=>{
+      const key=el.dataset.supportResource,rerenderKeys=['economic_status','economic_care_impact','social_interaction_status','community_participation_status','unmet_needs_status'];
+      el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{syncDynamicRows();local.resources[key]=el.value;if(key==='unmet_needs_status'&&el.value==='no')local.resources.unmet_needs=[];if(rerenderKeys.includes(key))rerenderPreservingScroll();});
+    });
+
+    $('supportAddSocialResource')?.addEventListener('click',()=>{syncDynamicRows();local.resources.social_resources=[...safeArray(local.resources.social_resources),{id:newId('resource'),nature:'',type:'',name:'',assistance:'',usage_status:'',sufficiency:'',insufficiency_note:''}];rerenderPreservingScroll();});
+    document.querySelectorAll('[data-remove-support-resource]').forEach(btn=>btn.addEventListener('click',()=>{syncDynamicRows();local.resources.social_resources=safeArray(local.resources.social_resources).filter(x=>x.id!==btn.dataset.removeSupportResource);rerenderPreservingScroll();}));
+    document.querySelectorAll('[data-support-resource-row-field]').forEach(el=>el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{syncSocialResources();if(['type','sufficiency'].includes(el.dataset.supportResourceRowField))rerenderPreservingScroll();}));
+
+    $('supportAddNeed')?.addEventListener('click',()=>{syncDynamicRows();local.resources.unmet_needs=[...safeArray(local.resources.unmet_needs),{id:newId('need'),type:'',need:'',action:'',status:''}];rerenderPreservingScroll();});
+    document.querySelectorAll('[data-remove-support-need]').forEach(btn=>btn.addEventListener('click',()=>{syncDynamicRows();local.resources.unmet_needs=safeArray(local.resources.unmet_needs).filter(x=>x.id!==btn.dataset.removeSupportNeed);rerenderPreservingScroll();}));
+    document.querySelectorAll('[data-support-need-row-field]').forEach(el=>el.addEventListener(el.tagName==='SELECT'?'change':'input',syncNeeds));
+
+    document.querySelectorAll('[data-support-summary]').forEach(el=>{
+      const key=el.dataset.supportSummary;el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{local.summary[key]=el.value;if(['overall_support','followup_required'].includes(key))rerenderPreservingScroll();});
+    });
+
+    $('supportCopyPrevious')?.addEventListener('click',()=>{
+      if(!local.previous)return;
+      const hasCurrent=Object.keys(local.household||{}).length||local.familyMembers.length||Object.keys(local.supportDomains||{}).length||Object.keys(local.resources||{}).length||Object.keys(local.summary||{}).length;
+      if(hasCurrent&&!confirm('帶入前次資料會覆蓋目前尚未儲存的支持系統內容，是否繼續？'))return;
+      local.household={...safe(local.previous.household)};
+      local.familyMembers=safeArray(local.previous.family_members).map(x=>({...safe(x),id:x?.id||newId('family')}));
+      local.supportDomains=JSON.parse(JSON.stringify(safe(local.previous.support_domains)));
+      local.resources=JSON.parse(JSON.stringify(safe(local.previous.resources)));
+      local.resources.social_resources=safeArray(local.resources.social_resources).map(x=>{
+        let type=x?.type||'';
+        if(type==='other')type=x?.nature==='informal'?'other_informal':'other_formal';
+        return {...safe(x),id:x?.id||newId('resource'),type,nature:resourceNatureForType(type)};
+      });
+      local.resources.unmet_needs=safeArray(local.resources.unmet_needs).map(x=>({...safe(x),id:x?.id||newId('need')}));
+      local.summary={...safe(local.previous.summary)};
+      local.pendingCopyFromId=local.previous.id;rerenderPreservingScroll();toast('已帶入前次支持系統資料，請確認本次狀況','success');
+    });
+
+    $('supportSaveDraft')?.addEventListener('click',()=>saveSupport(false));
+    $('supportConfirm')?.addEventListener('click',()=>saveSupport(true));
+  }
+
+  function validateFinalize(){
+    const h=local.household,r=local.resources,s=local.summary;
+    if(!h.living_arrangement)return '請選擇居住安排';
+    if(!h.family_change_status)return '請選擇近期是否有重大家庭變化';
+    if(h.family_change_status==='yes'&&!String(h.family_change_note||'').trim())return '請填寫重大家庭變化說明';
+    if(!h.primary_caregiver_status)return '請選擇是否有主要照顧者';
+    if(h.primary_caregiver_status==='present'){
+      if(!String(h.primary_caregiver_name||'').trim())return '請填寫主要照顧者姓名／稱謂';
+      if(!String(h.primary_caregiver_relation||'').trim())return '請填寫主要照顧者與個案關係';
+    }
+    if(!h.backup_available)return '請選擇是否有替代照顧者／其他重要支持者';
+    if(h.backup_available==='yes'&&local.familyMembers.length===0)return '已選擇有替代照顧者／其他重要支持者，請至少新增一位支持者';
+    if(h.backup_available==='no'&&local.familyMembers.length>0)return '目前已新增重要支持者，請將「是否有替代照顧者／其他重要支持者」改為「有」';
+
+    const incompleteSupporter=local.familyMembers.find(x=>
+      !String(x.name||'').trim()
+      ||!String(x.relation||'').trim()
+      ||!String(x.support_role||'').trim()
+    );
+    if(incompleteSupporter)return '重要支持者請至少填寫「姓名／稱謂、與個案關係、可提供哪些協助」';
+
+    const missingDomains=SUPPORT_DOMAINS.filter(([key])=>!domainStatus(key));
+    if(missingDomains.length)return '尚有未完成支持面向：'+missingDomains.map(([,label])=>label).join('、');
+    const missingNotes=SUPPORT_DOMAINS.filter(([key])=>['partial','insufficient','not_applicable'].includes(domainStatus(key))&&!String(local.supportDomains?.[key]?.note||'').trim());
+    if(missingNotes.length)return '以下支持面向請填寫說明：'+missingNotes.map(([,label])=>label).join('、');
+
+    if(!r.economic_status)return '請選擇目前經濟狀況';
+    if(['watch','difficulty'].includes(r.economic_status)&&!String(r.economic_note||'').trim())return '請填寫經濟狀況說明';
+    if(!r.economic_care_impact)return '請選擇經濟因素是否影響照顧或醫療';
+    if(r.economic_care_impact==='yes'&&!String(r.economic_care_impact_note||'').trim())return '請填寫經濟因素影響情形';
+
+    const incompleteResource=safeArray(r.social_resources).find(x=>!x.type||!resourceNatureForType(x.type)||!String(x.name||'').trim()||!String(x.assistance||'').trim()||!x.usage_status||!x.sufficiency);
+    if(incompleteResource)return '請完整填寫目前社會資源的「類型、名稱、提供協助、使用狀況、是否足夠」';
+    const resourceNeedNote=safeArray(r.social_resources).find(x=>['partial','insufficient'].includes(x.sufficiency)&&!String(x.insufficiency_note||'').trim());
+    if(resourceNeedNote)return '社會資源選擇「部分不足／不足」時，請填寫不足原因';
+
+    if(!r.social_interaction_status)return '請選擇目前社會互動情形';
+    if(['limited','isolated','unable'].includes(r.social_interaction_status)&&!String(r.social_interaction_note||'').trim())return '請填寫社會互動情形說明';
+    if(!r.community_participation_status)return '請選擇是否參與社區、宗教、據點或其他活動';
+
+    if(!r.unmet_needs_status)return '請選擇目前是否有尚未滿足的資源需求';
+    if(r.unmet_needs_status==='yes'&&safeArray(r.unmet_needs).length===0)return '已選擇有尚未滿足的資源需求，請至少新增一筆需求';
+    const incompleteNeed=safeArray(r.unmet_needs).find(x=>!x.type||!String(x.need||'').trim()||!String(x.action||'').trim()||!x.status);
+    if(incompleteNeed)return '請完整填寫尚缺資源的「需求類型、需求內容、處理／轉介方式、處理狀態」';
+
+    if(!s.overall_support)return '請選擇整體支持狀況';
+    if(['needs_attention','weak'].includes(s.overall_support)&&!String(s.key_issues||'').trim())return '請填寫主要支持問題';
+    if(!s.followup_required)return '請選擇是否需後續追蹤';
+    if(s.followup_required==='yes'&&!String(s.followup_note||'').trim())return '請填寫後續追蹤重點';
+    return null;
+  }
+
+  async function saveSupport(finalize){
+    const row=eventById(local.eventId);if(!row||!canEditEvent(row))return toast('您沒有此個案的評估編輯權限','error');
+    syncDynamicRows();
+    if(finalize){const problem=validateFinalize();if(problem)return toast(problem,'warn');}
+    else{
+      const hasData=Object.keys(local.household||{}).length||local.familyMembers.length||Object.keys(local.supportDomains||{}).length||Object.keys(local.resources||{}).length||Object.keys(local.summary||{}).length;
+      if(!hasData)return toast('至少填寫一項後再儲存草稿','warn');
+    }
+    const y=window.scrollY;showLoading(true);
+    try{
+      const {error}=await db.rpc('save_assessment_support',{
+        p_event_id:row.id,p_household:local.household,p_family_members:local.familyMembers,p_support_domains:local.supportDomains,
+        p_resources:local.resources,p_summary:local.summary,p_finalize:!!finalize,p_copied_from_id:local.pendingCopyFromId||local.record?.copied_from_id||null
+      });
+      if(error)throw error;
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+      if(finalize){window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);toast('支持系統評估已完成','success');}
+      else{await loadSupport(row.id);renderSupportPage();requestAnimationFrame(()=>window.scrollTo({top:y,behavior:'auto'}));toast('支持系統草稿已儲存','success');}
+    }catch(err){console.error(err);toast('儲存支持系統失敗：'+(err?.message||err),'error');}
+    finally{showLoading(false);}
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+    if(!supportForm(eventId))return toast('本次評估未選用支持系統','warn');
+    showLoading(true);
+    try{await loadSupport(eventId);renderSupportPage();window.scrollTo({top:0,behavior:'auto'});}
+    catch(err){console.error(err);toast('讀取支持系統失敗：'+(err?.message||err),'error');}
+    finally{showLoading(false);}
+  }
+
+  window.v52AssessmentSupport={open};
+})();

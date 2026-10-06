@@ -1,0 +1,329 @@
+// V5.2 評估管理：高負荷家庭照顧者初篩
+(()=>{
+  const INDICATORS=[
+    ['behavior_stress','被照顧者的行為／情緒問題已造成明顯照顧困難','例如出現攻擊、遊走、妄想、嚴重干擾等情形，使照顧者身心壓力明顯增加。'],
+    ['older_caregiver','照顧者屬高齡照顧者','一般照顧者 65 歲以上；原住民照顧者 55 歲以上。'],
+    ['limited_experience','缺乏照顧經驗或面對新的照顧問題時知能不足','例如突然成為照顧者，或個案病況、管路、壓瘡、行為問題等出現新變化。'],
+    ['no_relief','缺乏替代照顧人力或不易使用協助資源','每週約 20 小時以上主要照顧工作，且缺乏親友或照顧資源可替手，或因其他因素不易求助。'],
+    ['multiple_dependents','同時需要照顧兩名以上家人','除本案外，仍需照顧其他失能家人、幼兒或其他需要密集照顧者。'],
+    ['caregiver_health','照顧者自身健康或身心狀況已影響照顧能力／意願','包含疾病、身心狀況、睡眠或情緒問題等已影響照顧。'],
+    ['resource_financial_crisis','資源資格或突發經濟／生活需求造成照顧壓力','例如補助資格改變、資源中斷或突發事件使基本生活與照顧安排受影響。'],
+    ['recent_care_change','近三個月照顧情境有明顯改變','例如照顧者急性就醫、個案病況改變、頻繁住院或主要照顧資源中斷。'],
+    ['violence_neglect_risk','照顧關係中曾出現暴力、施暴意念或照顧疏忽風險','若符合，屬高風險指標，應依機構及法定流程處理。'],
+    ['suicide_risk','照顧者曾出現自殺意念、企圖或相關言語／行為','若符合，屬高風險指標，應依機構及緊急處置／通報流程處理。']
+  ];
+  const HIGH_RISK_KEYS=new Set(['violence_neglect_risk','suicide_risk']);
+  const REFERRAL_ACTIONS=[
+    ['planned','預計轉介家庭照顧者支持服務'],
+    ['referred','已完成轉介／聯繫'],
+    ['declined_followup','照顧者暫無意願，持續追蹤'],
+    ['other','其他處置']
+  ];
+
+  const style=document.createElement('style');
+  style.id='v52-assessment-caregiver-screen-style';
+  style.textContent=`
+    .cg-page{max-width:1040px;margin:0 auto}
+    .cg-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:12px}
+    .cg-summary-card,.cg-panel,.cg-card{border:1px solid var(--line);border-radius:12px;background:#fff}
+    .cg-summary-card{padding:11px 12px}
+    .cg-summary-card label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:5px}
+    .cg-summary-card strong{font-size:17px;color:#344054}
+    .cg-summary-card small{display:block;font-size:10.5px;color:#667085;margin-top:4px;line-height:1.45}
+    .cg-panel{margin-bottom:12px;overflow:hidden}
+    .cg-panel-head{padding:11px 12px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .cg-panel-head strong{font-size:13px;color:#344054}
+    .cg-panel-head small{display:block;font-size:10px;color:#667085;margin-top:4px;line-height:1.5}
+    .cg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
+    .cg-field.full{grid-column:1/-1}
+    .cg-field label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
+    .cg-field input,.cg-field select,.cg-field textarea{width:100%;box-sizing:border-box}
+    .cg-field textarea{min-height:72px;resize:vertical}
+    .cg-source{font-size:10.5px;color:#667085;line-height:1.55;padding:10px 12px;background:#f8fafc;border-top:1px solid var(--line)}
+    .cg-cards{display:grid;gap:9px;padding:12px}
+    .cg-card{overflow:hidden}
+    .cg-card.positive{border-color:#e7a98e;background:#fffafa}
+    .cg-card.high-risk{border-color:#fda29b;background:#fff5f5}
+    .cg-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 11px;background:#faf8f7;border-bottom:1px solid var(--line)}
+    .cg-card-title{font-size:11.8px;font-weight:900;color:#344054;line-height:1.45}
+    .cg-card-title small{display:block;font-size:10px;font-weight:500;color:#667085;margin-top:4px;line-height:1.45}
+    .cg-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:9.5px;font-weight:900;white-space:nowrap}
+    .cg-tag.prev{background:#eff8ff;color:#175cd3}
+    .cg-tag.risk{background:#fee4e2;color:#b42318}
+    .cg-tag.new-risk{background:#fee4e2;color:#b42318}
+    .cg-tag.persist{background:#fff4e5;color:#b54708}
+    .cg-tag.better{background:#ecfdf3;color:#027a48}
+    .cg-options{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 11px}
+    .cg-option{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:9px;padding:8px 9px;font-size:10.5px;font-weight:850;cursor:pointer}
+    .cg-option input{width:auto}
+    .cg-option.selected.no{background:#f6fef9;border-color:#abefc6;color:#027a48}
+    .cg-option.selected.yes{background:#fff5f5;border-color:#fda29b;color:#b42318}
+    .cg-note{padding:0 11px 11px}
+    .cg-note label{display:block;font-size:10px;font-weight:850;color:#667085;margin-bottom:4px}
+    .cg-note textarea{width:100%;box-sizing:border-box;min-height:62px}
+    .cg-alert{border:1px solid #fda29b;background:#fff1f0;border-radius:11px;padding:10px 12px;margin:0 12px 12px;color:#912018;font-size:11px;font-weight:800;line-height:1.55}
+    .cg-info{border:1px solid #d9e9f7;background:#f7fbff;border-radius:11px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:#475467;line-height:1.55}
+    .cg-support-link{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #d9e9f7;background:#f7fbff;border-radius:10px;padding:9px 10px}
+    .cg-support-link span{font-size:10.5px;color:#475467}
+    .cg-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
+    @media(max-width:760px){
+      .cg-summary{grid-template-columns:1fr 1fr}.cg-grid{grid-template-columns:1fr}.cg-field.full{grid-column:1}
+      .cg-support-link{flex-direction:column;align-items:flex-start}.cg-support-link .btn{width:100%}
+      .cg-actions .btn{flex:1}
+    }
+  `;
+  if(!document.getElementById(style.id))document.head.appendChild(style);
+
+  const local={
+    eventId:null,record:null,previous:null,previousEvent:null,supportRecord:null,
+    applicability:'applicable',caregiverInfo:{},answers:{},notes:{},summary:{},
+    expandedNotes:new Set()
+  };
+
+  const safe=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const eventById=id=>state.assessmentEvents?.find(x=>x.id===id)||null;
+  const caseById=id=>state.assessmentCases?.find(x=>x.id===id)||null;
+  const eventForms=id=>(state.assessmentEventForms||[]).filter(x=>x.assessment_event_id===id);
+  const formById=id=>eventForms(id).find(x=>x.form_code==='caregiver_burden')||null;
+  const canEdit=row=>!!row&&!!window.v52AssessmentApi?.canEditCase?.(row.case_id);
+  const answer=key=>local.answers?.[key]||null;
+  const previousAnswer=key=>local.previous?.answers?.[key]||null;
+  const positiveCount=()=>INDICATORS.filter(([key])=>answer(key)==='yes').length;
+  const hasHighRisk=()=>[...HIGH_RISK_KEYS].some(key=>answer(key)==='yes');
+  const professionalReferral=()=>local.summary.professional_referral===true;
+  const referralRequired=()=>positiveCount()>=2||hasHighRisk()||professionalReferral();
+
+  function indicatorChange(key){
+    const prev=previousAnswer(key),cur=answer(key);
+    if(!prev||!cur)return null;
+    if(prev==='no'&&cur==='yes')return {kind:'new-risk',label:'新增風險'};
+    if(prev==='yes'&&cur==='yes')return {kind:'persist',label:'持續風險'};
+    if(prev==='yes'&&cur==='no')return {kind:'better',label:'已改善'};
+    return null;
+  }
+
+  function indicatorChangeCounts(){
+    const counts={newRisk:0,persist:0,better:0};
+    INDICATORS.forEach(([key])=>{
+      const change=indicatorChange(key);
+      if(change?.kind==='new-risk')counts.newRisk++;
+      if(change?.kind==='persist')counts.persist++;
+      if(change?.kind==='better')counts.better++;
+    });
+    return counts;
+  }
+
+  async function load(eventId){
+    const row=eventById(eventId);if(!row)throw new Error('找不到評估事件');
+    const [cur,hist,support]=await Promise.all([
+      db.from('assessment_caregiver_screen_records').select('*').eq('assessment_event_id',eventId).maybeSingle(),
+      db.from('assessment_caregiver_screen_records').select('*').eq('case_id',row.case_id).not('confirmed_at','is',null).neq('assessment_event_id',eventId).order('confirmed_at',{ascending:false}),
+      db.from('assessment_support_records').select('*').eq('assessment_event_id',eventId).maybeSingle()
+    ]);
+    if(cur.error)throw cur.error;if(hist.error)throw hist.error;
+    if(support.error&&support.error.code!=='PGRST116')throw support.error;
+
+    local.eventId=eventId;local.record=cur.data||null;local.supportRecord=support.data||null;
+    local.applicability=local.record?.applicability||'applicable';
+    local.caregiverInfo={...safe(local.record?.caregiver_info)};
+    local.answers={...safe(local.record?.answers)};
+    local.notes={...safe(local.record?.notes)};
+    local.summary={...safe(local.record?.summary)};
+    local.expandedNotes=new Set();
+
+    const dated=(hist.data||[]).map(record=>({record,event:eventById(record.assessment_event_id)})).filter(x=>x.event?.planned_date);
+    const candidates=dated.filter(x=>x.event.planned_date<row.planned_date)
+      .sort((a,b)=>String(b.event.planned_date).localeCompare(String(a.event.planned_date))||String(b.record.confirmed_at||'').localeCompare(String(a.record.confirmed_at||'')));
+    local.previous=candidates[0]?.record||null;
+    local.previousEvent=candidates[0]?.event||null;
+  }
+
+  function renderSummary(){
+    const count=local.applicability==='applicable'?positiveCount():0;
+    const prevCount=local.previous?.applicability==='applicable'?Number(local.previous?.summary?.positive_count||0):null;
+    const changes=indicatorChangeCounts();
+    return `<section class="cg-summary">
+      <div class="cg-summary-card"><label>本次符合指標</label><strong>${local.applicability==='applicable'?count+'／10':'—'}</strong><small>此工具不計總分，以符合項目判定</small></div>
+      <div class="cg-summary-card"><label>高風險指標</label><strong>${local.applicability==='applicable'?(hasHighRisk()?'有':'無'):'—'}</strong><small>暴力／疏忽或自殺相關風險</small></div>
+      <div class="cg-summary-card"><label>轉介判定</label><strong>${local.applicability==='applicable'?(referralRequired()?'達轉介標準':'目前未達'):'—'}</strong><small>符合任兩項，或高風險指標任一項</small></div>
+      <div class="cg-summary-card"><label>前次／變化</label><strong>${prevCount===null?'—':prevCount+' 項 → '+count+' 項'}</strong><small>${prevCount===null?'無前次完成紀錄':'新增 '+changes.newRisk+'｜持續 '+changes.persist+'｜改善 '+changes.better}</small></div>
+    </section>`;
+  }
+
+  function supportCaregiver(){
+    const h=safe(local.supportRecord?.household);
+    if(h.primary_caregiver_status!=='present'||!h.primary_caregiver_name)return null;
+    return {name:h.primary_caregiver_name,relation:h.primary_caregiver_relation||''};
+  }
+
+  function renderApplicability(){
+    const supportCg=supportCaregiver();
+    return `<section class="cg-panel">
+      <div class="cg-panel-head"><strong>一、評估適用性與照顧者資料</strong><small>本初篩以家庭中的主要親屬／家人照顧者為對象。</small></div>
+      <div class="cg-grid">
+        <div class="cg-field full"><label>本次評估狀態 *</label><select id="cgApplicability">
+          <option value="applicable" ${local.applicability==='applicable'?'selected':''}>適用：主要照顧者為家人／親友</option>
+          <option value="no_family_caregiver" ${local.applicability==='no_family_caregiver'?'selected':''}>不適用：無主要家庭照顧者</option>
+          <option value="paid_caregiver" ${local.applicability==='paid_caregiver'?'selected':''}>不適用：主要照顧者為聘僱看護／非家人</option>
+          <option value="unable" ${local.applicability==='unable'?'selected':''}>本次無法評估</option>
+        </select></div>
+        ${local.applicability==='applicable'?`
+          ${supportCg?`<div class="cg-field full"><div class="cg-support-link"><span>本次支持系統主要照顧者：<strong>${escapeHTML(supportCg.name)}</strong>${supportCg.relation?'（'+escapeHTML(supportCg.relation)+'）':''}</span><button id="cgUseSupportCaregiver" type="button" class="btn sm">帶入照顧者</button></div></div>`:''}
+          <div class="cg-field"><label>主要照顧者姓名／稱謂 *</label><input data-cg-info="name" value="${escapeHTML(local.caregiverInfo.name||'')}" placeholder="例如：案次子徐先生"></div>
+          <div class="cg-field"><label>與個案關係 *</label><input data-cg-info="relation" value="${escapeHTML(local.caregiverInfo.relation||'')}" placeholder="例如：兒子、配偶"></div>
+        `:''}
+        ${local.applicability==='unable'?`<div class="cg-field full"><label>無法評估原因 *</label><textarea data-cg-summary="unable_reason" placeholder="請說明本次無法完成初篩的原因">${escapeHTML(local.summary.unable_reason||'')}</textarea></div>`:''}
+      </div>
+    </section>`;
+  }
+
+  function renderIndicator([key,title,help],index){
+    const cur=answer(key),prev=previousAnswer(key),note=String(local.notes[key]||'');
+    const positive=cur==='yes',showNote=positive||!!note||local.expandedNotes.has(key);
+    const high=HIGH_RISK_KEYS.has(key);
+    const change=indicatorChange(key);
+    return `<div class="cg-card ${positive?'positive':''} ${positive&&high?'high-risk':''}">
+      <div class="cg-card-head">
+        <div class="cg-card-title">${index+1}. ${escapeHTML(title)}<small>${escapeHTML(help)}</small></div>
+        <div>${prev?`<span class="cg-tag prev">前次：${prev==='yes'?'符合':'未符合'}</span>`:''}${change?`<span class="cg-tag ${change.kind}" style="margin-left:5px">${change.label}</span>`:''}${high?`<span class="cg-tag risk" style="margin-left:5px">高風險指標</span>`:''}</div>
+      </div>
+      <div class="cg-options">
+        <label class="cg-option no ${cur==='no'?'selected':''}"><input type="radio" name="cg_${key}" value="no" ${cur==='no'?'checked':''}>未符合</label>
+        <label class="cg-option yes ${cur==='yes'?'selected':''}"><input type="radio" name="cg_${key}" value="yes" ${cur==='yes'?'checked':''}>符合</label>
+      </div>
+      ${!showNote?`<div class="cg-note"><button type="button" class="btn sm" data-cg-add-note="${key}">＋ 補充備註</button></div>`:''}
+      ${showNote?`<div class="cg-note"><label>說明${positive?' *':''}</label><textarea data-cg-note="${key}" placeholder="${positive?'請簡要說明符合情形與目前已知狀況':'補充備註（選填）'}">${escapeHTML(note)}</textarea></div>`:''}
+    </div>`;
+  }
+
+  function renderScreen(){
+    if(local.applicability!=='applicable')return '';
+    return `<section class="cg-panel">
+      <div class="cg-panel-head"><strong>二、高負荷家庭照顧者初篩</strong><small>依衛生福利部高負荷家庭照顧者初篩指標架構逐項確認；本表不以總分判定。</small></div>
+      <div class="cg-cards">${INDICATORS.map(renderIndicator).join('')}</div>
+      ${hasHighRisk()?`<div class="cg-alert">本次涉及暴力／照顧疏忽或自殺相關高風險指標。請依機構內部流程及法定通報／緊急處置規定處理，不應只等待一般追蹤。</div>`:''}
+      <div class="cg-source">轉介判定：第 9、10 項任一符合，或 10 項中任兩項符合，即達高負荷家庭照顧者轉介標準；其他經專業判斷有轉介必要者亦可轉介。</div>
+    </section>`;
+  }
+
+  function renderReferral(){
+    if(local.applicability!=='applicable')return '';
+    const required=referralRequired();
+    return `<section class="cg-panel">
+      <div class="cg-panel-head"><strong>三、轉介與後續</strong><small>系統依初篩結果自動提示；仍保留專業人員判斷。</small></div>
+      <div class="cg-grid">
+        <div class="cg-field full">
+          <label style="display:flex;align-items:center;gap:6px"><input id="cgProfessionalReferral" type="checkbox" style="width:auto" ${professionalReferral()?'checked':''}>其他經專業判斷有轉介必要</label>
+        </div>
+        ${professionalReferral()?`<div class="cg-field full"><label>專業判斷理由 *</label><textarea data-cg-summary="professional_reason" placeholder="請說明雖未完全符合自動判定條件，仍建議轉介的原因">${escapeHTML(local.summary.professional_reason||'')}</textarea></div>`:''}
+        <div class="cg-field"><label>系統判定</label><div class="cg-info" style="margin:0">${required?'達轉介標準／建議進一步連結家照支持服務':'目前未達自動轉介標準'}</div></div>
+        ${required?`
+          <div class="cg-field"><label>轉介／處理狀態 *</label><select data-cg-summary="referral_action">
+            <option value="">請選擇</option>${REFERRAL_ACTIONS.map(([v,l])=>`<option value="${v}" ${local.summary.referral_action===v?'selected':''}>${l}</option>`).join('')}
+          </select></div>
+          <div class="cg-field full"><label>處理紀錄 *</label><textarea data-cg-summary="action_note" placeholder="請記錄已聯繫對象、轉介方式、照顧者意願或後續安排">${escapeHTML(local.summary.action_note||'')}</textarea></div>
+        `:''}
+        <div class="cg-field full"><label>其他補充</label><textarea data-cg-summary="general_note" placeholder="其他需要保留的初篩觀察或說明（選填）">${escapeHTML(local.summary.general_note||'')}</textarea></div>
+      </div>
+    </section>`;
+  }
+
+  function render(){
+    const row=eventById(local.eventId),c=row?caseById(row.case_id):null,form=row?formById(row.id):null;
+    if(!row||!c||!form)return window.v52AssessmentApi?.renderAssessmentPage?.();
+    const editable=canEdit(row)&&row.status!=='voided';
+    window.v52AssessmentApi?.setAssessmentFormHeader?.(row,c,'高負荷家庭照顧者初篩');
+
+    $('content').innerHTML=`<div class="cg-page">
+      <div class="page-head"><div><h1>${escapeHTML(c.case_name)}｜高負荷家庭照顧者初篩</h1><p>評估日期：${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}　狀態：${escapeHTML(({pending:'待進行',in_progress:'評估中',forms_completed:'表單完成／待總結',completed:'已完成',voided:'作廢'})[row.status]||row.status)}</p></div>
+      <div class="assessment-head-actions"><button id="cgBack" type="button" class="btn">← 返回評估事件</button></div></div>
+      ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
+      ${renderSummary()}
+      <div class="cg-info">此工具用於辨識高負荷家庭照顧者及轉介需要，不是照顧者負荷總分量表；每次評估均重新確認，不帶入前次答案。</div>
+      ${renderApplicability()}${renderScreen()}${renderReferral()}
+      ${editable?`<div class="cg-actions">${form.status==='pending'||form.status==='in_progress'?'<button id="cgSaveDraft" type="button" class="btn">儲存草稿</button>':''}<button id="cgConfirm" type="button" class="btn primary">${['completed','unable','not_applicable'].includes(form.status)?'儲存修正並確認':'完成本次確認'}</button></div>`:''}
+    </div>`;
+    bind(row);
+  }
+
+  function rerenderPreservingScroll(){const y=window.scrollY;render();requestAnimationFrame(()=>window.scrollTo({top:y,behavior:'auto'}));}
+
+  function bind(row){
+    $('cgBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
+    $('cgApplicability')?.addEventListener('change',e=>{
+      local.applicability=e.target.value;
+      local.expandedNotes=new Set();
+      if(local.applicability!=='applicable'){
+        local.answers={};
+        local.notes={};
+        local.caregiverInfo={};
+        local.summary={};
+      }else{
+        delete local.summary.unable_reason;
+      }
+      rerenderPreservingScroll();
+    });
+    $('cgUseSupportCaregiver')?.addEventListener('click',()=>{
+      const cg=supportCaregiver();if(!cg)return;
+      local.caregiverInfo={...local.caregiverInfo,name:cg.name,relation:cg.relation};
+      rerenderPreservingScroll();toast('已帶入本次支持系統的主要照顧者','success');
+    });
+    document.querySelectorAll('[data-cg-info]').forEach(el=>el.addEventListener('input',()=>{local.caregiverInfo[el.dataset.cgInfo]=el.value;}));
+    document.querySelectorAll('input[name^="cg_"]').forEach(input=>input.addEventListener('change',()=>{
+      const key=input.name.replace(/^cg_/,'');local.answers[key]=input.value;rerenderPreservingScroll();
+    }));
+    document.querySelectorAll('[data-cg-add-note]').forEach(btn=>btn.addEventListener('click',()=>{local.expandedNotes.add(btn.dataset.cgAddNote);rerenderPreservingScroll();}));
+    document.querySelectorAll('[data-cg-note]').forEach(el=>el.addEventListener('input',()=>{local.notes[el.dataset.cgNote]=el.value;}));
+    $('cgProfessionalReferral')?.addEventListener('change',e=>{local.summary.professional_referral=e.target.checked;rerenderPreservingScroll();});
+    document.querySelectorAll('[data-cg-summary]').forEach(el=>el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{local.summary[el.dataset.cgSummary]=el.value;}));
+    $('cgSaveDraft')?.addEventListener('click',()=>save(false));
+    $('cgConfirm')?.addEventListener('click',()=>save(true));
+  }
+
+  function validate(finalize){
+    if(!finalize)return null;
+    if(local.applicability==='unable'&&!String(local.summary.unable_reason||'').trim())return '請填寫本次無法評估原因';
+    if(local.applicability!=='applicable')return null;
+    if(!String(local.caregiverInfo.name||'').trim())return '請填寫主要照顧者姓名／稱謂';
+    if(!String(local.caregiverInfo.relation||'').trim())return '請填寫主要照顧者與個案關係';
+    const missing=INDICATORS.filter(([key])=>!['yes','no'].includes(answer(key)));
+    if(missing.length)return '尚有未完成初篩項目：'+missing.map(([,label])=>label).join('、');
+    const noteMissing=INDICATORS.filter(([key])=>answer(key)==='yes'&&!String(local.notes[key]||'').trim());
+    if(noteMissing.length)return '以下項目已勾選「符合」，請填寫說明：'+noteMissing.map(([,label])=>label).join('、');
+    if(professionalReferral()&&!String(local.summary.professional_reason||'').trim())return '請填寫專業判斷轉介理由';
+    if(referralRequired()){
+      if(!local.summary.referral_action)return '本次達轉介標準，請選擇轉介／處理狀態';
+      if(!String(local.summary.action_note||'').trim())return '本次達轉介標準，請填寫處理紀錄';
+    }
+    return null;
+  }
+
+  async function save(finalize){
+    const row=eventById(local.eventId);if(!row||!canEdit(row))return toast('您沒有此個案的評估編輯權限','error');
+    const problem=validate(finalize);if(problem)return toast(problem,'warn');
+    const y=window.scrollY;showLoading(true);
+    try{
+      const {error}=await db.rpc('save_assessment_caregiver_screen',{
+        p_event_id:row.id,p_applicability:local.applicability,p_caregiver_info:local.caregiverInfo,
+        p_answers:local.answers,p_notes:local.notes,p_summary:local.summary,p_finalize:!!finalize
+      });
+      if(error)throw error;
+      await window.v52AssessmentApi?.loadAssessmentData?.(false);
+      if(finalize){window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);toast('高負荷家庭照顧者初篩已完成','success');}
+      else{await load(row.id);render();requestAnimationFrame(()=>window.scrollTo({top:y,behavior:'auto'}));toast('初篩草稿已儲存','success');}
+    }catch(err){console.error(err);toast('儲存高負荷家庭照顧者初篩失敗：'+(err?.message||err),'error');}
+    finally{showLoading(false);}
+  }
+
+  async function open(eventId){
+    const row=eventById(eventId);if(!row)return toast('找不到評估事件','error');
+    if(row.status==='pending')return toast('請先開始本次評估','warn');
+    if(!formById(eventId))return toast('本次評估未選用高負荷家庭照顧者初篩','warn');
+    showLoading(true);
+    try{await load(eventId);render();window.scrollTo({top:0,behavior:'auto'});}
+    catch(err){console.error(err);toast('讀取高負荷家庭照顧者初篩失敗：'+(err?.message||err),'error');}
+    finally{showLoading(false);}
+  }
+
+  window.v52AssessmentCaregiverScreen={open};
+})();
