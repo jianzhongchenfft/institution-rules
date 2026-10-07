@@ -77,7 +77,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!mobileScheduleRes.ok) throw new Error(`v52/schedule-mobile-patch.txt 載入失敗（${mobileScheduleRes.status}）`);
       eval(await mobileScheduleRes.text());
 
-      const overtimeRes = await fetch('v52/overtime-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
+      const overtimeRes = await fetch('v52/overtime-patch.txt?v=regular-day-warning-v1-20261007',{cache:'no-store'});
       if(!overtimeRes.ok) throw new Error(`v52/overtime-patch.txt 載入失敗（${overtimeRes.status}）`);
       eval(await overtimeRes.text());
 
@@ -101,7 +101,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!overtimeWorkflowRes.ok) throw new Error(`v52/overtime-workflow-patch.txt 載入失敗（${overtimeWorkflowRes.status}）`);
       eval(await overtimeWorkflowRes.text());
 
-      const overtimeWorkflowTrackingRes = await fetch('v52/overtime-workflow-tracking-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
+      const overtimeWorkflowTrackingRes = await fetch('v52/overtime-workflow-tracking-patch.txt?v=regular-day-warning-v1-20261007',{cache:'no-store'});
       if(!overtimeWorkflowTrackingRes.ok) throw new Error(`v52/overtime-workflow-tracking-patch.txt 載入失敗（${overtimeWorkflowTrackingRes.status}）`);
       eval(await overtimeWorkflowTrackingRes.text());
 
@@ -128,6 +128,10 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       const overtimeWithdrawRes = await fetch('v52/overtime-withdraw-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
       if(!overtimeWithdrawRes.ok) throw new Error(`v52/overtime-withdraw-patch.txt 載入失敗（${overtimeWithdrawRes.status}）`);
       eval(await overtimeWithdrawRes.text());
+
+      const regularDayWarningRes = await fetch('v52/overtime-regular-day-warning-patch.txt?v=regular-day-warning-v1-20261007',{cache:'no-store'});
+      if(!regularDayWarningRes.ok) throw new Error(`v52/overtime-regular-day-warning-patch.txt 載入失敗（${regularDayWarningRes.status}）`);
+      eval(await regularDayWarningRes.text());
 
       const eventTrackingFiles=[
         'v52/event-core.txt',
