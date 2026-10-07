@@ -1,0 +1,173 @@
+// V5.2 固定例假日設定＋申請提醒
+(() => {
+  const labels=['週日','週一','週二','週三','週四','週五','週六'];
+  let staffCache=[];
+  let staffLoaded=false;
+  let staffLoading=false;
+
+  function canManage(){
+    return !!state.profile && ['organization_manager','admin'].includes(state.profile.role);
+  }
+  function parseDate(value){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value||'')))return null;
+    const d=new Date(String(value)+'T00:00:00');
+    return Number.isNaN(d.getTime())?null:d;
+  }
+  function isRegularDay(date,weekday){
+    const d=parseDate(date);
+    return !!d && Number.isInteger(Number(weekday)) && d.getDay()===Number(weekday);
+  }
+  function currentStaff(){
+    return staffCache.find(s=>String(s.id)===String(state.profile?.id))||null;
+  }
+  async function loadStaff(force=false){
+    if(staffLoading)return;
+    if(staffLoaded&&!force)return;
+    staffLoading=true;
+    try{
+      const {data,error}=await db.from('staff_users')
+        .select('id,display_name,role,is_active,regular_day_weekday')
+        .eq('is_active',true)
+        .order('display_name');
+      if(error)throw error;
+      staffCache=data||[];
+      staffLoaded=true;
+    }catch(err){
+      console.error('讀取例假日設定失敗',err);
+      toast('讀取例假日設定失敗：'+(err?.message||err),'error');
+    }finally{
+      staffLoading=false;
+    }
+  }
+
+  function warningHTML(staff,date){
+    if(!staff||staff.regular_day_weekday===null||staff.regular_day_weekday===undefined){
+      return '<div class="rd-note">尚未設定固定例假日。</div>';
+    }
+    const label=labels[Number(staff.regular_day_weekday)]||'—';
+    if(isRegularDay(date,staff.regular_day_weekday)){
+      return '<div class="rd-warning">⚠ 此日期為你的固定例假日（'+escapeHTML(label)+'），原則上不得加班，請先確認實際排班與出勤原因。</div>';
+    }
+    return '<div class="rd-note">固定例假日：'+escapeHTML(label)+'</div>';
+  }
+
+  async function bindApplicationWarning(){
+    const date=document.getElementById('otWorkDate');
+    if(!date||date.dataset.rdBound==='1')return;
+    date.dataset.rdBound='1';
+    await loadStaff(false);
+    const field=date.closest('.field');
+    if(field&&!document.getElementById('rdApplicationWarning')){
+      const host=document.createElement('div');
+      host.id='rdApplicationWarning';
+      host.style.marginTop='6px';
+      field.appendChild(host);
+    }
+    const update=(notify=false)=>{
+      const host=document.getElementById('rdApplicationWarning');
+      const staff=currentStaff();
+      if(host)host.innerHTML=warningHTML(staff,date.value);
+      if(notify&&staff&&isRegularDay(date.value,staff.regular_day_weekday)){
+        if(date.dataset.rdLastWarn!==date.value){
+          date.dataset.rdLastWarn=date.value;
+          toast('提醒：此日期為你設定的固定例假日，請確認後再申請。','warn');
+        }
+      }else if(!isRegularDay(date.value,staff?.regular_day_weekday)){
+        date.dataset.rdLastWarn='';
+      }
+    };
+    date.addEventListener('change',()=>update(true));
+    update(false);
+  }
+
+  function renderSettingsPage(){
+    const rows=staffCache.map(s=>{
+      const value=s.regular_day_weekday===null||s.regular_day_weekday===undefined?'':String(s.regular_day_weekday);
+      return '<tr><td><strong>'+escapeHTML(s.display_name||'未命名')+'</strong><div class="ot-detail">'+escapeHTML(roleLabels[s.role]||s.role||'—')+'</div></td><td><select data-rd-staff="'+escapeHTML(s.id)+'">'+
+        labels.map((x,i)=>'<option value="'+i+'" '+(value===String(i)?'selected':'')+'>'+x+'</option>').join('')+
+        '</select></td></tr>';
+    }).join('');
+    $('content').innerHTML=
+      '<div class="ot-page-form">'+
+        '<div class="ot-page-form-head"><div>'+
+          '<button type="button" id="rdBack" class="btn" style="margin-bottom:10px">← 返回加班休假</button>'+
+          '<div class="ot-page-form-title">固定例假日設定</div>'+
+          '<div class="ot-page-form-sub">設定每位員工固定例假的星期。申請加班碰到該日只會提醒，不會自動禁止送出。</div>'+
+        '</div></div>'+
+        '<div class="ot-page-form-card">'+
+          '<div class="ot-rule-highlight" style="margin-top:0;margin-bottom:12px">目前不再以「週日＝例假、週六＝休息日」固定判斷；系統只依這裡設定的固定例假星期提醒。若個別週次有臨時調整，仍由申請人與審核者依實際排班確認。</div>'+
+          '<div class="ot-table-shell"><table class="ot-table" style="min-width:560px"><thead><tr><th>員工</th><th>固定例假日</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+        '</div>'+
+        '<div class="modal-foot ot-page-form-footer"><button type="button" id="rdCancel" class="btn">返回</button><span class="spacer"></span><button type="button" id="rdSave" class="btn primary">儲存設定</button></div>'+
+      '</div>';
+    $('rdBack')?.addEventListener('click',()=>navigate('overtime'));
+    $('rdCancel')?.addEventListener('click',()=>navigate('overtime'));
+    $('rdSave')?.addEventListener('click',saveSettings);
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+
+  async function openSettings(){
+    if(!canManage()){toast('目前帳號沒有例假日設定權限','warn');return;}
+    showLoading(true);
+    try{
+      await loadStaff(true);
+      renderSettingsPage();
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  async function saveSettings(){
+    if(!canManage())return;
+    const inputs=[...document.querySelectorAll('[data-rd-staff]')];
+    showLoading(true);
+    try{
+      for(const el of inputs){
+        const weekday=Number(el.value);
+        const {error}=await db.from('staff_users')
+          .update({regular_day_weekday:weekday,updated_at:new Date().toISOString()})
+          .eq('id',el.dataset.rdStaff);
+        if(error)throw error;
+      }
+      staffLoaded=false;
+      await loadStaff(true);
+      toast('固定例假日設定已儲存','success');
+      navigate('overtime');
+    }catch(err){
+      console.error(err);
+      toast('儲存例假日設定失敗：'+(err?.message||err),'error');
+    }finally{
+      showLoading(false);
+    }
+  }
+
+  function enhanceOvertimePage(){
+    if(state.page!=='overtime')return;
+    if(canManage()){
+      const reload=document.getElementById('otReload');
+      if(reload&&!document.getElementById('rdSettingsBtn')){
+        const b=document.createElement('button');
+        b.id='rdSettingsBtn';
+        b.className='btn';
+        b.textContent='📅 例假日設定';
+        b.addEventListener('click',openSettings);
+        reload.insertAdjacentElement('beforebegin',b);
+      }
+    }
+    bindApplicationWarning();
+  }
+
+  const style=document.createElement('style');
+  style.id='v52-regular-day-warning-style';
+  style.textContent='.rd-warning{border:1px solid #fecdca;background:#fef3f2;color:#b42318;border-radius:9px;padding:8px 10px;font-size:11px;font-weight:800;line-height:1.55}.rd-note{font-size:10.5px;color:#667085;line-height:1.5}';
+  document.head.appendChild(style);
+
+  const observer=new MutationObserver(()=>enhanceOvertimePage());
+  observer.observe(document.body,{childList:true,subtree:true});
+  document.addEventListener('click',e=>{
+    if(e.target.closest?.('[data-ot-view],#otAddBtn,#otReload'))setTimeout(enhanceOvertimePage,30);
+  });
+
+  window.v52RegularDayApi={openSettings,loadStaff};
+  setTimeout(enhanceOvertimePage,50);
+})();
