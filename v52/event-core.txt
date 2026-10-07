@@ -50,6 +50,7 @@ EVSTYLE.textContent=`
   .event-field,.event-field.half{grid-column:span 1}
   .event-field.full,.event-section-title,.event-option-row{grid-column:1/-1}
   .event-option-row{grid-template-columns:1fr}
+  .event-page-form-card{padding:18px 16px}
 }
 @media(max-width:540px){
   .event-form{grid-template-columns:1fr}
