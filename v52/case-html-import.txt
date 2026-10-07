@@ -1140,13 +1140,14 @@ async function htmlViewOriginal(path,fileName){
       db.from('case_approved_services').select('*').eq('case_id',caseId).order('is_current',{ascending:false}).order('service_group').order('service_code'),
       db.from('care_plans').select('*').eq('case_id',caseId).order('plan_date',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false}),
       db.from('service_budgets').select('*').eq('case_id',caseId).order('is_current',{ascending:false}).order('category'),
-      db.from('case_imports').select('*').eq('case_id',caseId).order('imported_at',{ascending:false})
+      db.from('case_imports').select('*').eq('case_id',caseId).order('imported_at',{ascending:false}),
+      db.from('tracking_events').select('id,event_date,category,subject,responsible_staff_id,status,next_followup_date,is_sensitive,created_at').eq('case_id',caseId).order('event_date',{ascending:false}).order('created_at',{ascending:false})
     ]);
     var err=results.find(function(x){return x.error;});
     if(err&&err.error)throw err.error;
     var data={
       c:results[0].data,contacts:results[1].data||[],services:results[2].data||[],plans:results[3].data||[],
-      budgets:results[4].data||[],imports:results[5].data||[],visits:[]
+      budgets:results[4].data||[],imports:results[5].data||[],events:results[6].data||[],visits:[]
     };
     if(!data.c)throw new Error('找不到個案資料');
     if(window.caseContactApi&&typeof window.caseContactApi.enrichCaseDetailData==='function'){
@@ -1317,6 +1318,35 @@ function htmlRenderServicesTab(data){
     ].join('');
   }
 
+  function htmlEventStatusLabel(status){
+    return ({draft:'草稿',pending_followup:'待追蹤',tracking:'追蹤中',pending_close:'待結報',closed:'已結案',voided:'作廢'})[status]||status||'—';
+  }
+
+  function htmlRenderEventsTab(data){
+    var c=data.c,events=(data.events||[]);
+    var active=events.filter(function(e){return !['closed','voided'].includes(e.status);});
+    var rows=events.length?events.map(function(e){
+      var next=e.next_followup_date?rocDate(e.next_followup_date+'T00:00:00'):'—';
+      return '<tr data-case-event="'+e.id+'" style="cursor:pointer">'+
+        '<td>'+escapeHTML(e.event_date?rocDate(e.event_date+'T00:00:00'):'—')+'</td>'+
+        '<td>'+escapeHTML(e.category||'—')+(e.is_sensitive?' <span class="pill">敏感</span>':'')+'</td>'+
+        '<td><strong>'+escapeHTML(e.subject||'—')+'</strong></td>'+
+        '<td>'+escapeHTML(htmlGetCaseVisitsApi().caseStaffName(e.responsible_staff_id))+'</td>'+
+        '<td><span class="pill">'+escapeHTML(htmlEventStatusLabel(e.status))+'</span></td>'+
+        '<td>'+escapeHTML(next)+'</td>'+
+      '</tr>';
+    }).join(''):'<tr><td colspan="6">目前尚無此個案的事件追蹤紀錄</td></tr>';
+    var canAdd=window.v52EventApi&&typeof window.v52EventApi.canUse==='function'&&window.v52EventApi.canUse();
+    return [
+      '<div class="case-panel-card">',
+        '<div class="case-panel-head"><div><strong>事件追蹤</strong><div class="case-panel-note">共 '+events.length+' 件｜進行中 '+active.length+' 件</div></div>',
+        canAdd?'<button id="caseAddEvent" class="btn sm primary">＋ 新增事件</button>':'',
+        '</div>',
+        '<div style="overflow-x:auto"><table class="case-table-simple"><thead><tr><th>日期</th><th>類別</th><th>主旨</th><th>負責人</th><th>狀態</th><th>下次追蹤</th></tr></thead><tbody>'+rows+'</tbody></table></div>',
+      '</div>'
+    ].join('');
+  }
+
   function htmlRenderHistoryTab(data){
     var timeline=htmlBuildCaseTimeline(data);
     var rows=timeline.length?timeline.map(function(x){
@@ -1348,6 +1378,7 @@ function htmlRenderServicesTab(data){
         ?window.v52AssessmentApi.renderCaseAssessmentTab(data.c.id)
         :htmlCaseEmpty('評估模組尚未載入，請重新整理後再試。');
     }
+    else if(tab==='events')panel.innerHTML=htmlRenderEventsTab(data);
     else if(tab==='history')panel.innerHTML=htmlRenderHistoryTab(data);
     else if(tab==='documents')panel.innerHTML=htmlRenderDocumentsTab(data);
     else panel.innerHTML=htmlRenderOverviewTab(data);
@@ -1370,6 +1401,16 @@ function htmlRenderServicesTab(data){
     }
     if(htmlCaseDetailState.tab==='assessment'&&window.v52AssessmentApi&&typeof window.v52AssessmentApi.bindCaseAssessmentTab==='function'){
       window.v52AssessmentApi.bindCaseAssessmentTab(data.c.id);
+    }
+    if(htmlCaseDetailState.tab==='events'){
+      $('caseAddEvent')?.addEventListener('click',function(){
+        if(window.v52EventApi&&typeof window.v52EventApi.openNewForCase==='function')window.v52EventApi.openNewForCase(data.c.id);
+      });
+      document.querySelectorAll('[data-case-event]').forEach(function(row){
+        row.addEventListener('click',function(){
+          if(window.v52EventApi&&typeof window.v52EventApi.openFromCase==='function')window.v52EventApi.openFromCase(row.dataset.caseEvent,data.c.id);
+        });
+      });
     }
   }
 
@@ -1401,7 +1442,7 @@ function htmlRenderServicesTab(data){
       var current=data.plans.find(function(p){return p.is_current;})||null;
       var firstValid=data.plans.find(function(p){return !p.is_voided;})||null;
       if(!htmlCaseDetailState.selectedPlanId||!data.plans.some(function(p){return p.id===htmlCaseDetailState.selectedPlanId;}))htmlCaseDetailState.selectedPlanId=current?current.id:firstValid?firstValid.id:data.plans[0]?data.plans[0].id:null;
-      var tabs=[['overview','總覽'],['basic','基本資料'],['platform-plan','照管平台照顧計畫'],['services','服務核定'],['visits','家、電訪'],['assessment','評估'],['history','個案歷程'],['documents','文件']];
+      var tabs=[['overview','總覽'],['basic','基本資料'],['platform-plan','照管平台照顧計畫'],['services','服務核定'],['visits','家、電訪'],['assessment','評估'],['events','事件追蹤'],['history','個案歷程'],['documents','文件']];
       $('crumb').textContent='個案管理 / '+c.case_name;
       $('content').innerHTML=[
         '<div class="case-page">',
