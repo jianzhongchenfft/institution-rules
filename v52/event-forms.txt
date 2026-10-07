@@ -27,114 +27,146 @@ function readEventFormFilledAt(prefix){
   return Number.isNaN(d.getTime())?null:d.toISOString();
 }
 
+function eventInitialFormSetDirty(dirty){
+  state.eventInitialFormDirty=!!dirty;
+  const status=$('eventInitialFormStatus');
+  if(status){
+    status.classList.toggle('dirty',!!dirty);
+    status.textContent=dirty?'尚有未儲存變更':'';
+  }
+}
+function eventInitialFormLeave(e){
+  if(state.eventInitialFormDirty&&!window.confirm('目前有尚未儲存的內容，確定離開嗎？'))return;
+  state.eventInitialFormDirty=false;
+  if(e?.id)renderEventDetail(e.id);
+  else renderEventList();
+}
 function openInitialReportForm(e=null){
   const editingSubmitted=!!(e&&e.status!=='draft');
   let i=e?getInitialReport(e.id):null,sd=e?getSensitiveDetails(e.id):null;
-  openModal({
-    title:editingSubmitted?'修改初報':(e?'編輯草稿':'新增事件／初報'),
-    large:true,
-    showConfirm:false,
-    html:`<div class="event-form">
-      <div class="event-section-title">事件基本資料</div>
-
-      <div class="event-field">
-        <label>事件發生日期 *</label>
-        <input id="d" type="date" value="${e?.event_date||isoDate(new Date())}">
-      </div>
-      <div class="event-field">
-        <label>事件發生時間</label>
-        <div class="event-time-pair">
-          ${hourSelect('th',e?.event_time?.slice(0,2)||'')}
-          <span>：</span>
-          ${tenMinuteSelect('tmin',e?.event_time?.slice(3,5)||'00')}
+  const title=editingSubmitted?'修改初報':(e?'編輯草稿':'新增事件／初報');
+  const subtitle=editingSubmitted?'修改既有初報內容；儲存後保留原事件追蹤流程。':'填寫事件基本資料與初報內容，可先存草稿或直接送出。';
+  $('content').innerHTML=`
+    <div class="event-page-form">
+      <div class="event-page-form-head">
+        <div>
+          <button type="button" id="eventInitialBack" class="btn" style="margin-bottom:10px">← 返回事件追蹤</button>
+          <div class="event-page-form-title">${escapeHTML(title)}</div>
+          <div class="event-page-form-sub">${escapeHTML(subtitle)}</div>
+          <div id="eventInitialFormStatus" class="event-page-form-status"></div>
         </div>
       </div>
-      <div class="event-field">
-        <label>類別 *</label>
-        <select id="cat">${EVENT_CATEGORIES.map(x=>`<option ${e?.category===x?'selected':''}>${x}</option>`).join('')}</select>
-      </div>
+      <div id="eventInitialFormBody" class="event-page-form-card">
+        <div class="event-form">
+          <div class="event-section-title">事件基本資料</div>
 
-      <div class="event-field full">
-        <label>主旨 *</label>
-        <input id="sub" value="${escapeHTML(e?.subject||'')}" placeholder="請簡要描述本次事件主題">
-      </div>
-
-      <div class="event-field half">
-        <label>個案</label>
-        <select id="ca"><option value="">不指定</option>${caseOptions(e?.case_id)}</select>
-      </div>
-      <div class="event-field half">
-        <label>居服員</label>
-        <select id="wo"><option value="">不指定</option>${workerOptions(e?.care_worker_id)}</select>
-      </div>
-
-      <div class="event-field half">
-        <label>通報人身分</label>
-        <select id="rt">
-          <option value="">不指定</option>
-          ${['個案','家屬','居服員','督導','其他'].map(x=>`<option ${e?.reporter_type===x?'selected':''}>${x}</option>`).join('')}
-        </select>
-      </div>
-      <div class="event-field half">
-        <label>通報人姓名</label>
-        <input id="rn" value="${escapeHTML(e?.reporter_name||'')}" placeholder="填寫實際提供本次資訊的人">
-      </div>
-
-      <div class="event-field full">
-        <label>負責追蹤人 *</label>
-        <select id="ow">${responsibleStaffOptions(e?.responsible_staff_id||state.profile.id)}</select>
-      </div>
-
-      ${eventFillTimeFields('ifill',i?.form_filled_at||i?.submitted_at||i?.created_at)}
-
-      ${renderSensitiveEventFieldsHtml(sd)}
-
-      <div class="event-section-title">初報內容</div>
-
-      <div class="event-field full">
-        <label>1　事件說明 *</label>
-        <textarea id="de" class="event-text-long" placeholder="記錄事件發生經過、時間、人物、現場情形及目前狀況等">${escapeHTML(i?.event_description||'')}</textarea>
-      </div>
-
-      <div class="event-field full">
-        <label>2　已完成處置 *</label>
-        <textarea id="dn" class="event-text-short" placeholder="記錄目前已完成的聯繫、處理或協助">${escapeHTML(i?.completed_actions||'')}</textarea>
-      </div>
-
-      <div class="event-field full">
-        <label>3　後續待辦 *</label>
-        <textarea id="td" class="event-text-short" placeholder="記錄後續需追蹤、確認或完成的事項">${escapeHTML(i?.pending_tasks||'')}</textarea>
-      </div>
-
-      ${editingSubmitted?'':`
-        <div class="event-option-row">
-          <div class="event-field full">
-            <label>下次追蹤</label>
-            <div style="display:flex;align-items:center;gap:8px">
-              <input id="nday" type="number" min="1" step="1" value="${e?.next_followup_date?Math.max(1,Math.round((new Date(e.next_followup_date+'T00:00:00')-new Date(isoDate(new Date())+'T00:00:00'))/86400000)):7}" style="max-width:120px">
-              <span>天後</span>
+          <div class="event-field">
+            <label>事件發生日期 *</label>
+            <input id="d" type="date" value="${e?.event_date||isoDate(new Date())}">
+          </div>
+          <div class="event-field">
+            <label>事件發生時間</label>
+            <div class="event-time-pair">
+              ${hourSelect('th',e?.event_time?.slice(0,2)||'')}
+              <span>：</span>
+              ${tenMinuteSelect('tmin',e?.event_time?.slice(3,5)||'00')}
             </div>
           </div>
+          <div class="event-field">
+            <label>類別 *</label>
+            <select id="cat">${EVENT_CATEGORIES.map(x=>`<option ${e?.category===x?'selected':''}>${x}</option>`).join('')}</select>
+          </div>
+
           <div class="event-field full">
-            <label class="event-check"><input id="ln" type="checkbox" ${i?.line_notify===false?'':'checked'}> LINE 通知</label>
+            <label>主旨 *</label>
+            <input id="sub" value="${escapeHTML(e?.subject||'')}" placeholder="請簡要描述本次事件主題">
+          </div>
+
+          <div class="event-field half">
+            <label>個案</label>
+            <select id="ca"><option value="">不指定</option>${caseOptions(e?.case_id)}</select>
+          </div>
+          <div class="event-field half">
+            <label>居服員</label>
+            <select id="wo"><option value="">不指定</option>${workerOptions(e?.care_worker_id)}</select>
+          </div>
+
+          <div class="event-field half">
+            <label>通報人身分</label>
+            <select id="rt">
+              <option value="">不指定</option>
+              ${['個案','家屬','居服員','督導','其他'].map(x=>`<option ${e?.reporter_type===x?'selected':''}>${x}</option>`).join('')}
+            </select>
+          </div>
+          <div class="event-field half">
+            <label>通報人姓名</label>
+            <input id="rn" value="${escapeHTML(e?.reporter_name||'')}" placeholder="填寫實際提供本次資訊的人">
+          </div>
+
+          <div class="event-field full">
+            <label>負責追蹤人 *</label>
+            <select id="ow">${responsibleStaffOptions(e?.responsible_staff_id||state.profile.id)}</select>
+          </div>
+
+          ${eventFillTimeFields('ifill',i?.form_filled_at||i?.submitted_at||i?.created_at)}
+
+          ${renderSensitiveEventFieldsHtml(sd)}
+
+          <div class="event-section-title">初報內容</div>
+
+          <div class="event-field full">
+            <label>1　事件說明 *</label>
+            <textarea id="de" class="event-text-long" placeholder="記錄事件發生經過、時間、人物、現場情形及目前狀況等">${escapeHTML(i?.event_description||'')}</textarea>
+          </div>
+
+          <div class="event-field full">
+            <label>2　已完成處置 *</label>
+            <textarea id="dn" class="event-text-short" placeholder="記錄目前已完成的聯繫、處理或協助">${escapeHTML(i?.completed_actions||'')}</textarea>
+          </div>
+
+          <div class="event-field full">
+            <label>3　後續待辦 *</label>
+            <textarea id="td" class="event-text-short" placeholder="記錄後續需追蹤、確認或完成的事項">${escapeHTML(i?.pending_tasks||'')}</textarea>
+          </div>
+
+          ${editingSubmitted?'':`
+            <div class="event-option-row">
+              <div class="event-field full">
+                <label>下次追蹤</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input id="nday" type="number" min="1" step="1" value="${e?.next_followup_date?Math.max(1,Math.round((new Date(e.next_followup_date+'T00:00:00')-new Date(isoDate(new Date())+'T00:00:00'))/86400000)):7}" style="max-width:120px">
+                  <span>天後</span>
+                </div>
+              </div>
+              <div class="event-field full">
+                <label class="event-check"><input id="ln" type="checkbox" ${i?.line_notify===false?'':'checked'}> LINE 通知</label>
+              </div>
+            </div>
+          `}
+
+          <div class="event-field full event-file">
+            <label>附件</label>
+            <input id="att" type="file" multiple accept="${EVENT_ATTACHMENT_ACCEPT}">
+            ${editingSubmitted?'<div class="event-help">如需補充附件可直接新增；既有附件不會被刪除。</div>':''}
           </div>
         </div>
-      `}
-
-      <div class="event-field full event-file">
-        <label>附件</label>
-        <input id="att" type="file" multiple accept="${EVENT_ATTACHMENT_ACCEPT}">
-        ${editingSubmitted?'<div class="event-help">如需補充附件可直接新增；既有附件不會被刪除。</div>':''}
       </div>
-    </div>
-    <div class="event-actions">
-      ${editingSubmitted
-        ?'<button id="isu" class="btn primary">儲存修改</button>'
-        :'<button id="dr" class="btn">儲存草稿</button><button id="sd" class="btn primary">送出初報</button><button id="sr" class="btn">送出並準備結報</button>'}
-    </div>`
-  });
+      <div class="event-page-actions">
+        <button type="button" id="eventInitialCancel" class="btn">返回</button>
+        ${editingSubmitted
+          ?'<button id="isu" class="btn primary">儲存修改</button>'
+          :'<button id="dr" class="btn">儲存草稿</button><button id="sd" class="btn primary">送出初報</button><button id="sr" class="btn">送出並準備結報</button>'}
+      </div>
+    </div>`;
 
-  document.querySelector('#modalRoot .modal')?.classList.add('event-modal');
+  eventInitialFormSetDirty(false);
+  const root=$('eventInitialFormBody');
+  const mark=()=>eventInitialFormSetDirty(true);
+  root?.addEventListener('input',mark);
+  root?.addEventListener('change',mark);
+  $('eventInitialBack')?.addEventListener('click',()=>eventInitialFormLeave(e));
+  $('eventInitialCancel')?.addEventListener('click',()=>eventInitialFormLeave(e));
+
   bindSensitiveEventFields(sd);
 
   if(editingSubmitted){
@@ -144,6 +176,7 @@ function openInitialReportForm(e=null){
     $('sd').onclick=()=>saveInitialReport(e,'pending_followup');
     $('sr').onclick=()=>saveInitialReport(e,'pending_close');
   }
+  window.scrollTo({top:0,behavior:'auto'});
 }
 const fieldValue=id=>$(id).value.trim();
 async function saveInitialReport(e,a){
@@ -222,7 +255,7 @@ async function saveInitialReport(e,a){
     }
     let ae=null;
     try{await uploadEventAttachments(r.data,'initial',null,'att')}catch(err){ae=err}
-    closeModal();
+    state.eventInitialFormDirty=false;
     await loadEventData();
     renderEventDetail(r.data);
     if(ae)toast('事件已儲存，但附件上傳失敗：'+ae.message,'warn');
@@ -294,7 +327,7 @@ async function updateInitialReport(e){
     if(r.error)throw r.error;
     let ae=null;
     try{await uploadEventAttachments(e.id,'initial',null,'att')}catch(err){ae=err}
-    closeModal();
+    state.eventInitialFormDirty=false;
     await loadEventData();
     renderEventDetail(e.id);
     toast('初報已修改','success');
