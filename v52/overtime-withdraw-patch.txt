@@ -88,7 +88,7 @@
 // V5.2 測試版：最後載入特休模組，維持加班／換休既有邏輯獨立。
 (async()=>{
   try{
-    const res=await fetch('v52/annual-leave-patch.txt?v=attendance-fullpage-v1-20261006',{cache:'no-store'});
+    const res=await fetch('v52/annual-leave-patch.txt?v=annual-fullpage-v1-20261007',{cache:'no-store'});
     if(!res.ok) throw new Error(`v52/annual-leave-patch.txt 載入失敗（${res.status}）`);
     eval(await res.text());
 
