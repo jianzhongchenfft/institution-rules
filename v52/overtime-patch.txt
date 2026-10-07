@@ -255,7 +255,7 @@
     try{
       const [overtimeResult,leaveResult,settlementResult,creditResult] = await Promise.all([
         db.from('overtime_requests')
-          .select('id,applicant_staff_id,applicant_name,applicant_role,work_date,request_type,start_time,end_time,overtime_minutes,compensation_method,reason,holiday_case_count,comp_minutes,notes,status,review_note,submitted_at,reviewed_at,created_at,updated_at')
+          .select('id,applicant_staff_id,applicant_name,applicant_role,work_date,request_type,start_time,end_time,overtime_minutes,compensation_method,reason,holiday_case_count,comp_minutes,notes,status,review_note,submitted_at,reviewed_at,regular_day_weekday_snapshot,regular_day_warning,created_at,updated_at')
           .order('work_date',{ascending:false})
           .order('created_at',{ascending:false}),
         db.from('comp_leave_usages')
@@ -307,10 +307,11 @@
   }
 
   function overtimeRowDetail(r){
+    const warning=r.regular_day_warning?'<div class="ot-reject">⚠ 此申請日為申請人設定的固定例假日</div>':'';
     if(r.request_type==='holiday_visit_comp'){
-      return `<div class="ot-detail">${Number(r.holiday_case_count)||0} 案・換休 ${overtimeDurationLabel(r.comp_minutes)}</div>`;
+      return `<div class="ot-detail">${Number(r.holiday_case_count)||0} 案・換休 ${overtimeDurationLabel(r.comp_minutes)}</div>${warning}`;
     }
-    return `<div class="ot-detail">${String(r.start_time||'').slice(0,5)}–${String(r.end_time||'').slice(0,5)}・${overtimeDurationLabel(r.overtime_minutes)}・${overtimeCompensationLabel(r.compensation_method)}</div>`;
+    return `<div class="ot-detail">${String(r.start_time||'').slice(0,5)}–${String(r.end_time||'').slice(0,5)}・${overtimeDurationLabel(r.overtime_minutes)}・${overtimeCompensationLabel(r.compensation_method)}</div>${warning}`;
   }
 
   function overtimeAmount(r){
@@ -1049,7 +1050,12 @@
     if(!overtimeCanReview()){toast('目前帳號沒有審核權限','warn');return;}
     const row=state.overtimeRows.find(r=>r.id===id);
     if(!row || row.status!=='pending'){toast('此申請目前不是待審核狀態','warn');return;}
-    if(status==='approved' && !confirm(`確定核准「${row.applicant_name}」${overtimeTypeLabel(row.request_type)}申請嗎？`)) return;
+    if(status==='approved'){
+      const warning=row.regular_day_warning
+        ? '\n\n⚠ 系統提醒：此申請日為申請人送出當時設定的固定例假日，請先確認實際排班與出勤理由後再核准。'
+        : '';
+      if(!confirm(`確定核准「${row.applicant_name}」${overtimeTypeLabel(row.request_type)}申請嗎？${warning}`))return;
+    }
     showLoading(true);
     try{
       const {error}=await db.from('overtime_requests').update({
