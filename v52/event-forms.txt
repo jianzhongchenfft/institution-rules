@@ -38,10 +38,13 @@ function eventInitialFormSetDirty(dirty){
 function eventInitialFormLeave(e){
   if(state.eventInitialFormDirty&&!window.confirm('目前有尚未儲存的內容，確定離開嗎？'))return;
   state.eventInitialFormDirty=false;
-  if(e?.id)renderEventDetail(e.id);
-  else renderEventList();
+  if(e?.id)return renderEventDetail(e.id);
+  const caseId=state.eventReturnCaseId;
+  state.eventReturnCaseId=null;
+  if(caseId&&typeof window.openCaseDetailPage==='function')return window.openCaseDetailPage(caseId,'events',true);
+  renderEventList();
 }
-function openInitialReportForm(e=null){
+function openInitialReportForm(e=null,presetCaseId=null){
   const editingSubmitted=!!(e&&e.status!=='draft');
   let i=e?getInitialReport(e.id):null,sd=e?getSensitiveDetails(e.id):null;
   const title=editingSubmitted?'修改初報':(e?'編輯草稿':'新增事件／初報');
@@ -84,7 +87,7 @@ function openInitialReportForm(e=null){
 
           <div class="event-field half">
             <label>個案</label>
-            <select id="ca"><option value="">不指定</option>${caseOptions(e?.case_id)}</select>
+            <select id="ca"><option value="">不指定</option>${caseOptions(e?.case_id||presetCaseId)}</select>
           </div>
           <div class="event-field half">
             <label>居服員</label>
@@ -843,4 +846,19 @@ async function restoreEvent(e){
   if(r.error)return toast(r.error.message,'error');
   await loadEventData();renderEventDetail(e.id);
 }
+
+window.v52EventApi={
+  canUse:()=>canUseEventModule(),
+  async openFromCase(eventId,caseId){
+    state.eventReturnCaseId=caseId||null;
+    await loadEventData();
+    renderEventDetail(eventId);
+  },
+  openNewForCase(caseId){
+    if(!canUseEventModule()){toast('目前帳號沒有事件追蹤權限','warn');return;}
+    state.eventReturnCaseId=caseId||null;
+    openInitialReportForm(null,caseId||null);
+  }
+};
+
 })();
