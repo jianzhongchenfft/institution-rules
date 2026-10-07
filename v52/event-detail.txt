@@ -172,7 +172,7 @@ function renderEventDetail(id){
     ${z.join('')}
   `;
 
-  $('bk').onclick=renderEventList;
+  $('bk').onclick=()=>{const caseId=state.eventReturnCaseId;state.eventReturnCaseId=null;if(caseId&&typeof window.openCaseDetailPage==='function')window.openCaseDetailPage(caseId,'events',true);else renderEventList();};
   $('eventPrint')&&($('eventPrint').onclick=()=>openEventPrintPreview(e.id));
   $('ed')&&($('ed').onclick=()=>openInitialReportForm(e));
   $('editInitialSubmitted')&&($('editInitialSubmitted').onclick=()=>openInitialReportForm(e));
