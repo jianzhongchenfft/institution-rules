@@ -59,7 +59,7 @@ EVSTYLE.textContent=`
 }
 `;
 document.head.appendChild(EVSTYLE);
-Object.assign(state,{ev:[],ei:[],ef:[],ec:[],ea:[],eh:[],esd:[],es:[],eca:[],ew:[],evOwner:null,evStatusFilter:null,evSortKey:null,evSortDirection:null});
+Object.assign(state,{ev:[],ei:[],ef:[],ec:[],ea:[],eh:[],esd:[],es:[],eca:[],ew:[],evOwner:null,evStatusFilter:null,evSortKey:null,evSortDirection:null,eventReturnCaseId:null});
 const staffName=id=>state.es.find(x=>x.id===id)?.display_name||'—';
 const caseName=id=>state.eca.find(x=>x.id===id)?.case_name||'';
 const workerName=id=>state.ew.find(x=>x.id===id)?.worker_name||'';
@@ -133,7 +133,7 @@ const toggleEventSort=key=>{
   renderEventList();
 };
 async function loadEventData(){showLoading(true);try{let r=await Promise.all([db.rpc('get_case_staff_directory'),db.from('care_cases').select('id,case_name,case_no').order('case_name'),db.from('care_workers').select('id,worker_name').order('worker_name'),db.from('tracking_events').select('*').order('event_date',{ascending:false}),db.from('tracking_event_initial_reports').select('*'),db.from('tracking_event_followups').select('*').order('created_at'),db.from('tracking_event_closures').select('*').order('created_at'),db.from('tracking_event_attachments').select('*').order('created_at'),db.from('tracking_event_sensitive_details').select('*'),db.from('tracking_event_history').select('*').order('created_at')]);for(let x of r)if(x.error)throw x.error;[state.es,state.eca,state.ew,state.ev,state.ei,state.ef,state.ec,state.ea,state.esd,state.eh]=r.map(x=>x.data||[]);if(state.evOwner===null)state.evOwner=state.profile.role==='supervisor'?'mine':'all'}catch(e){toast('事件資料讀取失敗：'+e.message,'error')}finally{showLoading(false)}}
-const N=navigate;navigate=function(id){if(id!=='events')return N(id);if(!state.profile||!canUseEventModule()){state.page=id;renderNav();$('topTitle').textContent='事件追蹤';$('crumb').textContent='事件追蹤';$('content').innerHTML='<div class="empty"><div class="icon">🔒</div><h3>此帳號沒有事件追蹤權限</h3></div>';return}state.page=id;renderNav();$('topTitle').textContent='事件追蹤';$('crumb').textContent='事件追蹤';$('content').innerHTML='<div class="empty">載入中…</div>';loadEventData().then(renderEventList)};
+const N=navigate;navigate=function(id){if(id!=='events')return N(id);state.eventReturnCaseId=null;if(!state.profile||!canUseEventModule()){state.page=id;renderNav();$('topTitle').textContent='事件追蹤';$('crumb').textContent='事件追蹤';$('content').innerHTML='<div class="empty"><div class="icon">🔒</div><h3>此帳號沒有事件追蹤權限</h3></div>';return}state.page=id;renderNav();$('topTitle').textContent='事件追蹤';$('crumb').textContent='事件追蹤';$('content').innerHTML='<div class="empty">載入中…</div>';loadEventData().then(renderEventList)};
 function renderEventStatus(e){return `<span class="pill">${EVENT_STATUS_LABELS[e.status]||e.status}</span>${isEventOverdue(e)?' <span class="pill danger">逾期</span>':''}${e.is_sensitive?' <span class="pill">敏感</span>':''}`}
 function renderEventList(){
   const scopedEvents=state.evOwner==='mine'
