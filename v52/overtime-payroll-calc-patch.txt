@@ -443,7 +443,7 @@
     if(modal.querySelector('#otWorkDate')){
       const type=document.getElementById('otType')?.value;
       const status=b.textContent.trim()==='儲存草稿'?'draft':'pending';
-      if(type==='holiday_overtime'){e.preventDefault();e.stopImmediatePropagation();toast('舊「假日加班」分類必須先改選休息日、國定假日或例假日','warn');return;}
+      if(type==='holiday_overtime'){e.preventDefault();e.stopImmediatePropagation();toast('舊「假日加班」分類必須先重新確認實際日別；若為例假日，請依例假提醒確認後再申請','warn');return;}
       if(type==='overtime'&&prMinutes(prSelected('otStart'),prSelected('otEnd'))>240){e.preventDefault();e.stopImmediatePropagation();toast('平日加班超過4小時，請先確認法定工時限制','warn');return;}
       if(newTimedTypes.has(type)){
         e.preventDefault();e.stopImmediatePropagation();prSaveNewType(status);return;
