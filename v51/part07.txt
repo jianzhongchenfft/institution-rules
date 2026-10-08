@@ -77,7 +77,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!mobileScheduleRes.ok) throw new Error(`v52/schedule-mobile-patch.txt 載入失敗（${mobileScheduleRes.status}）`);
       eval(await mobileScheduleRes.text());
 
-      const overtimeRes = await fetch('v52/overtime-patch.txt?v=regular-day-warning-v1-20261007',{cache:'no-store'});
+      const overtimeRes = await fetch('v52/overtime-patch.txt?v=comp-leave-types-lunch-v1-20261008',{cache:'no-store'});
       if(!overtimeRes.ok) throw new Error(`v52/overtime-patch.txt 載入失敗（${overtimeRes.status}）`);
       eval(await overtimeRes.text());
 
@@ -89,7 +89,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!overtimeIntegrityRes.ok) throw new Error(`v52/overtime-integrity-patch.txt 載入失敗（${overtimeIntegrityRes.status}）`);
       eval(await overtimeIntegrityRes.text());
 
-      const payrollCorrectionRes = await fetch('v52/payroll-correction-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
+      const payrollCorrectionRes = await fetch('v52/payroll-correction-patch.txt?v=comp-leave-types-lunch-v1-20261008',{cache:'no-store'});
       if(!payrollCorrectionRes.ok) throw new Error(`v52/payroll-correction-patch.txt 載入失敗（${payrollCorrectionRes.status}）`);
       eval(await payrollCorrectionRes.text());
 
