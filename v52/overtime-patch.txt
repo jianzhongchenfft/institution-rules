@@ -4,7 +4,7 @@
   overtimeStyle.id = 'v52-overtime-style';
   overtimeStyle.textContent = `
     .ot-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
-    .ot-summary-main{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .ot-summary-main{grid-template-columns:repeat(3,minmax(0,1fr))}
     .ot-summary-action{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;user-select:none}.ot-summary-action:hover{border-color:#dc9479;box-shadow:0 3px 10px rgba(16,24,40,.08)}.ot-summary-action:focus{outline:2px solid rgba(220,148,121,.35);outline-offset:2px}.ot-summary-action.active{border-color:#dc9479;box-shadow:0 0 0 2px rgba(220,148,121,.14);background:#fff8f5}
     .ot-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     .ot-toolbar .spacer{flex:1}
