@@ -74,7 +74,7 @@
     state.payrollCorrectionLoading=true;
     try{
       const correctionPromise=db.from('payroll_settlement_corrections')
-        .select('id,settlement_id,staff_id,staff_name,staff_role,adjustment_type,adjustment_minutes,reason,created_by,created_by_name,created_at,work_date,workday_type,start_time,end_time,day_offset_minutes,calculated_amount,wage_base_snapshot,agreed_daily_hours_snapshot,hourly_base_snapshot,rate_effective_from_snapshot,calculation_formula,calculation_version,related_source_type,related_source_id')
+        .select('id,settlement_id,staff_id,staff_name,staff_role,adjustment_type,adjustment_minutes,reason,created_by,created_by_name,created_at,work_date,workday_type,leave_type,start_time,end_time,day_offset_minutes,calculated_amount,wage_base_snapshot,agreed_daily_hours_snapshot,hourly_base_snapshot,rate_effective_from_snapshot,calculation_formula,calculation_version,related_source_type,related_source_id')
         .order('created_at',{ascending:false});
       const staffPromise=pcCanReview()
         ? db.from('staff_users').select('id,display_name,role,is_active').eq('is_active',true).order('display_name')
@@ -218,6 +218,15 @@
     return b>a?b-a:0;
   }
 
+  // 月結後換休使用更正，同樣排除12:00～13:00午休。
+  function pcCompLeaveChargeMinutes(start,end){
+    const duration=pcMinutesBetween(start,end);
+    if(duration<=0||!start||!end)return 0;
+    const [sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number);
+    const a=sh*60+sm,b=eh*60+em===0?1440:eh*60+em;
+    return Math.max(0,duration-Math.max(0,Math.min(b,780)-Math.max(a,720)));
+  }
+
   function pcCrossesMidnight(start,end){
     if(!start||!end)return false;
     const [sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number);
@@ -254,7 +263,7 @@
     if(c.adjustment_type==='comp_leave_used'&&c.work_date){
       const start=String(c.start_time||'').slice(0,5),end=String(c.end_time||'').slice(0,5)==='00:00'?'24:00':String(c.end_time||'').slice(0,5);
       const action=Number(c.adjustment_minutes)>0?'補登使用':'減少認列並還原原扣抵來源';
-      return `使用：${rocDate(String(c.work_date)+'T00:00:00')}・${escapeHTML(start)}～${escapeHTML(end)}<br>${escapeHTML(action)}<br>`;
+      return `使用：${rocDate(String(c.work_date)+'T00:00:00')}・${escapeHTML(c.leave_type==='holiday_visit'?'假日家訪換休':'一般加班換休')}・${escapeHTML(start)}～${escapeHTML(end)}<br>${escapeHTML(action)}<br>`;
     }
     return '';
   }
@@ -302,6 +311,7 @@
     const staffId=document.getElementById('pcStaff')?.value;
     const date=document.getElementById('pcUsedDate')?.value;
     const direction=Number(document.getElementById('pcDirection')?.value||1);
+    const leaveType=document.getElementById('pcUsedType')?.value||'ordinary';
     const start=pcSelectedTime('pcUsedStart'),end=pcSelectedTime('pcUsedEnd');
     if(!settlement||!staffId||!date||!start||!end){
       if(box)box.textContent='請填寫實際使用日期與起訖時間，系統會自動計算時數並檢查換休帳本。';
@@ -312,14 +322,14 @@
       if(showError)toast('跨午夜換休使用更正請自行分成兩筆','warn');
       return null;
     }
-    const mins=pcMinutesBetween(start,end);
+    const mins=pcCompLeaveChargeMinutes(start,end);
     if(mins<=0||mins%30!==0){
-      if(box)box.textContent='換休使用更正須以30分鐘為單位，且結束時間必須晚於開始時間。';
+      if(box)box.textContent=pcMinutesBetween(start,end)>0?'此時段只有12:00～13:00午休，不計換休時數。':'換休使用更正須以30分鐘為單位，且結束時間必須晚於開始時間。';
       return null;
     }
-    const {data,error}=await db.rpc('preview_payroll_comp_leave_used_correction',{
+    const {data,error}=await db.rpc('preview_payroll_comp_leave_used_typed',{
       p_settlement_id:settlement.id,p_staff_id:staffId,p_leave_date:date,
-      p_start_time:start,p_end_time:end,p_direction:direction
+      p_start_time:start,p_end_time:end,p_direction:direction,p_leave_type:leaveType
     });
     if(error){
       if(box)box.textContent='無法試算：'+(error.message||error);
@@ -329,7 +339,7 @@
     const row=Array.isArray(data)?data[0]:data;
     if(!row)return null;
     if(direction>0){
-      if(box)box.innerHTML=`自動計算：<strong>${escapeHTML(pcDuration(row.correction_minutes))}</strong>｜該日目前可扣抵換休 <strong>${escapeHTML(pcDuration(row.available_minutes))}</strong>`;
+      if(box)box.innerHTML=`自動計算：<strong>${escapeHTML(pcDuration(row.correction_minutes))}</strong>${pcMinutesBetween(start,end)>row.correction_minutes?'（已扣除午休）':''}｜所選類型可扣抵 <strong>${escapeHTML(pcDuration(row.available_minutes))}</strong>`;
     }else{
       if(box)box.innerHTML=`將整筆還原：<strong>${escapeHTML(row.related_source_label||'既有換休使用紀錄')}</strong>｜${escapeHTML(pcDuration(row.correction_minutes))}`;
     }
@@ -429,11 +439,12 @@
           <div id="pcUsedMeta" class="field full hidden">
             <div class="form-grid">
               <div class="field"><label>實際使用日期 *</label><input id="pcUsedDate" type="date"></div>
+              <div class="field"><label>換休類型 *</label><select id="pcUsedType"><option value="ordinary">一般加班換休</option><option value="holiday_visit">假日家訪換休</option></select></div>
               <div class="field"><label>開始時間 *</label><div class="ot-time-pair"><select id="pcUsedStartHour">${pcHourOptions()}</select><select id="pcUsedStartMinute">${pcThirtyMinuteOptions()}</select></div></div>
               <div class="field"><label>結束時間 *</label><div class="ot-time-pair"><select id="pcUsedEndHour">${pcHourOptions()}</select><select id="pcUsedEndMinute">${pcThirtyMinuteOptions()}</select></div></div>
             </div>
             <div id="pcUsedCalc" class="ot-calc" style="margin-top:8px">請填寫實際使用日期與起訖時間，系統會自動計算時數並檢查換休帳本。</div>
-            <div class="help" style="margin-top:6px">換休使用以30分鐘為單位。增加認列會依實際使用日扣抵當時可用換休；減少認列必須完整對應一筆既有換休使用。若只修正部分時數，請先整筆減少，再補登正確時段。</div>
+            <div class="help" style="margin-top:6px">換休使用以30分鐘為單位，12:00～13:00午休不扣抵；每筆僅能選擇一種換休類型。減少認列必須完整對應一筆既有換休使用。若只修正部分時數，請先整筆減少，再補登正確時段。</div>
           </div>
           <div class="field full"><label>更正原因 *</label><textarea id="pcReason" placeholder="例如：薪資結算後發現22:00～22:30加班漏列"></textarea></div>
         </div>`,
@@ -457,7 +468,7 @@
     ['pcEarnDate','pcEarnSource','pcEarnStartHour','pcEarnStartMinute','pcEarnEndHour','pcEarnEndMinute','pcEarnCases'].forEach(id=>{
       document.getElementById(id)?.addEventListener('change',pcRefreshEarnedMeta);
     });
-    ['pcStaff','pcDirection','pcUsedDate','pcUsedStartHour','pcUsedStartMinute','pcUsedEndHour','pcUsedEndMinute'].forEach(id=>{
+    ['pcStaff','pcDirection','pcUsedType','pcUsedDate','pcUsedStartHour','pcUsedStartMinute','pcUsedEndHour','pcUsedEndMinute'].forEach(id=>{
       document.getElementById(id)?.addEventListener('change',()=>pcPreviewUsedCorrection(false));
     });
     pcRefresh();
@@ -536,6 +547,7 @@ ${start}～${end==='00:00'?'24:00':end}｜${direction>0?'增加':'減少'}認列
       }
     }else if(type==='comp_leave_used'){
       const date=document.getElementById('pcUsedDate')?.value;
+      const leaveType=document.getElementById('pcUsedType')?.value||'ordinary';
       const start=pcSelectedTime('pcUsedStart'),end=pcSelectedTime('pcUsedEnd');
       const {start:monthStart,end:monthEnd}=(()=>{const m=String(state.overtimeMonth||'');const [y,mo]=m.split('-').map(Number);return {start:`${m}-01`,end:isoDate(new Date(y,mo,0))};})();
       if(!date||!start||!end){toast('請完整填寫實際使用日期與起訖時間','warn');return false;}
@@ -543,10 +555,10 @@ ${start}～${end==='00:00'?'24:00':end}｜${direction>0?'增加':'減少'}認列
       const preview=await pcPreviewUsedCorrection(true);
       if(!preview)return false;
       const total=Number(preview.correction_minutes||0)*direction;
-      payload={...payload,adjustment_minutes:total,work_date:date,workday_type:'comp_leave_usage',start_time:start,end_time:end};
+      payload={...payload,adjustment_minutes:total,work_date:date,workday_type:'comp_leave_usage',leave_type:leaveType,start_time:start,end_time:end};
       confirmText=`確定建立這筆月結更正嗎？
 
-${staff.display_name}｜換休使用｜${rocDate(date+'T00:00:00')}
+${staff.display_name}｜${leaveType==='holiday_visit'?'假日家訪換休':'一般加班換休'}使用｜${rocDate(date+'T00:00:00')}
 ${start}～${end==='00:00'?'24:00':end}｜${direction>0?'增加認列':'減少認列'} ${pcDuration(Math.abs(total))}${direction<0?`
 還原來源：${preview.related_source_label||'既有換休使用紀錄'}`:''}
 
