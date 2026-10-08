@@ -145,6 +145,16 @@
     return endMin>startMin ? endMin-startMin : 0;
   }
 
+  // 換休淨使用時數：12:00至13:00午休不扣抵，原加班取得公式維持不變。
+  function compLeaveChargeMinutes(start,end){
+    const a=overtimeNormalizeTime(start),b=overtimeNormalizeTime(end);
+    if(!overtimeValid24h(a)||!overtimeValid24h(b))return 0;
+    const mins=t=>{const [h,m]=t.split(':').map(Number);return h*60+m;};
+    const x=mins(a),y=mins(b);
+    if(y<=x)return 0;
+    return Math.max(0,y-x-Math.max(0,Math.min(y,780)-Math.max(x,720)));
+  }
+
   function overtimeCrossesMidnight(start,end){
     const s=overtimeNormalizeTime(start),e=overtimeNormalizeTime(end);
     if(!overtimeValid24h(s) || !overtimeValid24h(e)) return false;
@@ -216,26 +226,30 @@
       .reduce((sum,r)=>sum+(Number(r.minutes)||0),0);
   }
 
-  function compLeaveBalance(staffId,asOfDate=null){
+  function compLeaveBalance(staffId,asOfDate=null,excludeUsageId=null){
     const fallback=isoDate(new Date());
-    const domDate=document.getElementById('clDate')?.value||'';
-    const rawDate=String(asOfDate||domDate||fallback);
-    const asOf=/^\d{4}-\d{2}-\d{2}$/.test(rawDate)?rawDate:fallback;
-    const credits=(state.compLeaveCredits||[]).filter(c=>String(c.staff_id)===String(staffId));
-    const eligible=credits.filter(c=>String(c.earned_date||'')<=asOf&&(!c.expires_on||String(c.expires_on)>=asOf));
-    const earned=eligible.reduce((sum,c)=>sum+(Number(c.earned_minutes)||0),0);
-    const ledgerRemaining=eligible.reduce((sum,c)=>sum+(Number(c.remaining_minutes)||0),0);
+    const rawDate=String(asOfDate||document.getElementById('clDate')?.value||fallback);
+    const selectedDate=/^\d{4}-\d{2}-\d{2}$/.test(rawDate)?rawDate:fallback;
+    const cutoff=selectedDate<fallback?selectedDate:fallback;
+    const eligible=(state.compLeaveCredits||[])
+      .filter(c=>String(c.staff_id)===String(staffId))
+      .filter(c=>String(c.earned_date||'')<=cutoff&&(!c.expires_on||String(c.expires_on)>=selectedDate));
+    const ordinaryCredits=eligible.filter(c=>c.leave_type!=='holiday_visit');
+    const holidayCredits=eligible.filter(c=>c.leave_type==='holiday_visit');
+    const ordinaryRemaining=ordinaryCredits.reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const holidayVisitRemaining=holidayCredits.reduce((s,c)=>s+(Number(c.remaining_minutes)||0),0);
+    const pendingRows=(state.compLeaveRows||[]).filter(r=>String(r.applicant_staff_id)===String(staffId)&&r.status==='pending')
+      .filter(r=>!excludeUsageId||String(r.id)!==String(excludeUsageId));
+    const ordinaryPending=pendingRows.filter(r=>r.leave_type!=='holiday_visit').reduce((s,r)=>s+(Number(r.minutes)||0),0);
+    const holidayPending=pendingRows.filter(r=>r.leave_type==='holiday_visit').reduce((s,r)=>s+(Number(r.minutes)||0),0);
+    const ordinary=Math.max(0,ordinaryRemaining-ordinaryPending);
+    const holidayVisit=Math.max(0,holidayVisitRemaining-holidayPending);
+    const earned=eligible.reduce((s,c)=>s+(Number(c.earned_minutes)||0),0);
     const used=compLeaveApprovedUsedMinutes(staffId);
-    const pending=compLeavePendingMinutes(staffId);
-    const available=Math.max(0,ledgerRemaining-pending);
-    return {
-      earned,
-      used,
-      pending,
-      ledgerRemaining,
-      remaining:available,
-      requestable:available
-    };
+    const pending=ordinaryPending+holidayPending;
+    const remaining=ordinary+holidayVisit;
+    return {earned,used,pending,ledgerRemaining:ordinaryRemaining+holidayVisitRemaining,
+      remaining,requestable:remaining,ordinary,holidayVisit,ordinaryPending,holidayPending};
   }
 
   function compLeaveDurationParts(minutes){
@@ -259,14 +273,14 @@
           .order('work_date',{ascending:false})
           .order('created_at',{ascending:false}),
         db.from('comp_leave_usages')
-          .select('id,applicant_staff_id,applicant_name,applicant_role,leave_date,start_time,end_time,minutes,reason,notes,status,review_note,submitted_at,reviewed_at,created_at,updated_at')
+          .select('id,applicant_staff_id,applicant_name,applicant_role,leave_date,start_time,end_time,minutes,leave_type,reason,notes,status,review_note,submitted_at,reviewed_at,created_at,updated_at')
           .order('leave_date',{ascending:false})
           .order('created_at',{ascending:false}),
         db.from('payroll_month_settlements')
           .select('id,settlement_month,summary,total_overtime_pay_minutes,total_comp_leave_earned_minutes,total_comp_leave_used_minutes,settled_by,settled_by_name,settled_at,created_at')
           .order('settlement_month',{ascending:false}),
         db.from('comp_leave_credits')
-          .select('id,staff_id,source_type,source_id,earned_date,earned_minutes,remaining_minutes,expires_on,source_label,created_at,updated_at')
+          .select('id,staff_id,source_type,source_id,earned_date,earned_minutes,remaining_minutes,expires_on,source_label,leave_type,created_at,updated_at')
           .order('earned_date',{ascending:true})
           .order('created_at',{ascending:true})
       ]);
@@ -350,7 +364,8 @@
         <article class="stat-card"><div class="stat-head"><span>已取得換休</span><span class="stat-icon">➕</span></div><div class="stat-value">${overtimeDurationLabel(balance.earned)}</div></article>
         <article class="stat-card"><div class="stat-head"><span>已使用換休</span><span class="stat-icon">➖</span></div><div class="stat-value">${overtimeDurationLabel(balance.used)}</div></article>
         <article class="stat-card"><div class="stat-head"><span>待審核使用</span><span class="stat-icon">⏳</span></div><div class="stat-value">${overtimeDurationLabel(balance.pending)}</div></article>
-        <article class="stat-card"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(balance.requestable)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>一般加班換休可用</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(balance.ordinary)}</div></article>
+        <article class="stat-card"><div class="stat-head"><span>假日家訪換休可用</span><span class="stat-icon">🏠</span></div><div class="stat-value">${overtimeDurationLabel(balance.holidayVisit)}</div></article>
       </section>
       <section class="ot-rule-card">
         <h3>換休取得明細</h3>
@@ -363,11 +378,12 @@
       return `<div class="ot-empty"><div class="icon">🕒</div><h3>目前沒有資料</h3></div>`;
     }
     return `<div class="ot-table-shell"><table class="ot-table"><thead><tr>
-      ${review?'<th>申請人</th>':''}<th>換休日期</th><th>換休時間</th><th>使用時數</th><th>事由</th><th>狀態</th><th>操作</th>
+      ${review?'<th>申請人</th>':''}<th>換休日期</th><th>換休時間</th><th>換休類型</th><th>使用時數</th><th>事由</th><th>狀態</th><th>操作</th>
       </tr></thead><tbody>${rows.map(r=>`<tr>
         ${review?`<td><div class="ot-review-name">${escapeHTML(r.applicant_name)}</div><div class="ot-detail">${escapeHTML(overtimeRoleLabel(r.applicant_role))}</div></td>`:''}
         <td>${rocDate(r.leave_date+'T00:00:00')}</td>
         <td><div class="ot-type">${String(r.start_time||'').slice(0,5)}–${String(r.end_time||'').slice(0,5)}</div></td>
+        <td>${escapeHTML(r.leave_type==='holiday_visit'?'假日家訪換休':'一般加班換休')}</td>
         <td><span class="ot-amount">${overtimeDurationLabel(r.minutes)}</span></td>
         <td><div>${escapeHTML(r.reason||'—')}</div>${r.notes?`<div class="ot-detail ot-note">備註：${escapeHTML(r.notes)}</div>`:''}${r.review_note?`<div class="ot-reject">審核說明：${escapeHTML(r.review_note)}</div>`:''}</td>
         <td><span class="ot-status ${r.status}">${overtimeStatusLabel(r.status)}</span></td>
@@ -643,7 +659,8 @@
       ${canSubmit?`
       <section class="ot-summary ot-summary-main">
         <article class="stat-card ot-summary-action ${state.overtimeView==='mine'?'active':''}" role="button" tabindex="0" data-ot-summary-view="mine"><div class="stat-head"><span>本月我的加班</span><span class="stat-icon">⏱</span></div><div class="stat-value">${overtimeDurationLabel(summary.overtimeMinutes)}</div><div class="stat-foot">點擊查看我的申請</div></article>
-        <article class="stat-card ot-summary-action ${state.overtimeView==='usage'?'active':''}" role="button" tabindex="0" data-ot-summary-view="usage"><div class="stat-head"><span>目前剩餘換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.requestable)}</div><div class="stat-foot">累計已使用 ${overtimeDurationLabel(summary.balance.used)}・點擊查看紀錄</div></article>
+        <article class="stat-card ot-summary-action ${state.overtimeView==='balance'?'active':''}" role="button" tabindex="0" data-ot-summary-view="balance"><div class="stat-head"><span>一般加班換休</span><span class="stat-icon">🕒</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.ordinary)}</div><div class="stat-foot">有到期日・點擊查看帳本</div></article>
+        <article class="stat-card ot-summary-action ${state.overtimeView==='balance'?'active':''}" role="button" tabindex="0" data-ot-summary-view="balance"><div class="stat-head"><span>假日家訪換休</span><span class="stat-icon">🏠</span></div><div class="stat-value">${overtimeDurationLabel(summary.balance.holidayVisit)}</div><div class="stat-foot">無到期限制・點擊查看帳本</div></article>
       </section>`:`
       <section class="ot-summary">
         <article class="stat-card"><div class="stat-head"><span>待審核加班／換休</span><span class="stat-icon">⏱</span></div><div class="stat-value">${summary.pendingOvertime}</div></article>
@@ -893,23 +910,22 @@
   }
 
   function compLeaveUsageFormHTML(existing){
-    const today=existing?.leave_date || isoDate(new Date());
+    const today=existing?.leave_date||isoDate(new Date());
     const startParts=overtimeTimeParts(existing?.start_time);
     const endParts=overtimeTimeParts(existing?.end_time);
-    if(!existing){
-      startParts.minute='00';
-      endParts.minute='00';
-    }
-    const balance=compLeaveBalance(state.profile?.id,today);
+    if(!existing){startParts.minute='00';endParts.minute='00';}
+    const balance=compLeaveBalance(state.profile?.id,today,existing?.id||null);
+    const initialType=existing?.leave_type==='holiday_visit'?'holiday_visit':'ordinary';
     return `
       <div class="form-grid">
         <div class="field"><label>申請人</label><input class="ot-readonly" value="${escapeHTML(state.profile?.display_name||'—')}" disabled></div>
-        <div class="field"><label>身分</label><input class="ot-readonly" value="${escapeHTML(overtimeRoleLabel(state.profile?.role))}" disabled></div>
         <div class="field"><label>換休日期 *</label><input id="clDate" type="date" value="${escapeHTML(today)}"></div>
-        <div class="field"><label>目前可再申請</label><input id="clBalanceValue" class="ot-readonly" value="${escapeHTML(overtimeDurationLabel(balance.requestable))}" disabled></div>
+        <div class="field"><label>換休類型 *</label><select id="clLeaveType"><option value="ordinary" ${initialType==='ordinary'?'selected':''}>一般加班換休</option><option value="holiday_visit" ${initialType==='holiday_visit'?'selected':''}>假日家訪換休</option></select></div>
+        <div class="field"><label>所選類型可用</label><input id="clBalanceValue" class="ot-readonly" value="${escapeHTML(overtimeDurationLabel(initialType==='holiday_visit'?balance.holidayVisit:balance.ordinary))}" disabled></div>
         <div class="field"><label>開始時間 *</label><div class="ot-time-pair"><select id="clStartHour">${overtimeTimeOptions(23,startParts.hour,'時')}</select><select id="clStartMinute"><option value="00" ${startParts.minute==='00'?'selected':''}>00</option><option value="30" ${startParts.minute==='30'?'selected':''}>30</option></select></div></div>
         <div class="field"><label>結束時間 *</label><div class="ot-time-pair"><select id="clEndHour">${overtimeTimeOptions(23,endParts.hour,'時')}</select><select id="clEndMinute"><option value="00" ${endParts.minute==='00'?'selected':''}>00</option><option value="30" ${endParts.minute==='30'?'selected':''}>30</option></select></div></div>
-        <div class="field full"><label>使用換休時數</label><div id="clDurationHelp" class="ot-calc">系統將依開始與結束時間自動計算</div></div>
+        <div class="field full"><label>使用換休時數</label><div id="clDurationHelp" class="ot-calc">12:00～13:00午休時間不計入換休</div></div>
+        <div class="field full"><label>預計扣抵來源</label><div id="clAllocationHelp" class="ot-rule-highlight">每筆只會扣抵所選類型；不足時請拆成兩筆申請。</div></div>
         <div class="field full"><label>換休事由 *</label><textarea id="clReason" placeholder="請簡要說明本次換休原因">${escapeHTML(existing?.reason||'')}</textarea></div>
         <div class="field full"><label>備註</label><textarea id="clNotes" placeholder="選填">${escapeHTML(existing?.notes||'')}</textarea></div>
       </div>`;
@@ -919,25 +935,30 @@
     if(!overtimeCanSubmit()){toast('目前帳號沒有換休使用申請權限','warn');return;}
     state.workflowEditingLeaveId=existing?.id||null;
     const title=existing?'編輯換休使用申請':'使用換休';
-    const subtitle=existing?'修改既有換休使用申請；送出後依原審核流程處理。':'填寫換休日期與起訖時間後送出審核。';
+    const subtitle=existing?'修改既有換休使用申請；送出後依原審核流程處理。':'選擇換休來源及時間；預設一般加班換休，午休不扣時數。';
     otRenderPageForm(title,subtitle,compLeaveUsageFormHTML(existing),{existing,kind:'comp_leave'});
     const updateDuration=()=>{
-      const start=overtimeSelectedTime('clStart');
-      const end=overtimeSelectedTime('clEnd');
-      const minutes=overtimeMinutesBetween(start,end);
+      const start=overtimeSelectedTime('clStart'),end=overtimeSelectedTime('clEnd');
+      const raw=overtimeMinutesBetween(start,end);
+      const minutes=compLeaveChargeMinutes(start,end);
+      const leaveType=$('clLeaveType')?.value||'ordinary';
+      const balance=compLeaveBalance(state.profile?.id,$('clDate')?.value||isoDate(new Date()),existing?.id||null);
+      const available=leaveType==='holiday_visit'?balance.holidayVisit:balance.ordinary;
+      const typeLabel=leaveType==='holiday_visit'?'假日家訪換休':'一般加班換休';
       const valid=overtimeValid24h(start)&&overtimeValid24h(end);
-      const leaveDate=$('clDate')?.value||isoDate(new Date());
-      const balanceNow=compLeaveBalance(state.profile?.id,leaveDate);
-      if($('clBalanceValue')) $('clBalanceValue').value=overtimeDurationLabel(balanceNow.requestable);
+      if($('clBalanceValue'))$('clBalanceValue').value=overtimeDurationLabel(available);
       if($('clDurationHelp')){
-        $('clDurationHelp').textContent=!valid
-          ? '請選擇完整的開始與結束時間'
-          : minutes
-            ? `${minutes}分鐘（${overtimeDurationLabel(minutes)}）；目前剩餘換休 ${overtimeDurationLabel(balanceNow.requestable)}`
-            : '結束時間須晚於開始時間';
+        $('clDurationHelp').textContent=!valid?'請選擇完整起訖時間':
+          minutes>0?`實際扣抵 ${overtimeDurationLabel(minutes)}${raw>minutes?`（已扣除午休 ${overtimeDurationLabel(raw-minutes)}）`:''}；所選類型可用 ${overtimeDurationLabel(available)}`:
+          raw>0?'所選時段僅有12:00～13:00午休，沒有可扣抵換休時數':'結束時間須晚於開始時間';
+      }
+      if($('clAllocationHelp')){
+        $('clAllocationHelp').textContent=!valid||minutes<=0?'請選擇換休類型與有效起訖時間。':
+          minutes>available?`${typeLabel}可用 ${overtimeDurationLabel(available)}，尚缺 ${overtimeDurationLabel(minutes-available)}；請縮短申請時數，剩餘部分另用另一種類型申請。`:
+          `本次只會扣抵${typeLabel} ${overtimeDurationLabel(minutes)}，不會跨類型混用。`;
       }
     };
-    ['clDate','clStartHour','clStartMinute','clEndHour','clEndMinute'].forEach(id=>$(id)?.addEventListener('change',updateDuration));
+    ['clDate','clLeaveType','clStartHour','clStartMinute','clEndHour','clEndMinute'].forEach(id=>$(id)?.addEventListener('change',updateDuration));
     $('otPageDraft')?.addEventListener('click',()=>saveCompLeaveUsage(existing,'draft'));
     $('modalConfirm')?.addEventListener('click',()=>saveCompLeaveUsage(existing,'pending'));
     updateDuration();
@@ -946,51 +967,34 @@
 
   async function saveCompLeaveUsage(existing,status){
     const leaveDate=$('clDate').value;
-    const start=overtimeSelectedTime('clStart');
-    const end=overtimeSelectedTime('clEnd');
-    const minutes=overtimeMinutesBetween(start,end);
-    const reason=$('clReason').value.trim();
-    const notes=$('clNotes').value.trim();
-    const balance=compLeaveBalance(state.profile?.id,leaveDate);
-
+    const start=overtimeSelectedTime('clStart'),end=overtimeSelectedTime('clEnd');
+    const minutes=compLeaveChargeMinutes(start,end);
+    const reason=$('clReason').value.trim(),notes=$('clNotes').value.trim();
+    const leaveType=$('clLeaveType')?.value||'ordinary';
+    const balance=compLeaveBalance(state.profile?.id,leaveDate,existing?.id||null);
+    const available=leaveType==='holiday_visit'?balance.holidayVisit:balance.ordinary;
     if(!leaveDate){toast('請選擇換休日期','warn');return false;}
     if(!overtimeValid24h(start)||!overtimeValid24h(end)){toast('請選擇完整的開始及結束時間','warn');return false;}
-    if(!['00','30'].includes(String(start).slice(3,5)) || !['00','30'].includes(String(end).slice(3,5))){toast('換休時間請以30分鐘為間隔','warn');return false;}
-    if(minutes<=0){toast('結束時間須晚於開始時間','warn');return false;}
+    if(!['00','30'].includes(start.slice(3,5))||!['00','30'].includes(end.slice(3,5))){toast('換休時間請以30分鐘為間隔','warn');return false;}
+    if(minutes<=0){toast(overtimeMinutesBetween(start,end)>0?'午休12:00～13:00不計換休，請調整時間':'結束時間須晚於開始時間','warn');return false;}
     if(!reason){toast('請填寫換休事由','warn');return false;}
-    if(status==='pending' && minutes>balance.requestable){
-      toast(`所選日期目前剩餘換休僅 ${overtimeDurationLabel(balance.requestable)}，請調整換休起訖時間`,'warn');
+    if(status==='pending'&&minutes>available){
+      toast(`所選換休類型可用 ${overtimeDurationLabel(available)}，尚缺 ${overtimeDurationLabel(minutes-available)}；請另申請另一種類型。`,'warn');
       return false;
     }
-
     const payload={
-      applicant_staff_id:state.profile.id,
-      applicant_name:state.profile.display_name,
-      applicant_role:state.profile.role,
-      leave_date:leaveDate,
-      start_time:start,
-      end_time:end,
-      minutes,
-      reason,
-      notes:notes||null,
-      status,
+      applicant_staff_id:state.profile.id,applicant_name:state.profile.display_name,
+      applicant_role:state.profile.role,leave_date:leaveDate,start_time:start,end_time:end,
+      minutes,leave_type:leaveType,reason,notes:notes||null,status,
       submitted_at:status==='pending'?new Date().toISOString():null,
-      review_note:null,
-      reviewed_at:null,
-      reviewed_by:null,
-      updated_at:new Date().toISOString()
+      review_note:null,reviewed_at:null,reviewed_by:null,updated_at:new Date().toISOString()
     };
-
     showLoading(true);
     try{
       let error;
-      if(existing){
-        ({error}=await db.from('comp_leave_usages').update(payload).eq('id',existing.id));
-      }else{
-        payload.created_by=state.user.id;
-        ({error}=await db.from('comp_leave_usages').insert(payload));
-      }
-      if(error) throw error;
+      if(existing){({error}=await db.from('comp_leave_usages').update(payload).eq('id',existing.id));}
+      else{payload.created_by=state.user.id;({error}=await db.from('comp_leave_usages').insert(payload));}
+      if(error)throw error;
       state.overtimePageFormDirty=false;
       closeModal();
       await loadOvertimeRows();
@@ -999,8 +1003,7 @@
       toast(status==='pending'?'換休使用申請已送出審核':'換休使用草稿已儲存','success');
       return true;
     }catch(err){
-      console.error(err);
-      toast('儲存換休使用申請失敗：'+(err?.message||err),'error');
+      console.error(err);toast('儲存換休使用申請失敗：'+(err?.message||err),'error');
       return false;
     }finally{showLoading(false);}
   }
