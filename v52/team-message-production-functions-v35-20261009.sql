@@ -40,7 +40,7 @@ begin
  values(p_message_id,v_actor,'【新增分工｜'||left(v_assignee_name,80)||'】'||E'\n'||left(btrim(p_description),1000),true);
  return v_new_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_team_message(p_description text, p_tasks jsonb DEFAULT '[]'::jsonb, p_recipient_ids uuid[] DEFAULT NULL::uuid[])
  RETURNS uuid
@@ -107,7 +107,7 @@ begin
    values(v_id,v_assignee) on conflict do nothing;
  end loop;
  return v_id;
-end $function$
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.team_message_attention_count()
  RETURNS integer
@@ -144,7 +144,7 @@ select case when not private.can_manage_cases() then 0 else
   ) attention_messages
  )
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.team_message_edit_help(p_task_id uuid, p_note text)
  RETURNS uuid
@@ -204,7 +204,7 @@ begin
  set read_at=null where message_id=v_mid and staff_id=v_creator;
  return v_mid;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.team_message_manage_event(p_message_id uuid, p_action text, p_description text DEFAULT NULL::text, p_notify boolean DEFAULT true)
  RETURNS uuid
@@ -260,7 +260,7 @@ begin
  values(p_message_id,v_actor,v_history,true);
  return p_message_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.team_message_manage_task(p_task_id uuid, p_action text, p_description text DEFAULT NULL::text, p_assignee_staff_id uuid DEFAULT NULL::uuid, p_notify boolean DEFAULT true, p_reason text DEFAULT NULL::text)
  RETURNS uuid
@@ -344,7 +344,7 @@ begin
  values(v_mid,v_actor,left(v_note,2000),true);
  return v_mid;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.team_message_task_action(p_task_id uuid, p_action text, p_note text DEFAULT NULL::text)
  RETURNS uuid
@@ -424,7 +424,7 @@ begin
  end if;
  return v_mid;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.void_team_message_update(p_update_id uuid)
  RETURNS uuid
@@ -453,7 +453,7 @@ begin
  update public.team_message_updates set voided_at=now(),voided_by_staff_id=v_actor where id=p_update_id;
  return v_mid;
 end;
-$function$
+$function$;
 
 
 -- Protect RPCs from anonymous execution; permit only authenticated.
