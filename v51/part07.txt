@@ -89,10 +89,6 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       if(!overtimeIntegrityRes.ok) throw new Error(`v52/overtime-integrity-patch.txt 載入失敗（${overtimeIntegrityRes.status}）`);
       eval(await overtimeIntegrityRes.text());
 
-      const payrollCorrectionRes = await fetch('v52/payroll-correction-patch.txt?v=comp-leave-types-lunch-v1-20261008',{cache:'no-store'});
-      if(!payrollCorrectionRes.ok) throw new Error(`v52/payroll-correction-patch.txt 載入失敗（${payrollCorrectionRes.status}）`);
-      eval(await payrollCorrectionRes.text());
-
       const compLeaveExpiryRes = await fetch('v52/comp-leave-expiry-patch.txt?v=attendance-runtime-v4-20261005',{cache:'no-store'});
       if(!compLeaveExpiryRes.ok) throw new Error(`v52/comp-leave-expiry-patch.txt 載入失敗（${compLeaveExpiryRes.status}）`);
       eval(await compLeaveExpiryRes.text());
