@@ -15,16 +15,6 @@
     const rows=Array.isArray(s?.summary?.staff)?s.summary.staff:[];
     return rows.find(r=>String(r.staffId)===String(staffId))||null;
   }
-  function correctionAmount(s,staffId=null){
-    const merged=new Map();
-    [...(state.payrollCorrections||[]),...(state.payrollAmountCorrections||[])].forEach(c=>{
-      if(c?.id)merged.set(String(c.id),c);
-    });
-    return [...merged.values()]
-      .filter(c=>String(c.settlement_id)===String(s?.id)&&c.adjustment_type==='overtime_pay'&&(!staffId||String(c.staff_id)===String(staffId)))
-      .reduce((sum,c)=>sum+(Number(c.calculated_amount)||0),0);
-  }
-
   function updateMineCard(){
     if(state.page!=='overtime'||!state.profile)return;
     const month=/^\d{4}-\d{2}$/.test(state.overtimeMonth||'')?state.overtimeMonth:isoDate(new Date()).slice(0,7);
@@ -52,17 +42,14 @@
         let td=tr.querySelector('[data-pr-money-cell]');
         if(!td){td=document.createElement('td');td.dataset.prMoneyCell='1';tr.children[1]?.insertAdjacentElement('afterend',td);}
         if(version>=2){
-          const row=snapshotStaff(s,staffId),original=Number(row?.overtimePayAmount)||0,corr=correctionAmount(s,staffId),finalAmount=original+corr;
+          const row=snapshotStaff(s,staffId),original=Number(row?.overtimePayAmount)||0;
           const expired=version>=6?(Number(row?.expiredCompLeavePayoutAmount)||0):0;
           td.dataset.snapshotLocked='1';
-          const nextHtml=`<span class="pr-money">${money(finalAmount)}</span><div class="ot-detail">原月結快照 ${money(original)}${expired?`・含到期換休折算 ${money(expired)}`:''}${corr?`・更正 ${corr>0?'+':''}${money(corr).replace('NT$ ','')}`:''}</div>`;
+          const nextHtml=`<span class="pr-money">${money(original)}</span><div class="ot-detail">原月結快照 ${money(original)}${expired?`・含到期換休折算 ${money(expired)}`:''}</div>`;
           if(td.innerHTML!==nextHtml)td.innerHTML=nextHtml;
         }else{
-          const corr=correctionAmount(s,staffId);
           td.dataset.snapshotLocked='1';
-          const nextHtml=corr
-            ? `<span class="pr-money missing">原金額未留存</span><div class="ot-detail">月結後更正 ${corr>0?'+':''}${money(corr).replace('NT$ ','')}・完整總額無法由舊快照還原</div>`
-            : '<span class="pr-money missing">原金額未留存</span><div class="ot-detail">此月份建立於金額快照功能前，只保留當時時數；不以目前薪資回推歷史金額。</div>';
+          const nextHtml='<span class="pr-money missing">原金額未留存</span><div class="ot-detail">此月份建立於金額快照功能前，只保留當時時數；不以目前薪資回推歷史金額。</div>';
           if(td.innerHTML!==nextHtml)td.innerHTML=nextHtml;
         }
       });
@@ -72,18 +59,16 @@
     let note=document.getElementById('payrollAmountSnapshotNotice');
     if(!note){
       note=document.createElement('section');note.id='payrollAmountSnapshotNotice';note.className='ot-rule-card';
-      const correctionPanel=document.getElementById('payrollCorrectionPanel');
-      if(correctionPanel)correctionPanel.insertAdjacentElement('beforebegin',note);else main.appendChild(note);
+      main.appendChild(note);
     }
     if(version>=2){
-      const original=Number(s.summary?.totals?.overtimePayAmount)||0,corr=correctionAmount(s),finalAmount=original+corr;
+      const original=Number(s.summary?.totals?.overtimePayAmount)||0;
       const expired=version>=6?(Number(s.summary?.totals?.expiredCompLeavePayoutAmount)||0):0;
       const expiredMinutes=version>=6?(Number(s.summary?.totals?.expiredCompLeavePayoutMinutes)||0):0;
-      const nextHtml=`<h3>🔒 月結金額快照</h3><p>本月份結算時的薪資基數、加班日別、計算公式與加班費金額均已鎖定保存。後續調薪或修改薪資基數不會改變本月原始結算。${version>=6?'換休到期未休部分會依原加班日期的薪資基數與原同日倍率順位自動折算。':''}</p><div class="ot-rule-highlight">原月結加班費：<strong>${money(original)}</strong>${expired?`　｜　其中到期換休折算：<strong>${money(expired)}</strong>（${dur(expiredMinutes)}）`:''}${corr?`　｜　月結後更正：<strong>${corr>0?'+':''}${money(corr).replace('NT$ ','')}</strong>`:''}　｜　目前認列：<strong>${money(finalAmount)}</strong></div>`;
+      const nextHtml=`<h3>🔒 月結金額快照</h3><p>本月份結算時的薪資基數、加班日別、計算公式與加班費金額均已鎖定保存。後續調薪或修改薪資基數不會改變本月原始結算。${version>=6?'換休到期未休部分會依原加班日期的薪資基數與原同日倍率順位自動折算。':''}</p><div class="ot-rule-highlight">原月結加班費：<strong>${money(original)}</strong>${expired?`　｜　其中到期換休折算：<strong>${money(expired)}</strong>（${dur(expiredMinutes)}）`:''}　｜　目前認列：<strong>${money(original)}</strong></div>`;
       if(note.innerHTML!==nextHtml)note.innerHTML=nextHtml;
     }else{
-      const corr=correctionAmount(s);
-      const nextHtml=`<h3>🔒 舊版月結快照</h3><p>此月份是在「金額快照」功能上線前完成月結，因此原始加班費金額未保存。系統只保留當時時數，不會用目前薪資基數回頭重算。</p><div class="ot-rule-highlight">原月結加班費：<strong>未留存</strong>${corr?`　｜　月結後更正：<strong>${corr>0?'+':''}${money(corr).replace('NT$ ','')}</strong>`:''}　｜　完整目前認列總額：<strong>無法由舊快照還原</strong></div>`;
+      const nextHtml=`<h3>🔒 舊版月結快照</h3><p>此月份是在「金額快照」功能上線前完成月結，因此原始加班費金額未保存。系統只保留當時時數，不會用目前薪資基數回頭重算。</p><div class="ot-rule-highlight">原月結加班費：<strong>未留存</strong>　｜　完整目前認列總額：<strong>無法由舊快照還原</strong></div>`;
       if(note.innerHTML!==nextHtml)note.innerHTML=nextHtml;
     }
   }
@@ -101,13 +86,13 @@
   function openSnapshotDetail(staffId){
     const s=settlement();if(!s)return;
     const row=snapshotStaff(s,staffId);if(!row){toast('找不到本次月結的員工快照','warn');return;}
-    const version=snapshotVersion(s),corr=correctionAmount(s,staffId),original=Number(row.overtimePayAmount)||0;
+    const version=snapshotVersion(s),original=Number(row.overtimePayAmount)||0;
     const pay=version>=2?paySnapshotItems(row.overtimePayItems):simpleItems(row.overtimePayItems,'pay');
     const expired=version>=6?paySnapshotItems(row.expiredCompLeavePayoutItems,'本月沒有到期未休換休折算加班費。'):'';
     const expiredAmount=version>=6?(Number(row.expiredCompLeavePayoutAmount)||0):0;
     const expiredMinutes=version>=6?(Number(row.expiredCompLeavePayoutMinutes)||0):0;
     openModal({title:`薪資結算明細｜${row.name||'未命名'}`,html:`
-      ${version>=2?`<div class="ot-rule-highlight" style="margin-top:0">原月結加班費：<strong>${money(original)}</strong>${expiredAmount?`｜其中到期換休折算：<strong>${money(expiredAmount)}</strong>（${dur(expiredMinutes)}）`:''}${corr?`｜月結後更正：<strong>${corr>0?'+':''}${money(corr).replace('NT$ ','')}</strong>`:''}｜目前認列：<strong>${money(original+corr)}</strong></div>`:`<div class="ot-rule-highlight" style="margin-top:0">原月結加班費：<strong>未留存</strong>${corr?`｜月結後更正：<strong>${corr>0?'+':''}${money(corr).replace('NT$ ','')}</strong>`:''}｜完整目前認列總額：<strong>無法由舊快照還原</strong></div>`}
+      ${version>=2?`<div class="ot-rule-highlight" style="margin-top:0">原月結加班費：<strong>${money(original)}</strong>${expiredAmount?`｜其中到期換休折算：<strong>${money(expiredAmount)}</strong>（${dur(expiredMinutes)}）`:''}｜目前認列：<strong>${money(original)}</strong></div>`:`<div class="ot-rule-highlight" style="margin-top:0">原月結加班費：<strong>未留存</strong>｜完整目前認列總額：<strong>無法由舊快照還原</strong></div>`}
       <section class="ot-rule-card"><h3>直接領加班費${version>=2?'（月結快照）':''}</h3>${pay}</section>
       ${version>=6?`<section class="ot-rule-card"><h3>換休到期未休折算加班費</h3><p style="margin-bottom:10px">依原加班日期的薪資基數與原同日倍率順位折算；已使用的換休視為先抵原加班前段。</p>${expired}</section>`:''}
       <section class="ot-rule-card"><h3>本月新增換休</h3>${simpleItems(row.compLeaveEarnedItems,'earned')}</section>
@@ -128,7 +113,7 @@
     const relevant=ms.some(m=>Array.from(m.addedNodes||[]).some(n=>{
       if(n.nodeType!==1)return false;
       if(n.id==='payrollAmountSnapshotNotice'||n.closest?.('#payrollAmountSnapshotNotice'))return false;
-      return n.id==='otMain'||n.id==='payrollCorrectionPanel'||n.matches?.('.ot-table,.ot-rule-card,.stat-card')||!!n.querySelector?.('#otMain,#payrollCorrectionPanel,[data-payroll-detail],.ot-table,.stat-card');
+      return n.id==='otMain'||n.matches?.('.ot-table,.ot-rule-card,.stat-card')||!!n.querySelector?.('#otMain,[data-payroll-detail],.ot-table,.stat-card');
     }));
     if(!relevant)return;
     q=true;setTimeout(()=>{q=false;update();},30);
