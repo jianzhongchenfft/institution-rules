@@ -88,7 +88,11 @@ CREATE INDEX team_message_updates_staff_idx ON public.team_message_updates USING
 CREATE INDEX team_messages_created_idx ON public.team_messages USING btree (created_at DESC);
 CREATE INDEX team_messages_creator_idx ON public.team_messages USING btree (created_by_staff_id);
 
-ALTER TABLE public.team_messages, public.team_message_updates, public.team_message_tasks, public.team_message_recipients, public.team_message_favorites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_message_updates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_message_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_message_recipients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_message_favorites ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY team_favorites_delete ON public.team_message_favorites AS PERMISSIVE FOR DELETE TO authenticated USING (private.can_manage_cases() AND (staff_id = private.current_staff_user_id())) ;
 CREATE POLICY team_favorites_insert ON public.team_message_favorites AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (private.can_manage_cases() AND (staff_id = private.current_staff_user_id()));
