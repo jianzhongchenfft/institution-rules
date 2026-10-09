@@ -148,6 +148,11 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       }
       eval(eventTrackingCode);
 
+      // 訊息交辦 V35：僅新增獨立模組，保留正式版既有載入流程。
+      const teamMessageRes=await fetch('v52/team-messages.txt?v=team-messages-prod-v35-20261009',{cache:'no-store'});
+      if(!teamMessageRes.ok) throw new Error('訊息交辦模組載入失敗（'+teamMessageRes.status+'）');
+      eval(await teamMessageRes.text());
+
       if(state.profile) renderNav();
 
       if(state.profile && state.page==='dashboard') renderDashboard();
@@ -156,6 +161,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       else if(state.profile && state.page==='overtime') navigate('overtime');
       else if(state.profile && state.page==='events') navigate('events');
       else if(state.profile && state.page==='assessments') navigate('assessments');
+      else if(state.profile && state.page==='teamMessages') navigate('teamMessages');
     }catch(err){
       console.error('系統功能模組載入失敗',err);
       if(state.profile) toast('系統功能模組載入失敗，請重新整理頁面。','error');
