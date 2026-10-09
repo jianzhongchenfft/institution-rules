@@ -27,7 +27,7 @@
     if(!btn) return;
 
     const canClose=payrollSelectedMonthClosed();
-    const buttonText=canClose?'✓ 確認本月已結算':'本月尚未結束，暫不可結算';
+    const buttonText=canClose?'結算本月加班費':'本月尚未結束，暫不可結算';
     const buttonTitle=canClose?'確認薪資資料後進行月結':'僅能結算已完整結束的月份；當月請於次月1日起辦理結算。';
 
     btn.disabled=!canClose;
@@ -64,14 +64,56 @@
     toast('此月份尚未完整結束，請於次月1日起再進行薪資結算。','warn');
   },true);
 
-  // 只在畫面新增「薪資結算按鈕」時套用防呆，避免監聽器因自己修改 DOM 而形成無限循環。
+
+  // 撤銷月結：只有最後已結算月份可撤銷，權限由資料庫再檢查。
+  let undoing=false;
+  function renderUndoAction(){
+    if(state.page!=='overtime'||state.overtimeView!=='payroll')return;
+    if(!state.profile||!['admin','organization_manager'].includes(state.profile.role))return;
+    const month=String(state.overtimeMonth||'');
+    if(!/^\d{4}-\d{2}$/.test(month))return;
+    const selected=month+'-01';
+    const records=state.payrollSettlements||[];
+    const settled=records.find(r=>r.settlement_month===selected);
+    const status=[...document.querySelectorAll('#otMain .ot-status.approved')]
+      .find(el=>el.closest('.ot-rule-card')?.querySelector('h3')?.textContent.includes('薪資結算報表'));
+    if(!settled||!status||document.getElementById('payrollUndoBtn'))return;
+    const latest=records.map(r=>r.settlement_month).sort().at(-1);
+    const btn=document.createElement('button');
+    btn.id='payrollUndoBtn';btn.type='button';btn.className='btn';
+    btn.textContent='↶ 撤銷月結';btn.disabled=selected!==latest;
+    btn.style.marginLeft='8px';
+    btn.title=btn.disabled?'只能撤銷最後一個已結算月份':'撤銷本月月結並重新開放加班及換休申請';
+    btn.addEventListener('click',async()=>{
+      if(undoing||btn.disabled)return;
+      const [year,monthNum]=selected.split('-').map(Number);
+      const note='確定撤銷民國'+(year-1911)+'年'+monthNum+'月的薪資月結嗎？\n\n撤銷後，該月份恢復未結算，可依原有申請及審核流程修正，再重新結算。\n\n若薪資已實際發放，請先確認後續薪資處理方式。';
+      if(!confirm(note))return;
+      undoing=true;btn.disabled=true;showLoading(true);
+      try{
+        const {error}=await db.rpc('undo_payroll_month_settlement',{p_settlement_month:selected});
+        if(error)throw error;
+        state.overtimeView='payroll';
+        navigate('overtime');
+        state.overtimeView='payroll';
+        toast('已撤銷月結，該月份恢復未結算','success');
+      }catch(err){
+        console.error('撤銷月結失敗',err);
+        toast('撤銷月結失敗：'+(err?.message||err),'error');
+        btn.disabled=false;
+      }finally{undoing=false;showLoading(false);}
+    });
+    status.insertAdjacentElement('afterend',btn);
+  }
+
+  // 月結頁面重繪時刷新按鈕、權限與月份限制。
   const observer=new MutationObserver(mutations=>{
     const shouldApply=mutations.some(m=>Array.from(m.addedNodes||[]).some(node=>{
       if(node.nodeType!==1) return false;
-      return node.id==='payrollCloseBtn' || !!node.querySelector?.('#payrollCloseBtn');
+      return node.id==='payrollCloseBtn' || node.id==='otMain' || !!node.querySelector?.('#payrollCloseBtn,#otMain');
     }));
-    if(shouldApply) applyPayrollPeriodGuard();
+    if(shouldApply){applyPayrollPeriodGuard();renderUndoAction();}
   });
   observer.observe(document.body,{childList:true,subtree:true});
-  setTimeout(applyPayrollPeriodGuard,0);
+  setTimeout(()=>{applyPayrollPeriodGuard();renderUndoAction();},0);
 })();
