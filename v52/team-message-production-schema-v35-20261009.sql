@@ -103,23 +103,23 @@ CREATE POLICY team_recipients_insert ON public.team_message_recipients AS PERMIS
    FROM staff_users s
   WHERE ((s.id = team_message_recipients.staff_id) AND s.is_active AND (s.role = ANY (ARRAY['admin'::text, 'organization_manager'::text, 'business_manager'::text, 'supervisor'::text]))))));
 CREATE POLICY team_recipients_manage_own_read ON public.team_message_recipients AS PERMISSIVE FOR UPDATE TO authenticated USING (private.can_manage_cases() AND (staff_id = private.current_staff_user_id())) WITH CHECK (private.can_manage_cases() AND (staff_id = private.current_staff_user_id()));
-CREATE POLICY team_recipients_select ON public.team_message_recipients AS PERMISSIVE FOR SELECT TO authenticated USING private.can_manage_cases() ;
+CREATE POLICY team_recipients_select ON public.team_message_recipients AS PERMISSIVE FOR SELECT TO authenticated USING (private.can_manage_cases()) ;
 CREATE POLICY team_tasks_insert ON public.team_message_tasks AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (private.can_manage_cases() AND (NOT is_done) AND (EXISTS ( SELECT 1
    FROM team_messages m
   WHERE ((m.id = team_message_tasks.message_id) AND (m.created_by_staff_id = private.current_staff_user_id()) AND (m.closed_at IS NULL)))) AND (EXISTS ( SELECT 1
    FROM staff_users s
   WHERE ((s.id = team_message_tasks.assignee_staff_id) AND s.is_active AND (s.role = ANY (ARRAY['admin'::text, 'organization_manager'::text, 'business_manager'::text, 'supervisor'::text]))))));
-CREATE POLICY team_tasks_select ON public.team_message_tasks AS PERMISSIVE FOR SELECT TO authenticated USING private.can_manage_cases() ;
+CREATE POLICY team_tasks_select ON public.team_message_tasks AS PERMISSIVE FOR SELECT TO authenticated USING (private.can_manage_cases()) ;
 CREATE POLICY team_updates_author_edit ON public.team_message_updates AS PERMISSIVE FOR UPDATE TO authenticated USING (private.can_manage_cases() AND (staff_id = private.current_staff_user_id()) AND (NOT is_system) AND (voided_at IS NULL)) WITH CHECK (private.can_manage_cases() AND (staff_id = private.current_staff_user_id()) AND (NOT is_system) AND (voided_at IS NULL) AND (voided_by_staff_id IS NULL));
 CREATE POLICY team_updates_insert ON public.team_message_updates AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (private.can_manage_cases() AND (staff_id = private.current_staff_user_id()) AND (is_system = false) AND (voided_at IS NULL) AND (voided_by_staff_id IS NULL) AND (EXISTS ( SELECT 1
    FROM team_messages m
   WHERE ((m.id = team_message_updates.message_id) AND (m.closed_at IS NULL)))));
-CREATE POLICY team_updates_select ON public.team_message_updates AS PERMISSIVE FOR SELECT TO authenticated USING private.can_manage_cases() ;
+CREATE POLICY team_updates_select ON public.team_message_updates AS PERMISSIVE FOR SELECT TO authenticated USING (private.can_manage_cases()) ;
 CREATE POLICY team_messages_close ON public.team_messages AS PERMISSIVE FOR UPDATE TO authenticated USING (private.can_manage_cases() AND (created_by_staff_id = private.current_staff_user_id()) AND (closed_at IS NULL)) WITH CHECK (private.can_manage_cases() AND (created_by_staff_id = private.current_staff_user_id()) AND (closed_at IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM team_message_tasks t
   WHERE (t.message_id = team_messages.id))));
 CREATE POLICY team_messages_insert ON public.team_messages AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (private.can_manage_cases() AND (created_by_staff_id = private.current_staff_user_id()) AND (closed_at IS NULL));
-CREATE POLICY team_messages_select ON public.team_messages AS PERMISSIVE FOR SELECT TO authenticated USING private.can_manage_cases() ;
+CREATE POLICY team_messages_select ON public.team_messages AS PERMISSIVE FOR SELECT TO authenticated USING (private.can_manage_cases()) ;
 
 -- Least privilege: three business tables have NO direct INSERT rights.
 REVOKE ALL ON public.team_messages, public.team_message_updates, public.team_message_tasks, public.team_message_recipients, public.team_message_favorites FROM PUBLIC, anon, authenticated;
