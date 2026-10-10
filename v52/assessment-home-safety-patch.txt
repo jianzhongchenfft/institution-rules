@@ -403,6 +403,7 @@
             </label>
           `).join('')}
         </div>
+        ${window.v52AssessmentToolSummary?.previousNote(local.previous?.notes?.[key])||''}
         ${!showNote&&!disabled&&!['needs_improvement','not_applicable'].includes(current)
           ?`<button type="button" class="btn sm" data-hs-add-note="${key}">＋ 補充備註</button>`
           :''}
@@ -457,7 +458,6 @@
   function renderSummaryForm(){
     const response=local.summary.family_response||'';
     const explained=local.summary.explained_to||'';
-    const followup=local.summary.followup_required||'';
     return `
       ${renderRiskBox()}
       <section class="hs-summary-form">
@@ -497,20 +497,6 @@
           <div class="full">
             <label>其他回應</label>
             <input data-hs-summary="family_response_other" value="${escapeHTML(local.summary.family_response_other||'')}" placeholder="請說明">
-          </div>
-        `:''}
-        <div>
-          <label>是否需後續追蹤${riskKeys().length?' *':''}</label>
-          <select data-hs-summary="followup_required">
-            <option value="">請選擇</option>
-            <option value="yes" ${followup==='yes'?'selected':''}>是</option>
-            <option value="no" ${followup==='no'?'selected':''}>否</option>
-          </select>
-        </div>
-        ${followup==='yes'?`
-          <div>
-            <label>後續追蹤重點</label>
-            <input data-hs-summary="followup_note" value="${escapeHTML(local.summary.followup_note||'')}" placeholder="例如：下次家訪確認扶手裝設情形">
           </div>
         `:''}
       </section>
@@ -560,7 +546,7 @@
         ${renderSummaryForm()}
 
         <div class="hs-source-note">
-          本表用於居家安全風險辨識及後續追蹤，不計算總分；「需改善」項目應搭配改善建議及後續追蹤判斷。
+          本表用於居家安全風險辨識及改善建議，不計算總分；是否需後續追蹤由整體評估總結統一判斷。
         </div>
 
         ${canEdit?`
@@ -593,6 +579,7 @@
   }
 
   function bindHomeSafetyEvents(row){
+    window.v52AssessmentToolSummary?.mount(local.eventId,'home_safety',currentToolSummarySource,'.hs-page','.hs-actions');
     $('homeSafetyBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
 
     document.querySelectorAll('[data-hs-profile]').forEach(el=>{
@@ -636,7 +623,7 @@
 
     document.querySelectorAll('[data-hs-summary]').forEach(el=>{
       const key=el.dataset.hsSummary;
-      const rerenderKeys=['explained_to','family_response','followup_required'];
+      const rerenderKeys=['explained_to','family_response'];
       el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{
         local.summary[key]=el.value;
         if(rerenderKeys.includes(key))rerenderPreservingScroll();
@@ -689,10 +676,11 @@
       if(!local.summary.explained_to)return '本次有需改善項目，請選擇說明對象';
       if(local.summary.explained_to==='not_explained'&&!String(local.summary.not_explained_reason||'').trim())return '請填寫未說明原因';
       if(!local.summary.family_response)return '本次有需改善項目，請選擇個案／家屬回應';
-      if(!local.summary.followup_required)return '本次有需改善項目，請選擇是否需後續追蹤';
     }
     return null;
   }
+
+  function currentToolSummarySource(){return ({home_profile:local.homeProfile,answers:local.answers,notes:local.notes,summary:local.summary});}
 
   async function saveHomeSafety(finalize){
     const row=eventById(local.eventId);
@@ -719,6 +707,7 @@
         p_copied_from_id:local.pendingCopyFromId||local.record?.copied_from_id||null
       });
       if(error)throw error;
+      await window.v52AssessmentToolSummary.saveAfterTool(row.id,'home_safety',currentToolSummarySource(),row.case_id);
 
       await window.v52AssessmentApi?.loadAssessmentData?.(false);
       if(finalize){
@@ -743,12 +732,12 @@
   async function open(eventId){
     const row=eventById(eventId);
     if(!row)return toast('找不到評估事件','error');
-    if(row.status==='pending')return toast('請先開始本次評估','warn');
     if(!homeSafetyForm(eventId))return toast('本次評估未選用居家環境安全評估','warn');
 
     showLoading(true);
     try{
       await loadHomeSafety(eventId);
+      await window.v52AssessmentToolSummary.load(eventId,'home_safety',currentToolSummarySource());
       renderHomeSafetyPage();
       window.scrollTo({top:0,behavior:'auto'});
     }catch(err){

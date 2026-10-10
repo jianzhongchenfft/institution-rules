@@ -191,6 +191,7 @@
         <label class="cg-option no ${cur==='no'?'selected':''}"><input type="radio" name="cg_${key}" value="no" ${cur==='no'?'checked':''}>未符合</label>
         <label class="cg-option yes ${cur==='yes'?'selected':''}"><input type="radio" name="cg_${key}" value="yes" ${cur==='yes'?'checked':''}>符合</label>
       </div>
+      ${window.v52AssessmentToolSummary?.previousNote(local.previous?.notes?.[key])||''}
       ${!showNote?`<div class="cg-note"><button type="button" class="btn sm" data-cg-add-note="${key}">＋ 補充備註</button></div>`:''}
       ${showNote?`<div class="cg-note"><label>說明${positive?' *':''}</label><textarea data-cg-note="${key}" placeholder="${positive?'請簡要說明符合情形與目前已知狀況':'補充備註（選填）'}">${escapeHTML(note)}</textarea></div>`:''}
     </div>`;
@@ -249,6 +250,7 @@
   function rerenderPreservingScroll(){const y=window.scrollY;render();requestAnimationFrame(()=>window.scrollTo({top:y,behavior:'auto'}));}
 
   function bind(row){
+    window.v52AssessmentToolSummary?.mount(local.eventId,'caregiver_burden',currentToolSummarySource,'.cg-page','.cg-actions');
     $('cgBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
     $('cgApplicability')?.addEventListener('change',e=>{
       local.applicability=e.target.value;
@@ -298,6 +300,8 @@
     return null;
   }
 
+  function currentToolSummarySource(){return ({applicability:local.applicability,answers:local.answers,notes:local.notes,summary:local.summary});}
+
   async function save(finalize){
     const row=eventById(local.eventId);if(!row||!canEdit(row))return toast('您沒有此個案的評估編輯權限','error');
     const problem=validate(finalize);if(problem)return toast(problem,'warn');
@@ -308,6 +312,7 @@
         p_answers:local.answers,p_notes:local.notes,p_summary:local.summary,p_finalize:!!finalize
       });
       if(error)throw error;
+      await window.v52AssessmentToolSummary.saveAfterTool(row.id,'caregiver_burden',currentToolSummarySource(),row.case_id);
       await window.v52AssessmentApi?.loadAssessmentData?.(false);
       if(finalize){window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);toast('高負荷家庭照顧者初篩已完成','success');}
       else{await load(row.id);render();requestAnimationFrame(()=>window.scrollTo({top:y,behavior:'auto'}));toast('初篩草稿已儲存','success');}
@@ -317,10 +322,10 @@
 
   async function open(eventId){
     const row=eventById(eventId);if(!row)return toast('找不到評估事件','error');
-    if(row.status==='pending')return toast('請先開始本次評估','warn');
     if(!formById(eventId))return toast('本次評估未選用高負荷家庭照顧者初篩','warn');
     showLoading(true);
-    try{await load(eventId);render();window.scrollTo({top:0,behavior:'auto'});}
+    try{await load(eventId);
+      await window.v52AssessmentToolSummary.load(eventId,'caregiver_burden',currentToolSummarySource());render();window.scrollTo({top:0,behavior:'auto'});}
     catch(err){console.error(err);toast('讀取高負荷家庭照顧者初篩失敗：'+(err?.message||err),'error');}
     finally{showLoading(false);}
   }

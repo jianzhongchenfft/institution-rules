@@ -60,10 +60,9 @@
     service_adjustment_note:'服務／照顧調整內容',
     external_coordination_required:'是否需對外協調／轉介',
     external_coordination_note:'對外協調／轉介內容',
-    previous_problem_status:'前次主要問題追蹤結果',
-    previous_problem_followup_note:'前次主要問題追蹤說明',
-    previous_recommendation_status:'前次服務建議執行情形',
-    previous_recommendation_followup_note:'前次服務建議執行情形說明'
+    previous_followup_plan_snapshot:'前次後續追蹤計畫（快照）',
+    previous_followup_status:'前次追蹤執行情形',
+    previous_followup_note:'前次追蹤結果說明'
   };
 
   const VALUE_LABELS={
@@ -238,11 +237,8 @@
   }
 
   function historyValueText(tool,path,value){
-    if(tool==='summary'&&path==='previous_problem_status'){
-      return {improved:'已改善',persistent:'持續存在',worse:'惡化',not_applicable:'不再適用'}[value]||valueText(value);
-    }
-    if(tool==='summary'&&path==='previous_recommendation_status'){
-      return {completed:'已完成',partial:'部分執行',ongoing:'持續執行',not_done:'未執行',not_applicable:'不再適用'}[value]||valueText(value);
+    if(tool==='summary'&&path==='previous_followup_status'){
+      return {done:'已完成',partial:'部分完成',undone:'未完成',closed:'不再需要追蹤'}[value]||valueText(value);
     }
     if(tool==='health'&&/^medication_checks\.[^.]+\.status$/.test(path)){
       return {good:'狀況良好',improve:'需改善',not_applicable:'不適用'}[value]||valueText(value);

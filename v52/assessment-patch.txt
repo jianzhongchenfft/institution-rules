@@ -117,6 +117,32 @@
     .assessment-form-option strong{font-size:11.5px;display:block}
     .assessment-form-option small{font-size:10px;color:#667085;display:block;margin-top:3px;line-height:1.4}
     .assessment-supervisor-preview{padding:9px 10px;border-radius:9px;background:#f8fafc;border:1px solid var(--line);font-size:11.5px;color:#475467}
+    /* 個案：單一可搜尋下拉選擇器；只透過已選個案 ID 建立評估。 */
+    .assessment-case-picker{position:relative;width:100%}
+    .assessment-case-control{display:flex;align-items:center;width:100%;min-height:46px;box-sizing:border-box;
+      border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden}
+    .assessment-case-control:focus-within{border-color:#dc9479;box-shadow:0 0 0 2px rgba(220,148,121,.13)}
+    .assessment-case-control .assessment-case-search{flex:1;min-width:0;width:100%;margin:0;border:0!important;
+      border-radius:0!important;background:transparent!important;box-shadow:none!important;
+      outline:0!important;padding:10px 12px;font:inherit;color:#344054}
+    .assessment-case-control .assessment-case-search:disabled{color:#667085;cursor:default}
+    .assessment-case-control button{display:flex;align-items:center;justify-content:center;flex:0 0 34px;
+      width:34px;height:39px;border:0;background:transparent;color:#667085;cursor:pointer;font-size:15px}
+    .assessment-case-control button:hover{background:#f8f9fb}
+    .assessment-case-control button[hidden],.assessment-case-menu[hidden]{display:none!important}
+    .assessment-case-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1100;
+      box-sizing:border-box;max-height:240px;overflow-y:auto;overscroll-behavior:contain;
+      padding:5px;border:1px solid #d0d5dd;border-radius:10px;background:#fff;
+      box-shadow:0 10px 22px rgba(16,24,40,.16)}
+    .assessment-case-option{display:flex;align-items:center;gap:10px;width:100%;min-height:38px;
+      border:0;border-radius:7px;padding:8px 10px;text-align:left;font:inherit;font-size:12px;
+      color:#344054;background:#fff;cursor:pointer}
+    .assessment-case-option:hover,.assessment-case-option.is-active{background:#fff4ee}
+    .assessment-case-option[aria-selected="true"]{color:#9d503d}
+    .assessment-case-mark{flex:0 0 17px;color:#98a2b3;font-size:14px;text-align:center}
+    .assessment-case-option[aria-selected="true"] .assessment-case-mark{color:#c4785c}
+    .assessment-case-option-text{min-width:0;overflow-wrap:anywhere}
+    .assessment-case-empty{padding:13px 10px;font-size:11.5px;color:#667085;text-align:center}
     .assessment-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:14px}
     .assessment-detail-cell{border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:#fff}
     .assessment-detail-cell label{display:block;font-size:10px;font-weight:900;color:#667085;margin-bottom:4px}
@@ -519,12 +545,6 @@
       .join('');
   }
 
-  function assessmentCaseOptions(cases,selected){
-    return '<option value="">請選擇個案</option>'+cases.map(c=>
-      '<option value="'+c.id+'" '+(c.id===selected?'selected':'')+'>'+escapeHTML(c.case_name)+(c.case_no?'｜'+escapeHTML(c.case_no):'')+'</option>'
-    ).join('');
-  }
-
   function assessmentTypeOptions(selected){
     return Object.entries(ASSESSMENT_TYPES).map(([value,label])=>
       '<option value="'+value+'" '+(value===selected?'selected':'')+'>'+escapeHTML(label)+'</option>'
@@ -617,6 +637,130 @@
     });
   }
 
+  // 只保留一個可見個案選擇器：輸入姓名／案號即時篩選，選取後設定隱藏的 case_id。
+  // 不使用第三方外掛，也不額外建立與個案主檔不同步的清單。
+  function bindAssessmentCaseSearch(cases){
+    const picker=$('assessmentCasePicker'),input=$('assessmentCaseSearch');
+    const selectedId=$('assessmentCase'),menu=$('assessmentCaseMenu');
+    const toggle=$('assessmentCaseToggle'),clear=$('assessmentCaseClear');
+    if(!picker||!input||!selectedId||!menu)return;
+    const display=c=>c.case_name+(c.case_no?'（'+c.case_no+'）':'');
+    const norm=x=>String(x||'').trim().toLocaleLowerCase();
+    const getSelected=()=>cases.find(c=>c.id===selectedId.value)||null;
+    let opened=false,filtered=cases,active=-1;
+    const updateCurrent=()=>{
+      const c=getSelected();
+      clear.hidden=!(input.value||c);
+      updateAssessmentSupervisorPreview();
+    };
+    const hide=()=>{
+      opened=false;
+      menu.hidden=true;
+      input.setAttribute('aria-expanded','false');
+      input.removeAttribute('aria-activedescendant');
+    };
+    const draw=()=>{
+      menu.hidden=!opened;
+      input.setAttribute('aria-expanded',opened?'true':'false');
+      if(!opened)return;
+      if(!filtered.length){
+        menu.innerHTML='<div class="assessment-case-empty">查無符合的個案</div>';
+      }else{
+        menu.innerHTML=filtered.map((c,i)=>{
+          const current=c.id===selectedId.value;
+          return '<button type="button" id="assessmentCaseOption'+i+'" role="option"'
+            +' class="assessment-case-option'+(i===active?' is-active':'')+'"'
+            +' data-assessment-case-id="'+escapeHTML(c.id)+'"'
+            +' aria-selected="'+(current?'true':'false')+'">'
+            +'<span class="assessment-case-mark" aria-hidden="true">'+(current?'✓':'○')+'</span>'
+            +'<span class="assessment-case-option-text">'+escapeHTML(display(c))+'</span></button>';
+        }).join('');
+      }
+      if(active>=0)input.setAttribute('aria-activedescendant','assessmentCaseOption'+active);
+      else input.removeAttribute('aria-activedescendant');
+      menu.querySelectorAll('[data-assessment-case-id]').forEach(btn=>{
+        // 使用滑鼠選取時保留輸入框焦點，避免失焦後先關閉清單。
+        btn.addEventListener('mousedown',e=>e.preventDefault());
+        btn.addEventListener('click',()=>choose(btn.dataset.assessmentCaseId));
+      });
+    };
+    const show=(query='')=>{
+      const words=norm(query).split(/\s+/).filter(Boolean);
+      filtered=words.length?cases.filter(c=>{
+        const searchable=norm((c.case_name||'')+' '+(c.case_no||''));
+        return words.every(word=>searchable.includes(word));
+      }):cases;
+      active=filtered.length?Math.max(0,filtered.findIndex(c=>c.id===selectedId.value)): -1;
+      opened=true;
+      draw();
+    };
+    const choose=id=>{
+      const chosen=cases.find(c=>c.id===id);
+      if(!chosen)return;
+      selectedId.value=chosen.id;
+      input.value=display(chosen);
+      hide();
+      updateCurrent();
+    };
+    if(selectedId.value){
+      const initial=getSelected();
+      input.value=initial?display(initial):'';
+      if(!initial)selectedId.value='';
+    }
+    if(input.disabled){
+      toggle.hidden=true;
+      clear.hidden=true;
+      return;
+    }
+    input.addEventListener('focus',()=>{
+      if(selectedId.value)input.select();
+      if(!opened)show();
+    });
+    input.addEventListener('click',()=>{if(!opened)show();});
+    input.addEventListener('input',()=>{
+      selectedId.value='';
+      show(input.value);
+      updateCurrent();
+    });
+    input.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){
+        if(opened){e.preventDefault();e.stopPropagation();hide();}
+      }else if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+        e.preventDefault();
+        if(!opened){show();return;}
+        if(!filtered.length)return;
+        active=e.key==='ArrowDown'?(active+1)%filtered.length:
+          (active-1+filtered.length)%filtered.length;
+        draw();
+        menu.querySelector('#assessmentCaseOption'+active)?.scrollIntoView({block:'nearest'});
+      }else if(e.key==='Enter'&&opened){
+        e.preventDefault();
+        if(active>=0&&filtered[active])choose(filtered[active].id);
+      }else if(e.key==='Tab'){
+        hide();
+      }
+    });
+    toggle?.addEventListener('click',()=>{
+      if(opened){hide();return;}
+      show();
+      input.focus();
+    });
+    clear?.addEventListener('click',()=>{
+      selectedId.value='';
+      input.value='';
+      show();
+      updateCurrent();
+      input.focus();
+    });
+    picker.addEventListener('focusout',e=>{
+      if(e.relatedTarget&&picker.contains(e.relatedTarget))return;
+      setTimeout(()=>{
+        if(!picker.contains(document.activeElement))hide();
+      },0);
+    });
+    updateCurrent();
+  }
+
   function updateAssessmentSupervisorPreview(){
     const c=assessmentCase($('assessmentCase')?.value);
     const target=$('assessmentSupervisorPreview');
@@ -635,7 +779,7 @@
     })[type]||'';
   }
 
-  function openAssessmentEventModal(existing=null){
+  function openAssessmentEventModal(existing=null,preferredCaseId=null){
     const creationHook=!existing&&typeof window.__assessmentCreatedHook==='function'?window.__assessmentCreatedHook:null;
     if(!existing)window.__assessmentCreatedHook=null;
     const cases=assessmentEditableCases(existing);
@@ -644,7 +788,7 @@
       return;
     }
     const initialType=existing?.assessment_type||'opening';
-    const selectedCase=existing?.case_id||'';
+    const selectedCase=existing?.case_id||(cases.some(c=>c.id===preferredCaseId)?preferredCaseId:'');
     const selectedReason=existing?.reason_code||defaultAssessmentReasonForType(initialType);
 
     openModal({
@@ -655,7 +799,19 @@
         <div class="form-grid">
           <div class="field half">
             <label>個案 *</label>
-            <select id="assessmentCase" ${existing?'disabled':''}>${assessmentCaseOptions(cases,selectedCase)}</select>
+            <div id="assessmentCasePicker" class="assessment-case-picker">
+              <input id="assessmentCase" type="hidden" value="${escapeHTML(selectedCase)}">
+              <div class="assessment-case-control">
+                <input id="assessmentCaseSearch" class="assessment-case-search" type="text"
+                  role="combobox" aria-autocomplete="list" aria-expanded="false"
+                  aria-controls="assessmentCaseMenu" aria-label="搜尋並選擇個案"
+                  autocomplete="off" spellcheck="false" placeholder="請選擇或輸入姓名、案號搜尋"
+                  ${existing?'disabled':''}>
+                <button type="button" id="assessmentCaseClear" aria-label="清除個案選擇" title="清除" hidden>×</button>
+                <button type="button" id="assessmentCaseToggle" aria-label="展開個案清單" title="展開個案清單">${existing?'':'▾'}</button>
+              </div>
+              <div id="assessmentCaseMenu" class="assessment-case-menu" role="listbox" aria-label="個案搜尋結果" hidden></div>
+            </div>
           </div>
           <div class="field half">
             <label>評估類型 *</label>
@@ -680,12 +836,6 @@
           <div class="field full">
             <label>原因補充</label>
             <textarea id="assessmentReasonNote" rows="3" placeholder="可補充本次評估的背景或要特別確認的事項">${escapeHTML(existing?.reason_note||'')}</textarea>
-          </div>
-          <div class="field full">
-            <label style="display:flex;align-items:center;gap:8px;font-weight:800">
-              <input id="assessmentWithVisit" type="checkbox" style="width:auto" ${existing?.combined_with_home_visit?'checked':''}>
-              本次評估預計與家訪同日進行
-            </label>
           </div>
           <div class="field full">
             <label>本次評估工具 *</label>
@@ -721,11 +871,6 @@
           if(!ok)return false;
         }
 
-        if(!$('assessmentWithVisit')?.checked){
-          const ok=window.confirm('本次評估未勾選「與家訪同日進行」，確定仍要繼續儲存嗎？');
-          if(!ok)return false;
-        }
-
         const selectedCodes=[...document.querySelectorAll('[data-assessment-form]')]
           .filter(x=>x.checked)
           .map(x=>x.dataset.assessmentForm);
@@ -741,7 +886,6 @@
             planned_date:plannedDate,
             reason_code:reasonCode,
             reason_note:$('assessmentReasonNote')?.value.trim()||null,
-            combined_with_home_visit:!!$('assessmentWithVisit')?.checked,
             problem_followup_date:['condition_change','specific_problem'].includes(type)
               ?($('assessmentProblemFollowupDate')?.value||null)
               :null,
@@ -835,7 +979,6 @@
             planned_date:plannedDate,
             reason_code:reasonCode,
             reason_note:$('assessmentReasonNote')?.value.trim()||null,
-            combined_with_home_visit:!!$('assessmentWithVisit')?.checked,
             problem_followup_date:['condition_change','specific_problem'].includes(type)
               ?($('assessmentProblemFollowupDate')?.value||null)
               :null,
@@ -918,31 +1061,11 @@
       previousType=next;
       toggleProblemFollowupField();
     });
+    bindAssessmentCaseSearch(cases);
     $('assessmentCase')?.addEventListener('change',updateAssessmentSupervisorPreview);
     updateAssessmentSupervisorPreview();
     applyAssessmentFormRules();
     toggleProblemFollowupField();
-  }
-
-  async function startAssessment(row){
-    if(!assessmentCanEditCase(row.case_id))return toast('您沒有此個案的評估編輯權限','error');
-    showLoading(true);
-    try{
-      const {error}=await db.from('assessment_events').update({
-        status:'in_progress',
-        started_at:row.started_at||new Date().toISOString(),
-        updated_by:state.user.id,
-        updated_at:new Date().toISOString()
-      }).eq('id',row.id).eq('status','pending');
-      if(error)throw error;
-      await loadAssessmentData(false);
-      renderAssessmentDetail(row.id);
-      toast('評估事件已開始','success');
-    }catch(err){
-      toast('開始評估失敗：'+(err?.message||err),'error');
-    }finally{
-      showLoading(false);
-    }
   }
 
   function voidAssessment(row){
@@ -996,7 +1119,6 @@
 
   function assessmentFormActionButton(row,form){
     const config=ASSESSMENT_FORM_HANDLERS[form.form_code];
-    if(row.status==='pending')return '<button class="btn sm" disabled>待開始</button>';
     if(row.status==='voided')return '<button class="btn sm" disabled>下一階段開放</button>';
     if(!config||!window[config.api])return '<button class="btn sm" disabled>下一階段開放</button>';
 
@@ -1046,7 +1168,6 @@
             ?'<button id="assessmentSummaryBtn" class="btn '+(row.status==='forms_completed'?'primary':'')+'">'+(row.status==='completed'?'查看總結／列印':'填寫評估總結')+'</button>'
             :''}
           ${canEdit?'<button id="assessmentEdit" class="btn">編輯事件</button>':''}
-          ${canEdit&&row.status==='pending'?'<button id="assessmentStart" class="btn primary">開始評估</button>':''}
           ${canEdit&&row.status!=='voided'?'<button id="assessmentVoid" class="btn">作廢</button>':''}
         </div>
       </div>
@@ -1058,7 +1179,6 @@
         <div class="assessment-detail-cell"><label>評估類型</label><div>${escapeHTML(assessmentTypeLabel(row.assessment_type))}</div></div>
         <div class="assessment-detail-cell"><label>負責督導</label><div>${escapeHTML(assessmentStaffName(row.responsible_staff_id||c?.supervisor_id))}</div></div>
         <div class="assessment-detail-cell"><label>評估原因</label><div>${escapeHTML(assessmentReasonText(row))}</div></div>
-        <div class="assessment-detail-cell"><label>與家訪同日</label><div>${row.combined_with_home_visit?'是':'否'}</div></div>
         <div class="assessment-detail-cell"><label>表單進度</label><div>${p.done}／${p.total}</div></div>
         ${['condition_change','specific_problem'].includes(row.assessment_type)?'<div class="assessment-detail-cell"><label>問題追蹤日期</label><div>'+(row.problem_followup_date?rocDate(row.problem_followup_date+'T00:00:00'):'未設定')+'</div></div>':''}
         <div class="assessment-detail-cell"><label>完整評估週期</label><div>${
@@ -1125,7 +1245,6 @@
       api.open(row.id);
     });
     $('assessmentEdit')?.addEventListener('click',()=>openAssessmentEventModal(row));
-    $('assessmentStart')?.addEventListener('click',()=>startAssessment(row));
     $('assessmentVoid')?.addEventListener('click',()=>voidAssessment(row));
     bindAssessmentFormActions(row);
     window.scrollTo({top:0,behavior:'auto'});
@@ -1181,14 +1300,7 @@
     document.querySelector('[data-case-assessment-new]')?.addEventListener('click',()=>{
       if(!assessmentCanEditCase(caseId))return;
       window.__assessmentReturnCaseId=caseId;
-      openAssessmentEventModal();
-      setTimeout(()=>{
-        const caseSelect=$('assessmentCase');
-        if(caseSelect){
-          caseSelect.value=caseId;
-          caseSelect.dispatchEvent(new Event('change',{bubbles:true}));
-        }
-      },0);
+      openAssessmentEventModal(null,caseId);
     });
   }
 

@@ -25,6 +25,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       eval(await caseHtmlRes.text());
 
       const assessmentModuleFiles=[
+        'v52/assessment-tool-summary-patch.txt',
         'v52/assessment-patch.txt',
         'v52/assessment-adl-patch.txt',
         'v52/assessment-iadl-patch.txt',
@@ -42,7 +43,7 @@ class="version-row"><div class="version-info"><div class="version-title">V${esca
       ];
       let assessmentModuleCode='';
       for(const path of assessmentModuleFiles){
-        const res=await fetch(`${path}?v=assessment-proxy-void-v1-20261005`,{cache:'no-store'});
+        const res=await fetch(`${path}?v=assessment-phase-two-20261010`,{cache:'no-store'});
         if(!res.ok) throw new Error(`${path} 載入失敗（${res.status}）`);
         assessmentModuleCode+='\n'+await res.text();
       }

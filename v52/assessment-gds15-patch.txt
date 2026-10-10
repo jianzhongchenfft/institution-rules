@@ -277,6 +277,7 @@
       </div>
     `;
 
+    window.v52AssessmentToolSummary?.mount(local.eventId,'gds15',currentToolSummarySource,'.gds15-page','.gds15-actions');
     $('gds15Back')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
 
     document.querySelectorAll('input[name^="gds15_q"]').forEach(input=>{
@@ -305,6 +306,8 @@
     window.scrollTo({top:0,behavior:'auto'});
   }
 
+  function currentToolSummarySource(){return ({answers:local.answers,notes:local.notes,completion_mode:local.completionMode,exception_reason:local.exceptionReason,total_score:local.completionMode==='completed'?currentScore():null});}
+
   async function save(finalize){
     const row=eventById(local.eventId);
     if(!row||!canEdit(row))return toast('您沒有此個案的評估編輯權限','error');
@@ -331,6 +334,7 @@
         p_exception_reason:local.completionMode==='completed'?null:(local.exceptionReason||null)
       });
       if(error)throw error;
+      await window.v52AssessmentToolSummary.saveAfterTool(row.id,'gds15',currentToolSummarySource(),row.case_id);
 
       await window.v52AssessmentApi?.loadAssessmentData?.(false);
       if(finalize){
@@ -352,12 +356,12 @@
   async function open(eventId){
     const row=eventById(eventId);
     if(!row)return toast('找不到評估事件','error');
-    if(row.status==='pending')return toast('請先開始本次評估','warn');
     if(!formById(eventId))return toast('本次評估未選用GDS-15','warn');
 
     showLoading(true);
     try{
       await load(eventId);
+      await window.v52AssessmentToolSummary.load(eventId,'gds15',currentToolSummarySource());
       render();
     }catch(err){
       console.error(err);

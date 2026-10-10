@@ -6,18 +6,8 @@
     attention:'有需留意事項',
     intervention:'有明顯問題／需介入'
   };
-  const PREVIOUS_PROBLEM_STATUS_LABELS={
-    improved:'已改善',
-    persistent:'持續存在',
-    worse:'惡化',
-    not_applicable:'不再適用'
-  };
-  const PREVIOUS_RECOMMENDATION_STATUS_LABELS={
-    completed:'已完成',
-    partial:'部分執行',
-    ongoing:'持續執行',
-    not_done:'未執行',
-    not_applicable:'不再適用'
+  const PREVIOUS_FOLLOWUP_STATUS_LABELS={
+    done:'已完成', partial:'部分完成', undone:'未完成', closed:'不再需要追蹤'
   };
   const TYPE_LABELS={
     opening:'開案評估',
@@ -134,6 +124,14 @@
     .asum-field label{display:block;font-size:10.5px;font-weight:900;color:#667085;margin-bottom:5px}
     .asum-field input,.asum-field select,.asum-field textarea{width:100%;box-sizing:border-box}
     .asum-field textarea{min-height:96px;resize:vertical}
+    .asum-choice-row{display:flex;flex-wrap:wrap;gap:8px;width:100%}
+    .asum-field label.asum-choice-option{display:inline-flex;align-items:center;gap:8px;box-sizing:border-box;
+      margin:0;padding:11px 15px;border:1px solid var(--line);border-radius:10px;background:#fff;
+      color:#344054;font-size:12px;font-weight:800;cursor:pointer;min-height:44px;flex:1 1 145px}
+    .asum-field label.asum-choice-option:has(input:checked){border-color:#dc9479;background:#fff8f5}
+    .asum-field label.asum-choice-option:focus-within{outline:2px solid #dc9479;outline-offset:2px}
+    .asum-field .asum-choice-option input[type="radio"]{width:auto;flex:0 0 auto;accent-color:#dc9479;margin:0}
+    @media(max-width:560px){.asum-field label.asum-choice-option{flex-basis:calc(50% - 5px);padding:10px 12px}}
     .asum-help{border:1px solid #d9e9f7;background:#f7fbff;border-radius:10px;padding:10px 11px;font-size:10.5px;color:#475467;line-height:1.55;margin-bottom:12px}
     .asum-track-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
     .asum-track-box{border:1px solid var(--line);border-radius:11px;background:#fafafa;padding:11px}
@@ -141,6 +139,21 @@
     .asum-track-source{border:1px solid #e4e7ec;border-radius:9px;background:#fff;padding:9px 10px;font-size:10.5px;color:#475467;line-height:1.6;white-space:pre-wrap;margin-bottom:9px}
     .asum-track-hint{font-size:10px;color:#667085;line-height:1.5;margin-top:6px}
     .asum-complete{border:1px solid #abefc6;background:#ecfdf3;color:#027a48;border-radius:10px;padding:10px 11px;font-size:11px;font-weight:850;margin-bottom:12px}
+    /* 整體評估總結：彈出式新內容預覽（不沿用舊版 ats-compare 排版） */
+    .asum-merge-overlay{position:fixed;inset:0;z-index:10060;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:16px;background:rgba(16,24,40,.56)}
+    .asum-merge-dialog{display:flex;flex-direction:column;width:min(680px,100%);max-height:min(85vh,860px);overflow:hidden;background:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(16,24,40,.25);outline:none}
+    .asum-merge-head{flex:0 0 auto;padding:16px 19px 12px;border-bottom:1px solid #eaecf0}
+    .asum-merge-head strong{font-size:15px;color:#344054}
+    .asum-merge-head p{margin:6px 0 0;color:#667085;font-size:11px;line-height:1.6}
+    .asum-merge-body{min-height:0;overflow-y:auto;padding:8px 19px}
+    .asum-merge-item{padding:12px 0;border-bottom:1px solid #eaecf0}
+    .asum-merge-item:last-child{border-bottom:none}
+    .asum-merge-option{display:flex;align-items:center;gap:8px;color:#344054;font-size:12px;cursor:pointer}
+    .asum-merge-option input[type="checkbox"]{width:16px!important;height:16px;flex:0 0 auto;margin:0;accent-color:#dc9479}
+    .asum-merge-text{margin-top:9px;border:1px solid #eaecf0;border-radius:9px;background:#f8f9fb;padding:11px;font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;max-height:32vh;overflow-y:auto}
+    .asum-merge-text.is-empty{color:#98a2b3}
+    .asum-merge-footer{display:flex;justify-content:flex-end;gap:9px;padding:13px 19px;border-top:1px solid #eaecf0;flex:0 0 auto}
+    @media(max-width:540px){.asum-merge-dialog{max-height:90vh}.asum-merge-head,.asum-merge-body,.asum-merge-footer{padding-left:12px;padding-right:12px}.asum-merge-footer .btn{flex:1}}
     .asum-actions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;padding:11px 0;background:linear-gradient(to bottom,rgba(250,248,247,0),#faf8f7 24%)}
     @media(max-width:760px){.asum-grid,.asum-form-grid,.asum-track-grid{grid-template-columns:1fr}.asum-field.full{grid-column:1}.asum-actions .btn{flex:1}}
   `;
@@ -153,7 +166,10 @@
     previousRecords:{},
     previousEvents:{},
     previousSummary:null,
-    previousSummaryEvent:null
+    previousSummaryEvent:null,
+    toolSummaryRows:[],toolMerged:{findings:'',recommendations:'',missing:[]},
+    overallSourceHash:'',overallSignature:{findings:'',recommendations:''},
+    lastSavedOverall:null,savedOverallSnapshot:null
   };
 
   const safeObj=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
@@ -251,10 +267,8 @@
       service_adjustment_note:'',
       external_coordination_required:null,
       external_coordination_note:'',
-      previous_problem_status:null,
-      previous_problem_followup_note:'',
-      previous_recommendation_status:null,
-      previous_recommendation_followup_note:''
+      previous_followup_status:null,
+      previous_followup_note:''
     };
     local.records={adl,iadl,spmsq,gds15,health,home_safety:homeSafety,support,caregiver};
     local.previousRecords={
@@ -291,6 +305,115 @@
         local.previousSummaryEvent=eventById(sourceRes.data.assessment_event_id)||local.previousSummaryEvent;
       }
     }
+    const api=window.v52AssessmentToolSummary;
+    local.toolSummaryRows=await api.list(eventId);
+    local.toolMerged=api.merged(local.toolSummaryRows,formsByEvent(eventId));
+    local.overallSourceHash=overallHash(local.toolSummaryRows,formsByEvent(eventId));
+    const checkpoint=local.toolSummaryRows.find(x=>x.tool_code==='overall');
+    let checkpointSig={};
+    try{checkpointSig=JSON.parse(checkpoint?.source_signature||'{}')||{};}catch(_){}
+    local.overallSignature={
+      findings:checkpointSig.findings||'',recommendations:checkpointSig.recommendations||''
+    };
+    local.lastSavedOverall=summary.data?{
+      findings:String(summary.data.key_findings||''),
+      recommendations:String(summary.data.care_recommendations||'')
+    }:null;
+    local.savedOverallSnapshot=summary.data?JSON.parse(JSON.stringify(summary.data)):null;
+    if(!summary.data){
+      local.summary.key_findings=local.toolMerged.findings;
+      local.summary.care_recommendations=local.toolMerged.recommendations;
+      local.overallSignature={findings:local.overallSourceHash,recommendations:local.overallSourceHash};
+    }
+  }
+
+  function overallHash(rows,forms){
+    const byCode=new Map(rows.filter(x=>x.tool_code!=='overall').map(x=>[x.tool_code,x]));
+    return window.v52AssessmentToolSummary.fingerprint(forms.map(f=>{
+      const s=byCode.get(f.form_code);
+      return [f.form_code,f.status,s?.findings??null,s?.recommendations??null];
+    }));
+  }
+
+  function overallNeedsReview(){
+    if(!local.lastSavedOverall)return false;
+    return local.overallSignature.findings!==local.overallSourceHash
+      ||local.overallSignature.recommendations!==local.overallSourceHash;
+  }
+
+  function renderOverallMergeTools(){
+    const stale=overallNeedsReview();
+    return `<div class="asum-help" style="margin-bottom:12px">
+      <strong>兩階段評估總結：</strong>依本次已完成工具的單項總結，分別整理到下方兩個文字欄位；保留【工具名稱】段落，由督導自由修改。
+      ${local.toolMerged.missing.length?`<div style="margin-top:6px;color:#93370d">以下工具尚未生成本項總結，暫不會匯入文字：${escapeHTML(local.toolMerged.missing.join('、'))}</div>`:''}
+    </div>
+    ${stale?'<div class="asum-help" style="background:#fffaeb;border-color:#fedf89;color:#93370d">單項評估總結已有更新或尚未確認匯整版本。原本整體總結不會被自動覆蓋；仍可儲存或列印。</div>':''}
+    <div class="asum-actions" style="position:static;background:transparent;margin:0 0 12px;padding:0">
+      ${stale?'<button id="asumKeepMerge" type="button" class="btn sm">保留目前總結並確認</button>':''}
+      <button id="asumMergePreview" type="button" class="btn sm">重新匯整並預覽</button>
+    </div>`;
+  }
+
+  // 預覽視窗直接掛在 body，避免被本頁表單的 .asum-field 與 overflow 樣式干擾。
+  // 只顯示本次新匯整結果；原有內容留在背景表單，不重複顯示。
+  function showOverallMergePreview(){
+    if(document.getElementById('asumMergeOverlay'))return;
+    const overlay=document.createElement('div');
+    overlay.id='asumMergeOverlay';
+    overlay.className='asum-merge-overlay';
+    overlay.innerHTML=`<div class="asum-merge-dialog" role="dialog" aria-modal="true" aria-labelledby="asumMergeTitle" tabindex="-1">
+      <div class="asum-merge-head"><strong id="asumMergeTitle">重新匯整整體評估總結</strong>
+        <p>以下僅顯示本次新匯整的內容。勾選要更新的欄位，再決定是否取代。</p></div>
+      <div class="asum-merge-body">
+        ${[['findings','主要評估發現／問題與需求'],['recommendations','照顧服務重點／建議']].map(([k,title])=>{
+          const suggestion=String(local.toolMerged[k]||'');
+          const nonempty=!!suggestion.trim();
+          return `<div class="asum-merge-item">
+            <label class="asum-merge-option"><input type="checkbox" data-asum-replace="${k}" ${nonempty?'checked':''}><strong>${title}</strong></label>
+            <div class="asum-merge-text${nonempty?'':' is-empty'}">${nonempty?escapeHTML(suggestion):'本次沒有可匯入的內容。'}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="asum-merge-footer">
+        <button id="asumMergeCancel" type="button" class="btn">不取代</button>
+        <button id="asumMergeApply" type="button" class="btn primary">取代目前內容</button>
+      </div>
+    </div>`;
+    const openingButton=$('asumMergePreview');
+    const oldOverflow=document.body.style.overflow;
+    document.body.appendChild(overlay);
+    document.body.style.overflow='hidden';
+    const close=()=>{
+      overlay.remove();
+      document.body.style.overflow=oldOverflow;
+      openingButton?.focus();
+    };
+    overlay.querySelector('#asumMergeCancel')?.addEventListener('click',close);
+    overlay.querySelector('#asumMergeApply')?.addEventListener('click',()=>{
+      const selected=[...overlay.querySelectorAll('[data-asum-replace]:checked')].map(x=>x.dataset.asumReplace);
+      if(!selected.length)return toast('請至少勾選一項再確認取代','warn');
+      if(selected.includes('findings')){
+        local.summary.key_findings=local.toolMerged.findings;
+        local.overallSignature.findings=local.overallSourceHash;
+        const input=$('asumFindings');if(input)input.value=local.summary.key_findings;
+      }
+      if(selected.includes('recommendations')){
+        local.summary.care_recommendations=local.toolMerged.recommendations;
+        local.overallSignature.recommendations=local.overallSourceHash;
+        const input=$('asumRecommendations');if(input)input.value=local.summary.care_recommendations;
+      }
+      close();
+      toast('已匯入勾選的欄位，請儲存草稿或完成本次評估以正式儲存','success');
+    });
+    overlay.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){e.preventDefault();close();}
+      if(e.key!=='Tab')return;
+      const focusable=[...overlay.querySelectorAll('input[type="checkbox"],button')].filter(el=>!el.disabled);
+      if(!focusable.length)return;
+      if(e.shiftKey&&document.activeElement===focusable[0]){e.preventDefault();focusable[focusable.length-1].focus();}
+      else if(!e.shiftKey&&document.activeElement===focusable[focusable.length-1]){e.preventDefault();focusable[0].focus();}
+    });
+    overlay.querySelector('#asumMergeCancel')?.focus();
   }
 
   function gdsResult(score){
@@ -472,18 +595,14 @@
     });
   }
 
-  function hasPreviousSummary(){
+  function previousPlanText(){
     const s=local.summary||{};
-    return !!(s.previous_summary_id||s.previous_key_findings_snapshot||s.previous_care_recommendations_snapshot||local.previousSummary);
+    if(s.id)return String(s.previous_followup_plan_snapshot||'').trim();
+    const p=local.previousSummary||{};
+    return p.followup_required?String(p.followup_plan||'').trim():'';
   }
 
-  function previousProblemText(){
-    return String(local.summary?.previous_key_findings_snapshot||local.previousSummary?.key_findings||'').trim();
-  }
-
-  function previousRecommendationText(){
-    return String(local.summary?.previous_care_recommendations_snapshot||local.previousSummary?.care_recommendations||'').trim();
-  }
+  function hasPreviousFollowup(){return !!previousPlanText();}
 
   function previousMetaText(){
     const s=local.previousSummary,e=local.previousSummaryEvent;
@@ -501,40 +620,28 @@
   }
 
   function legacyTrackingIncomplete(){
-    if(!hasPreviousSummary())return false;
+    if(!hasPreviousFollowup())return false;
     const s=local.summary||{};
-    return !s.previous_problem_status
-      ||!String(s.previous_problem_followup_note||'').trim()
-      ||!s.previous_recommendation_status
-      ||!String(s.previous_recommendation_followup_note||'').trim();
+    return !s.previous_followup_status||!String(s.previous_followup_note||'').trim();
   }
 
   function renderPreviousTracking(){
-    if(!hasPreviousSummary()){
+    if(!hasPreviousFollowup()){
       return `<section class="asum-section">
-        <div class="asum-section-head"><strong>二、前次評估追蹤</strong><small>本次沒有較早且已完成的整體評估總結。</small></div>
-        <div class="asum-body"><div class="asum-help" style="margin-bottom:0">首次評估／無前次可追蹤資料，本次不需填寫前次追蹤。</div></div>
+        <div class="asum-section-head"><strong>二、前次評估追蹤</strong><small>本次無需填寫前次追蹤結果。</small></div>
+        <div class="asum-body"><div class="asum-help" style="margin-bottom:0">首次評估，或前次沒有訂定後續追蹤計畫。</div></div>
       </section>`;
     }
     const s=local.summary||{};
     return `<section class="asum-section">
-      <div class="asum-section-head"><strong>二、前次評估追蹤</strong><small>${escapeHTML(previousMetaText())}｜前次內容只供追蹤，不會自動複製成本次評估。</small></div>
+      <div class="asum-section-head"><strong>二、前次評估追蹤</strong><small>${escapeHTML(previousMetaText())}｜前次計畫為歷史紀錄，不會自動複製成本次計畫。</small></div>
       <div class="asum-body">
-        <div class="asum-track-grid">
-          <div class="asum-track-box">
-            <h4>前次主要問題／需求</h4>
-            <div class="asum-track-source">${escapeHTML(previousProblemText()||'前次未記錄主要問題／需求')}</div>
-            <div class="asum-field"><label>本次追蹤結果 *</label><select id="asumPrevProblemStatus">${statusOptions(PREVIOUS_PROBLEM_STATUS_LABELS,s.previous_problem_status)}</select></div>
-            <div class="asum-field" style="margin-top:9px"><label>追蹤說明 *</label><textarea id="asumPrevProblemNote" placeholder="請說明前次問題目前是否改善、持續或惡化，以及本次觀察結果。">${escapeHTML(s.previous_problem_followup_note||'')}</textarea></div>
-            <div class="asum-track-hint">若選「持續存在」或「惡化」，請在下方「本次主要評估發現」重新描述目前狀況，作為下一次追蹤來源。</div>
-          </div>
-          <div class="asum-track-box">
-            <h4>前次照顧服務重點／建議</h4>
-            <div class="asum-track-source">${escapeHTML(previousRecommendationText()||'前次未記錄照顧服務重點／建議')}</div>
-            <div class="asum-field"><label>本次執行情形 *</label><select id="asumPrevRecommendationStatus">${statusOptions(PREVIOUS_RECOMMENDATION_STATUS_LABELS,s.previous_recommendation_status)}</select></div>
-            <div class="asum-field" style="margin-top:9px"><label>執行情形說明 *</label><textarea id="asumPrevRecommendationNote" placeholder="請說明前次建議目前已完成、部分執行、持續執行或未執行的情況。">${escapeHTML(s.previous_recommendation_followup_note||'')}</textarea></div>
-            <div class="asum-track-hint">若仍需「部分執行／持續執行／未執行」，請在下方本次服務重點重新納入後續安排。</div>
-          </div>
+        <div class="asum-track-box">
+          <h4>前次後續追蹤計畫（唯讀）</h4>
+          <div class="asum-track-source">${escapeHTML(previousPlanText())}</div>
+          <div class="asum-field"><label>本次執行情形 *</label><select id="asumPrevFollowupStatus">${statusOptions(PREVIOUS_FOLLOWUP_STATUS_LABELS,s.previous_followup_status)}</select></div>
+          <div class="asum-field" style="margin-top:9px"><label>追蹤結果說明 *</label><textarea id="asumPrevFollowupNote" placeholder="請說明前次計畫已完成、部分完成、未完成或不再需要追蹤的原因與實際結果。">${escapeHTML(s.previous_followup_note||'')}</textarea></div>
+          <div class="asum-track-hint">如有尚未完成且仍需追蹤的事項，請自行納入下方「本次後續追蹤計畫」。</div>
         </div>
       </div>
     </section>`;
@@ -552,12 +659,18 @@
     `).join('')}</div>`;
   }
 
-  function boolSelect(value){
-    const val=value===true?'yes':value===false?'no':'';
-    return `<option value="">請選擇</option>
-      <option value="no" ${val==='no'?'selected':''}>否</option>
-      <option value="yes" ${val==='yes'?'selected':''}>是</option>`;
+  // 沿用原本欄位 ID 與 change 事件：改呈現，不改資料值及條件展開規則。
+  function renderSummaryChoice(id,options,selected){
+    const current=selected===null||selected===undefined?'':String(selected);
+    return `<input type="hidden" id="${id}" value="${escapeHTML(current)}">
+      <div class="asum-choice-row" role="radiogroup">
+        ${options.map(([v,label])=>`<label class="asum-choice-option">
+          <input type="radio" name="${id}_choice" data-asum-choice="${id}"
+            value="${v}" ${current===v?'checked':''}><span>${escapeHTML(label)}</span>
+        </label>`).join('')}
+      </div>`;
   }
+  const YES_NO=[['yes','是'],['no','否']];
 
   function render(){
     const row=eventById(local.eventId),c=row?caseById(row.case_id):null;
@@ -578,7 +691,7 @@
       </div>
       ${window.v52AssessmentApi?.renderAssessmentContextBar?.(row,c)||''}
       ${finalized?`<div class="asum-complete">本次整體評估已完成。若後續修正總結內容，系統會保留修改歷程。</div>`:''}
-      ${finalized&&legacyTrackingIncomplete()?`<div class="asum-help" style="border-color:#fedf89;background:#fffaeb;color:#93370d"><strong>前次追蹤尚未補充：</strong>此筆總結是在前次追蹤功能上線前完成，可於本頁補充後按「儲存修正」。</div>`:''}
+      ${finalized&&legacyTrackingIncomplete()?`<div class="asum-help" style="border-color:#fedf89;background:#fffaeb;color:#93370d"><strong>前次追蹤尚未補充：</strong>此筆總結尚未填寫前次追蹤結果，可於本頁補充後按「儲存修正」。</div>`:''}
       <div class="asum-help">以下工具摘要均讀取本次評估已儲存的正式紀錄，並與評估日期以前最近一次正式完成的同類工具比較；不依賴家訪紀錄。</div>
 
       <section class="asum-section">
@@ -592,20 +705,22 @@
         <div class="asum-section-head"><strong>三、本次督導整體評估</strong><small>完成評估前，請依工具結果、前次追蹤與實際服務情形進行專業整合。</small></div>
         <div class="asum-body">
           <div class="asum-form-grid">
-            <div class="asum-field full"><label>整體狀況 *</label><select id="asumOverall">
-              <option value="">請選擇</option>
-              ${Object.entries(OVERALL_LABELS).map(([v,l])=>`<option value="${v}" ${s.overall_status===v?'selected':''}>${l}</option>`).join('')}
-            </select></div>
+            <div class="asum-field full"><label>整體狀況 *</label>
+              ${renderSummaryChoice('asumOverall',Object.entries(OVERALL_LABELS),s.overall_status)}</div>
+            <div class="asum-field full">${renderOverallMergeTools()}</div>
             <div class="asum-field full"><label>主要評估發現／問題與需求 *</label><textarea id="asumFindings" placeholder="請整合功能、健康、認知／情緒、環境、家庭支持與照顧者狀況。">${escapeHTML(s.key_findings||'')}</textarea></div>
             <div class="asum-field full"><label>照顧服務重點／建議 *</label><textarea id="asumRecommendations" placeholder="請記錄後續居家服務需注意、維持或調整的重點。">${escapeHTML(s.care_recommendations||'')}</textarea></div>
 
-            <div class="asum-field full"><label>是否需調整服務／照顧安排 *</label><select id="asumAdjust">${boolSelect(s.service_adjustment_required)}</select></div>
+            <div class="asum-field full"><label>是否需調整服務／照顧安排 *</label>
+              ${renderSummaryChoice('asumAdjust',YES_NO,s.service_adjustment_required===true?'yes':s.service_adjustment_required===false?'no':'')}</div>
             ${s.service_adjustment_required===true?`<div class="asum-field full"><label>服務／照顧調整內容 *</label><textarea id="asumAdjustNote" placeholder="請說明需調整的服務項目、頻率、照顧方式或其他安排。">${escapeHTML(s.service_adjustment_note||'')}</textarea></div>`:''}
 
-            <div class="asum-field full"><label>是否需後續追蹤 *</label><select id="asumFollowup">${boolSelect(s.followup_required)}</select></div>
+            <div class="asum-field full"><label>是否需後續追蹤 *</label>
+              ${renderSummaryChoice('asumFollowup',YES_NO,s.followup_required===true?'yes':s.followup_required===false?'no':'')}</div>
             ${s.followup_required===true?`<div class="asum-field full"><label>後續追蹤計畫 *</label><textarea id="asumFollowupPlan" placeholder="請說明追蹤重點、方式或預計時程。">${escapeHTML(s.followup_plan||'')}</textarea></div>`:''}
 
-            <div class="asum-field full"><label>是否需對外協調／轉介 *</label><select id="asumExternal">${boolSelect(s.external_coordination_required)}</select></div>
+            <div class="asum-field full"><label>是否需對外協調／轉介 *</label>
+              ${renderSummaryChoice('asumExternal',YES_NO,s.external_coordination_required===true?'yes':s.external_coordination_required===false?'no':'')}</div>
             ${s.external_coordination_required===true?`<div class="asum-field full"><label>對外協調／轉介內容 *</label><textarea id="asumExternalNote" placeholder="例如：A 單位、個管師、醫療端、社福或家庭照顧者支持服務。">${escapeHTML(s.external_coordination_note||'')}</textarea></div>`:''}
           </div>
         </div>
@@ -627,10 +742,8 @@
     if($('asumFollowupPlan'))local.summary.followup_plan=$('asumFollowupPlan').value;
     if($('asumAdjustNote'))local.summary.service_adjustment_note=$('asumAdjustNote').value;
     if($('asumExternalNote'))local.summary.external_coordination_note=$('asumExternalNote').value;
-    if($('asumPrevProblemStatus'))local.summary.previous_problem_status=$('asumPrevProblemStatus').value||null;
-    if($('asumPrevProblemNote'))local.summary.previous_problem_followup_note=$('asumPrevProblemNote').value;
-    if($('asumPrevRecommendationStatus'))local.summary.previous_recommendation_status=$('asumPrevRecommendationStatus').value||null;
-    if($('asumPrevRecommendationNote'))local.summary.previous_recommendation_followup_note=$('asumPrevRecommendationNote').value;
+    if($('asumPrevFollowupStatus'))local.summary.previous_followup_status=$('asumPrevFollowupStatus').value||null;
+    if($('asumPrevFollowupNote'))local.summary.previous_followup_note=$('asumPrevFollowupNote').value;
   }
 
   function rerenderWithScroll(){
@@ -647,6 +760,30 @@
       api.open(row.id);
     });
     $('asumPrint')?.addEventListener('click',()=>openPrintPreview());
+    $('asumMergePreview')?.addEventListener('click',()=>{
+      captureText();
+      showOverallMergePreview();
+    });
+    $('asumKeepMerge')?.addEventListener('click',async()=>{
+      captureText();
+      if(!local.lastSavedOverall||local.summary.key_findings!==local.lastSavedOverall.findings||
+         local.summary.care_recommendations!==local.lastSavedOverall.recommendations)
+        return toast('請先儲存目前編輯中的整體總結，再確認保留','warn');
+      const old={...local.overallSignature};
+      local.overallSignature={findings:local.overallSourceHash,recommendations:local.overallSourceHash};
+      try{
+        await window.v52AssessmentToolSummary.trackOverall(row.id,row.case_id,local.summary.key_findings,
+          local.summary.care_recommendations,local.overallSignature);
+        rerenderWithScroll();toast('已確認保留原有整體總結','success');
+      }catch(e){local.overallSignature=old;toast('確認失敗：'+(e?.message||e),'error');}
+    });
+    document.querySelectorAll('[data-asum-choice]').forEach(radio=>radio.addEventListener('change',()=>{
+      if(!radio.checked)return;
+      const field=$(radio.dataset.asumChoice);
+      if(!field)return;
+      field.value=radio.value;
+      field.dispatchEvent(new Event('change',{bubbles:true}));
+    }));
     $('asumOverall')?.addEventListener('change',e=>local.summary.overall_status=e.target.value||null);
     $('asumFindings')?.addEventListener('input',e=>local.summary.key_findings=e.target.value);
     $('asumRecommendations')?.addEventListener('input',e=>local.summary.care_recommendations=e.target.value);
@@ -671,10 +808,8 @@
     $('asumFollowupPlan')?.addEventListener('input',e=>local.summary.followup_plan=e.target.value);
     $('asumAdjustNote')?.addEventListener('input',e=>local.summary.service_adjustment_note=e.target.value);
     $('asumExternalNote')?.addEventListener('input',e=>local.summary.external_coordination_note=e.target.value);
-    $('asumPrevProblemStatus')?.addEventListener('change',e=>local.summary.previous_problem_status=e.target.value||null);
-    $('asumPrevProblemNote')?.addEventListener('input',e=>local.summary.previous_problem_followup_note=e.target.value);
-    $('asumPrevRecommendationStatus')?.addEventListener('change',e=>local.summary.previous_recommendation_status=e.target.value||null);
-    $('asumPrevRecommendationNote')?.addEventListener('input',e=>local.summary.previous_recommendation_followup_note=e.target.value);
+    $('asumPrevFollowupStatus')?.addEventListener('change',e=>local.summary.previous_followup_status=e.target.value||null);
+    $('asumPrevFollowupNote')?.addEventListener('input',e=>local.summary.previous_followup_note=e.target.value);
     $('asumDraft')?.addEventListener('click',()=>save(false));
     $('asumConfirm')?.addEventListener('click',()=>save(true));
   }
@@ -682,11 +817,9 @@
   function validate(finalize){
     if(!finalize)return null;
     const s=local.summary;
-    if(hasPreviousSummary()){
-      if(!s.previous_problem_status)return '請選擇前次主要問題的本次追蹤結果';
-      if(!String(s.previous_problem_followup_note||'').trim())return '請填寫前次主要問題的追蹤說明';
-      if(!s.previous_recommendation_status)return '請選擇前次服務重點／建議的本次執行情形';
-      if(!String(s.previous_recommendation_followup_note||'').trim())return '請填寫前次服務重點／建議的執行情形說明';
+    if(hasPreviousFollowup()){
+      if(!s.previous_followup_status)return '請選擇前次追蹤計畫的本次執行情形';
+      if(!String(s.previous_followup_note||'').trim())return '請填寫前次追蹤計畫的結果說明';
     }
     if(!s.overall_status)return '請選擇整體狀況';
     if(!String(s.key_findings||'').trim())return '請填寫主要評估發現／問題與需求';
@@ -708,6 +841,12 @@
     const problem=validate(finalize);
     if(problem)return toast(problem,'warn');
 
+    if(finalize&&local.summary.followup_required===false){
+      const unfinished=['partial','undone'].includes(local.summary.previous_followup_status);
+      const homeRisk=riskCountHome(local.records.home_safety)>0;
+      const supportRisk=['needs_attention','weak'].includes(safeObj(local.records.support?.summary).overall_support);
+      if((unfinished||homeRisk||supportRisk)&&!window.confirm('本次仍有未完成追蹤或需留意的評估事項，您選擇「不需後續追蹤」。請確認風險已適當處理或無持續追蹤必要。確定完成評估嗎？'))return;
+    }
     showLoading(true);
     try{
       const s=local.summary;
@@ -722,13 +861,12 @@
         p_service_adjustment_note:String(s.service_adjustment_note||'').trim()||null,
         p_external_coordination_required:s.external_coordination_required,
         p_external_coordination_note:String(s.external_coordination_note||'').trim()||null,
-        p_previous_problem_status:s.previous_problem_status||null,
-        p_previous_problem_followup_note:String(s.previous_problem_followup_note||'').trim()||null,
-        p_previous_recommendation_status:s.previous_recommendation_status||null,
-        p_previous_recommendation_followup_note:String(s.previous_recommendation_followup_note||'').trim()||null,
+        p_previous_followup_status:s.previous_followup_status||null,
+        p_previous_followup_note:String(s.previous_followup_note||'').trim()||null,
         p_finalize:!!finalize
       });
       if(error)throw error;
+      await window.v52AssessmentToolSummary.trackOverall(row.id,row.case_id,s.key_findings,s.care_recommendations,local.overallSignature);
       await window.v52AssessmentApi?.loadAssessmentData?.(false);
       if(finalize){
         await load(row.id);
@@ -771,22 +909,16 @@
         <td>${printText(item.change)}</td>
       </tr>
     `).join('');
-    const previousOverallText=hasPreviousSummary()
-      ?previousMetaText()
-      :'首次評估／無前次已完成總結';
-    const previousTrackingHtml=hasPreviousSummary()
+    const previousTrackingHtml=hasPreviousFollowup()
       ?`<table class="decision">
           <tbody>
-            <tr><th>前次整體評估</th><td>${printText(previousOverallText)}</td></tr>
-            <tr><th>前次主要問題／需求</th><td>${printText(previousProblemText())}</td></tr>
-            <tr><th>本次追蹤結果</th><td>${printText(PREVIOUS_PROBLEM_STATUS_LABELS[s.previous_problem_status]||'尚未補充')}</td></tr>
-            <tr><th>追蹤說明</th><td>${printText(s.previous_problem_followup_note)}</td></tr>
-            <tr><th>前次服務重點／建議</th><td>${printText(previousRecommendationText())}</td></tr>
-            <tr><th>本次執行情形</th><td>${printText(PREVIOUS_RECOMMENDATION_STATUS_LABELS[s.previous_recommendation_status]||'尚未補充')}</td></tr>
-            <tr><th>執行情形說明</th><td>${printText(s.previous_recommendation_followup_note)}</td></tr>
+            <tr><th>前次整體評估</th><td>${printText(previousMetaText())}</td></tr>
+            <tr><th>前次後續追蹤計畫</th><td>${printText(previousPlanText())}</td></tr>
+            <tr><th>本次執行情形</th><td>${printText(PREVIOUS_FOLLOWUP_STATUS_LABELS[s.previous_followup_status]||'尚未補充')}</td></tr>
+            <tr><th>追蹤結果說明</th><td>${printText(s.previous_followup_note)}</td></tr>
           </tbody>
         </table>`
-      :'<div class="empty-print">首次評估／無前次已完成總結，本次無前次追蹤資料。</div>';
+      :'<div class="empty-print">首次評估，或前次沒有訂定後續追蹤計畫。</div>';
 
     return `<!doctype html>
 <html lang="zh-Hant">
@@ -863,7 +995,7 @@
     <tbody>
       <tr><th>個案姓名</th><td>${printText(c.case_name)}</td><th>個案編號</th><td>${printText(c.case_no)}</td></tr>
       <tr><th>評估日期</th><td>${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}</td><th>評估類型</th><td>${printText(TYPE_LABELS[row.assessment_type]||row.assessment_type)}</td></tr>
-      <tr><th>負責督導</th><td>${printText(staffName(row.responsible_staff_id||c.supervisor_id))}</td><th>與家訪同日</th><td>${row.combined_with_home_visit?'是':'否'}</td></tr>
+      <tr><th>負責督導</th><td colspan="3">${printText(staffName(row.responsible_staff_id||c.supervisor_id))}</td></tr>
       <tr><th>評估原因</th><td colspan="3">${printText(reason)}</td></tr>
     </tbody>
   </table>
@@ -908,7 +1040,10 @@
   }
 
   function openPrintPreview(){
+    const editingSummary=local.summary;
     try{
+      if(local.savedOverallSnapshot)local.summary=JSON.parse(JSON.stringify(local.savedOverallSnapshot));
+      if(overallNeedsReview())toast('整體評估總結尚未確認最新單項內容；仍會列印最後儲存的版本','warn');
       const html=buildPrintHtml();
       const w=window.open('','_blank');
       if(!w){
@@ -921,6 +1056,8 @@
     }catch(err){
       console.error(err);
       toast('建立評估列印預覽失敗：'+(err?.message||err),'error');
+    }finally{
+      local.summary=editingSummary;
     }
   }
 

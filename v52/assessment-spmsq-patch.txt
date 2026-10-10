@@ -90,6 +90,7 @@
                 <label class="${local.judgments[key]==='unable_answer'?'selected':''}"><input type="radio" name="spmsq_${key}" value="unable_answer" ${local.judgments[key]==='unable_answer'?'checked':''}>無法作答</label>
               </div>
               <div class="spmsq-note">
+                ${window.v52AssessmentToolSummary?.previousNote(local.previous?.notes?.[key])||''}
                 ${local.judgments[key]==='unable_answer'||local.expandedNotes.has(key)||String(local.notes[key]||'').trim()
                   ?`<label>${local.judgments[key]==='unable_answer'?'無法作答原因 *':'備註（選填）'}</label><textarea data-spmsq-note="${key}" placeholder="${local.judgments[key]==='unable_answer'?'請填寫無法作答原因':'需要時補充，例如：僅能回答年份、因失語無法回答'}">${escapeHTML(local.notes[key]||'')}</textarea>`
                   :`<button type="button" class="btn sm" data-spmsq-add-note="${key}">＋ 補充備註</button>`}
@@ -100,6 +101,7 @@
         ${canEdit(row)&&row.status!=='voided'?`<div class="spmsq-actions">${form.status!=='completed'&&form.status!=='unable'?'<button id="spmsqDraft" class="btn">儲存草稿</button>':''}<button id="spmsqConfirm" class="btn primary">${['completed','unable'].includes(form.status)?'儲存修正並確認':'完成本次確認'}</button></div>`:''}
       </div>`;
 
+    window.v52AssessmentToolSummary?.mount(local.eventId,'spmsq',currentToolSummarySource,'.spmsq-page','.spmsq-actions');
     $('spmsqBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
     document.querySelectorAll('[data-spmsq-note]').forEach(inp=>inp.addEventListener('input',()=>local.notes[inp.dataset.spmsqNote]=inp.value));
     document.querySelectorAll('[data-spmsq-add-note]').forEach(btn=>btn.addEventListener('click',()=>{
@@ -122,6 +124,8 @@
     $('spmsqConfirm')?.addEventListener('click',()=>save(true));
     window.scrollTo({top:0,behavior:'auto'});
   }
+
+  function currentToolSummarySource(){return ({judgments:local.judgments,notes:local.notes,is_unable:local.isUnable,unable_reason:local.unableReason});}
 
   async function save(finalize){
     const row=eventById(local.eventId);if(!row||!canEdit(row))return toast('您沒有此個案的評估編輯權限','error');
@@ -148,6 +152,7 @@
         p_unable:!!local.isUnable,p_unable_reason:local.isUnable?(local.unableReason||null):null,p_copied_from_id:null
       });
       if(error)throw error;
+      await window.v52AssessmentToolSummary.saveAfterTool(row.id,'spmsq',currentToolSummarySource(),row.case_id);
       await window.v52AssessmentApi?.loadAssessmentData?.(false);
       if(finalize){
         window.v52AssessmentApi?.renderAssessmentDetail?.(row.id);
@@ -162,9 +167,9 @@
 
   async function open(eventId){
     const row=eventById(eventId);if(!row)return toast('找不到評估事件','error');
-    if(row.status==='pending')return toast('請先開始本次評估','warn');
     if(!formById(eventId))return toast('本次評估未選用SPMSQ','warn');
-    showLoading(true);try{await load(eventId);render();}catch(err){console.error(err);toast('讀取SPMSQ失敗：'+(err?.message||err),'error');}finally{showLoading(false);}
+    showLoading(true);try{await load(eventId);
+      await window.v52AssessmentToolSummary.load(eventId,'spmsq',currentToolSummarySource());render();}catch(err){console.error(err);toast('讀取SPMSQ失敗：'+(err?.message||err),'error');}finally{showLoading(false);}
   }
 
   window.v52AssessmentSpmsq={open};

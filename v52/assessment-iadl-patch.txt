@@ -222,6 +222,7 @@
             </label>
           `).join('')}
         </div>
+        ${window.v52AssessmentToolSummary?.previousNote(local.previous?.notes?.[item.key])||''}
         ${!showNote?`
           <div class="iadl-note"><button type="button" class="btn sm" data-iadl-add-note="${item.key}">＋ 補充備註</button></div>
         `:''}
@@ -284,6 +285,7 @@
       </div>
     `;
 
+    window.v52AssessmentToolSummary?.mount(local.eventId,'iadl',currentToolSummarySource,'.iadl-page','.iadl-actions');
     $('iadlBack')?.addEventListener('click',()=>window.v52AssessmentApi?.renderAssessmentDetail?.(row.id));
 
     document.querySelectorAll('input[name^="iadl_"]').forEach(input=>{
@@ -325,6 +327,8 @@
     window.scrollTo({top:0,behavior:'auto'});
   }
 
+  function currentToolSummarySource(){return ({answers:local.answers,notes:local.notes});}
+
   async function saveIadl(finalize){
     const row=eventById(local.eventId);
     if(!row||!canEditEvent(row))return toast('您沒有此個案的評估編輯權限','error');
@@ -352,6 +356,7 @@
         p_copied_from_id:local.pendingCopyFromId||null
       });
       if(error)throw error;
+      await window.v52AssessmentToolSummary.saveAfterTool(row.id,'iadl',currentToolSummarySource(),row.case_id);
 
       await window.v52AssessmentApi?.loadAssessmentData?.(false);
       if(finalize){
@@ -375,12 +380,12 @@
   async function open(eventId){
     const row=eventById(eventId);
     if(!row)return toast('找不到評估事件','error');
-    if(row.status==='pending')return toast('請先開始本次評估','warn');
     if(!iadlForm(eventId))return toast('本次評估未選用IADL','warn');
 
     showLoading(true);
     try{
       await loadIadl(eventId);
+      await window.v52AssessmentToolSummary.load(eventId,'iadl',currentToolSummarySource());
       renderIadlPage();
     }catch(err){
       console.error(err);

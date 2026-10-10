@@ -116,8 +116,7 @@
   const CG_APPLICABILITY={applicable:'適用：主要照顧者為家人／親友',no_family_caregiver:'不適用：無主要家庭照顧者',paid_caregiver:'不適用：主要照顧者為聘僱看護／非家人',unable:'本次無法評估'};
   const REFERRAL_ACTIONS={planned:'預計轉介家庭照顧者支持服務',referred:'已完成轉介／聯繫',declined_followup:'照顧者暫無意願，持續追蹤',other:'其他處置'};
   const SUMMARY_OVERALL={stable:'整體狀況穩定',attention:'有需留意事項',intervention:'有明顯問題／需介入'};
-  const PREV_PROBLEM={improved:'已改善',persistent:'持續存在',worse:'惡化',not_applicable:'不再適用'};
-  const PREV_RECOMMENDATION={completed:'已完成',partial:'部分執行',ongoing:'持續執行',not_done:'未執行',not_applicable:'不再適用'};
+  const PREV_FOLLOWUP={done:'已完成',partial:'部分完成',undone:'未完成',closed:'不再需要追蹤'};
 
   const local={eventId:null,row:null,caseRow:null,forms:[],records:{},previous:{},previousEvents:{},summary:null};
 
@@ -179,6 +178,7 @@
     ]);
 
     local.eventId=eventId;local.row=row;local.caseRow=c;local.forms=forms;local.summary=summary;
+    local.toolSummaries=await window.v52AssessmentToolSummary.list(eventId);
     local.records={adl,iadl,health_medication:health,home_safety:homeSafety,support,spmsq,gds15,caregiver_burden:caregiver};
     local.previous={
       adl:prevAdl?.record||null,iadl:prevIadl?.record||null,health_medication:prevHealth?.record||null,
@@ -308,21 +308,30 @@
     const events=arr(m.healthcare_events);
     const medChanges=arr(m.medication_changes);
     const medCorrections=arr(m.medication_corrections);
+    const usage=m.medication_use_status||'';
+    const opening=local.row?.assessment_type==='opening';
     let body=commonMeta(form.form_name,form);
     body+=`<h2>一、健康與就醫概況</h2>
       ${rowTable([
-        `<tr><td>重要疾病／健康狀況</td><td>${html(m.baseline_important_conditions)}</td></tr>`,
-        `<tr><td>持續治療／固定醫療</td><td>${html(m.baseline_ongoing_treatments)}</td></tr>`,
-        `<tr><td>是否固定回診</td><td>${html(yesNo(m.regular_followup))}${m.regular_followup_reason?`｜${html(m.regular_followup_reason)}`:''}</td></tr>`,
+        `<tr><td>重要疾病／健康狀況</td><td>${html(opening&&m.baseline_conditions_status==='no'?'無':opening&&m.baseline_conditions_status==='unknown'?'無法確認｜'+(m.baseline_conditions_unknown_note||''):m.baseline_important_conditions)}</td></tr>`,
+        `<tr><td>持續治療／固定醫療</td><td>${html(opening&&m.baseline_treatments_status==='no'?'無':opening&&m.baseline_treatments_status==='unknown'?'無法確認｜'+(m.baseline_treatments_unknown_note||''):m.baseline_ongoing_treatments)}</td></tr>`,
+        `<tr><td>目前回診現況</td><td>${html(({yes:'定期回診',no:'未定期回診',not_needed:'無需定期回診',unknown:'無法確認'})[m.regular_followup]||'—')}${m.regular_followup_reason?`｜${html(m.regular_followup_reason)}`:''}</td></tr>`,
+        `<tr><td>目前是否使用藥物</td><td>${html(usage==='using'?'有使用藥物':usage==='none'?'目前無使用藥物':usage==='unknown'?'無法確認用藥情形':'—')}${usage==='unknown'&&m.medication_use_note?'｜'+html(m.medication_use_note):''}</td></tr>`,
+        ...(['none','unknown'].includes(usage)?[]:[
         `<tr><td>服藥方式</td><td>${html(m.medication_method==='self'?'自行':m.medication_method==='assisted'?'他人協助':'—')}${m.medication_assisted_by?`｜協助者：${html(m.medication_assisted_by)}`:''}</td></tr>`,
+        ]),
+        ...(['none','unknown'].includes(usage)?[]:[
         `<tr><td>服藥是否規律</td><td>${html(yesNo(m.medication_regular))}${m.medication_followup?`｜${html(m.medication_followup)}`:''}</td></tr>`,
-        `<tr><td>藥物副作用</td><td>${html(yesNo(m.side_effect))}${m.side_effect_note?`｜${html(m.side_effect_note)}`:''}</td></tr>`
+        ]),
+
       ],['項目','內容'])}`;
     body+=`<h2>二、用藥紀錄</h2>`;
-    if(m.opening_no_fixed_medications===true||m.no_fixed_medications===true)body+=`<div class="plain">固定用藥：目前無固定用藥。</div>`;
+    if(opening&&m.opening_fixed_status==='unknown')body+=`<div class="plain">固定用藥：無法確認｜${html(m.opening_fixed_unknown_note)}</div>`;
+    else if(m.opening_no_fixed_medications===true||m.no_fixed_medications===true)body+=`<div class="plain">固定用藥：目前無固定用藥。</div>`;
     else if(fixed.length)body+=rowTable(fixed.map((x,i)=>`<tr><td>${i+1}</td><td>${html(medEntryText(x))}</td></tr>`),['#','固定用藥']);
     else body+=`<div class="plain">固定用藥：${html(m.fixed_medications)}</div>`;
-    if(m.opening_no_temporary_medications===true)body+=`<div class="plain">短期／臨時用藥：本次無。</div>`;
+    if(opening&&m.opening_temporary_status==='unknown')body+=`<div class="plain">短期／臨時用藥：無法確認｜${html(m.opening_temporary_unknown_note)}</div>`;
+    else if(m.opening_no_temporary_medications===true)body+=`<div class="plain">短期／臨時用藥：本次無。</div>`;
     else if(temp.length)body+=rowTable(temp.map((x,i)=>`<tr><td>${i+1}</td><td>${html(medEntryText(x))}</td></tr>`),['#','短期／臨時用藥']);
     if(events.length){
       body+=`<h3>評估期間就醫事件</h3>`+rowTable(events.map((x,i)=>`<tr><td>${i+1}</td><td>${html(x.date)}</td><td>${html(({outpatient:'門診',emergency:'急診',hospitalization:'住院',surgery:'手術／處置',other:'其他'})[x.type]||x.type)}</td><td>${html([x.facility,x.department,x.reason,x.result].filter(Boolean).join('｜'))}</td></tr>`),['#','日期','類型','醫療機構／結果']);
@@ -335,10 +344,13 @@
     }
     body+=`<h2>三、身體健康狀態 10 項</h2>`+rowTable(HEALTH_ITEMS.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(HEALTH_STATUS[items[key]]||items[key])}</td><td>${html(notes[key])}</td></tr>`),['項目','狀態','備註']);
     body+=`<div class="result-box"><strong>健康狀態總分：${html(r.total_score)}／20 分</strong></div>`;
-    body+=`<h2>四、用藥安全現況</h2>`+rowTable(MED_CHECKS.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(MED_STATUS[safe(checks[key]).status]||safe(checks[key]).status)}</td><td>${html(safe(checks[key]).note)}</td></tr>`),['項目','狀態','備註']);
+    body+=`<h2>四、用藥安全現況</h2>`;
+    if(usage==='none')body+='<div class="plain">目前無使用藥物，用藥管理與用藥安全整段不適用。</div>';
+    else if(usage==='unknown')body+=`<div class="plain">目前無法確認用藥情形｜${html(m.medication_use_note)}</div>`;
+    else body+=rowTable(MED_CHECKS.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(MED_STATUS[safe(checks[key]).status]||safe(checks[key]).status)}</td><td>${html(safe(checks[key]).note)}</td></tr>`),['項目','狀態','備註']);
     if(m.unvisited_health_change||m.care_impact||m.care_impact_note){
       body+=`<h2>五、後續健康／照顧影響</h2>`+rowTable([
-        `<tr><td>未就醫之健康變化</td><td>${html(m.unvisited_health_change)}${m.unvisited_health_change_note?`｜${html(m.unvisited_health_change_note)}`:''}</td></tr>`,
+        `<tr><td>未就醫之健康變化</td><td>${m.unvisited_health_change_note?html(m.unvisited_health_change_note):m.unvisited_health_change==='no'?'無':'—'}</td></tr>`,
         `<tr><td>對照顧計畫影響</td><td>${html(({no_impact:'無明顯影響',observe:'持續觀察',adjust_plan:'需調整機構照顧計畫',contact_external:'建議聯繫A單位／醫療端'})[m.care_impact]||m.care_impact)}${m.care_impact_note?`｜${html(m.care_impact_note)}`:''}</td></tr>`
       ],['項目','內容']);
     }
@@ -359,11 +371,10 @@
     for(const [title,items] of HOME_SECTIONS){
       body+=`<h2>${idx++}、${html(title)}</h2>`+rowTable(items.map(([key,label])=>`<tr><td>${html(label)}</td><td>${html(HOME_STATUS[a[key]]||a[key])}</td><td>${html(n[key])}</td></tr>`),['項目','結果','備註']);
     }
-    body+=`<h2>評估結論與後續</h2>`+rowTable([
+    body+=`<h2>評估結論與改善建議</h2>`+rowTable([
       `<tr><td>主要環境安全問題／改善建議</td><td>${html(s.recommendations)}</td></tr>`,
       `<tr><td>說明對象</td><td>${html(({client:'個案',family:'家屬',both:'個案及家屬',not_explained:'未說明'})[s.explained_to]||s.explained_to)}${s.not_explained_reason?`｜${html(s.not_explained_reason)}`:''}</td></tr>`,
-      `<tr><td>個案／家屬回應</td><td>${html(({accept:'接受',consider:'考慮中',unwilling:'暫無意願',other:'其他'})[s.family_response]||s.family_response)}${s.family_response_other?`｜${html(s.family_response_other)}`:''}</td></tr>`,
-      `<tr><td>是否需追蹤</td><td>${html(yesNo(s.followup_required))}${s.followup_note?`｜${html(s.followup_note)}`:''}</td></tr>`
+      `<tr><td>個案／家屬回應</td><td>${html(({agree:'同意改善',partial:'部分同意',unwilling:'暫無意願改善',unable:'無能力自行改善',other:'其他',not_needed:'本次無需改善'})[s.family_response]||s.family_response)}${s.family_response_other?`｜${html(s.family_response_other)}`:''}</td></tr>`
     ],['項目','內容']);
     return toolPage(body);
   }
@@ -393,11 +404,10 @@
     body+=`<h3>目前已有資源</h3>`+(social.length?rowTable(social.map((x,i)=>`<tr><td>${i+1}</td><td>${html(RESOURCE_TYPES[x.type]||x.type)}</td><td>${html(x.name)}</td><td>${html(x.assistance)}</td><td>${html(RESOURCE_USAGE[x.usage_status]||x.usage_status)}</td><td>${html(RESOURCE_SUFFICIENCY[x.sufficiency]||x.sufficiency)}${x.insufficiency_note?`｜${html(x.insufficiency_note)}`:''}</td></tr>`),['#','類型','單位／名稱','協助內容','使用狀況','是否足夠']):`<div class="plain">未登錄目前已有資源。</div>`);
     const needs=arr(res.unmet_needs);
     body+=`<h3>尚缺資源／轉介需求</h3>`+(needs.length?rowTable(needs.map((x,i)=>`<tr><td>${i+1}</td><td>${html(RESOURCE_TYPES[x.type]||x.type)}</td><td>${html(x.need)}</td><td>${html(x.action)}</td><td>${html(NEED_STATUS[x.status]||x.status)}</td></tr>`),['#','類型','需求內容','處理／轉介方式','狀態']):`<div class="plain">目前無登錄之尚缺資源／轉介需求。</div>`);
-    body+=`<h2>五、整體支持評估與後續</h2>`+rowTable([
+    body+=`<h2>五、整體支持評估</h2>`+rowTable([
       `<tr><td>整體支持狀況</td><td>${html(OVERALL_SUPPORT[s.overall_support]||s.overall_support)}</td></tr>`,
       `<tr><td>主要支持問題</td><td>${html(s.key_issues)}</td></tr>`,
-      `<tr><td>目前支持安排／建議</td><td>${html(s.support_plan)}</td></tr>`,
-      `<tr><td>是否需後續追蹤</td><td>${html(yesNo(s.followup_required))}${s.followup_note?`｜${html(s.followup_note)}`:''}</td></tr>`
+      `<tr><td>目前支持安排／建議</td><td>${html(s.support_plan)}</td></tr>`
     ],['項目','內容']);
     return toolPage(body);
   }
@@ -435,18 +445,15 @@
       <table class="meta"><tbody>
         <tr><th>個案姓名</th><td>${html(c.case_name)}</td><th>個案編號</th><td>${html(c.case_no)}</td></tr>
         <tr><th>評估日期</th><td>${row.planned_date?rocDate(row.planned_date+'T00:00:00'):'—'}</td><th>評估類型</th><td>${html(TYPE_LABELS[row.assessment_type]||row.assessment_type)}</td></tr>
-        <tr><th>負責督導</th><td>${html(staffName(row.responsible_staff_id||c.supervisor_id))}</td><th>與家訪同日</th><td>${row.combined_with_home_visit?'是':'否'}</td></tr>
+        <tr><th>負責督導</th><td colspan="3">${html(staffName(row.responsible_staff_id||c.supervisor_id))}</td></tr>
         <tr><th>評估原因</th><td colspan="3">${html(reason)}</td></tr>
       </tbody></table>
     </header>`;
-    if(s.previous_summary_id||s.previous_key_findings_snapshot||s.previous_care_recommendations_snapshot){
+    if(String(s.previous_followup_plan_snapshot||'').trim()){
       body+=`<h2>一、前次評估追蹤</h2>`+rowTable([
-        `<tr><td>前次主要問題／需求</td><td>${html(s.previous_key_findings_snapshot)}</td></tr>`,
-        `<tr><td>本次追蹤結果</td><td>${html(PREV_PROBLEM[s.previous_problem_status]||s.previous_problem_status)}</td></tr>`,
-        `<tr><td>追蹤說明</td><td>${html(s.previous_problem_followup_note)}</td></tr>`,
-        `<tr><td>前次服務重點／建議</td><td>${html(s.previous_care_recommendations_snapshot)}</td></tr>`,
-        `<tr><td>本次執行情形</td><td>${html(PREV_RECOMMENDATION[s.previous_recommendation_status]||s.previous_recommendation_status)}</td></tr>`,
-        `<tr><td>執行情形說明</td><td>${html(s.previous_recommendation_followup_note)}</td></tr>`
+        `<tr><td>前次後續追蹤計畫</td><td>${html(s.previous_followup_plan_snapshot)}</td></tr>`,
+        `<tr><td>本次執行情形</td><td>${html(PREV_FOLLOWUP[s.previous_followup_status]||s.previous_followup_status)}</td></tr>`,
+        `<tr><td>追蹤結果說明</td><td>${html(s.previous_followup_note)}</td></tr>`
       ],['項目','內容']);
       body+=`<h2>二、本次整體評估與照顧建議</h2>`;
     }else body+=`<h2>一、本次整體評估與照顧建議</h2>`;
@@ -471,20 +478,43 @@
   }
 
   function renderTool(form){
-    if(form.form_code==='adl')return renderAdl(form);
-    if(form.form_code==='iadl')return renderIadl(form);
-    if(form.form_code==='health_medication')return renderHealth(form);
-    if(form.form_code==='home_safety')return renderHome(form);
-    if(form.form_code==='support')return renderSupport(form);
-    if(form.form_code==='spmsq')return renderSpmsq(form);
-    if(form.form_code==='gds15')return renderGds(form);
-    if(form.form_code==='caregiver_burden')return renderCaregiver(form);
-    return sectionMissing(form.form_name);
+    const renderers={
+      adl:renderAdl,iadl:renderIadl,health_medication:renderHealth,home_safety:renderHome,
+      support:renderSupport,spmsq:renderSpmsq,gds15:renderGds,caregiver_burden:renderCaregiver
+    };
+    const raw=(renderers[form.form_code]||(()=>sectionMissing(form.form_name)))(form);
+    if(!local.records[form.form_code])return raw;
+    const record=(local.toolSummaries||[]).find(x=>x.tool_code===form.form_code);
+    const block=window.v52AssessmentToolSummary.printBlock(record);
+    // 本項總結接在原始表單最後，督導簽名欄之前。
+    if(raw.includes('<div class="signature">'))return raw.replace('<div class="signature">',block+'<div class="signature">');
+    return raw.replace(/<\/section>\s*$/,block+'</section>');
   }
 
   function selectionHtml(){
     const summaryChecked=!!local.summary;
-    return `<div style="font-size:11px;color:#667085;line-height:1.6;margin-bottom:10px">
+    const api=window.v52AssessmentToolSummary;
+    const updates=local.forms.filter(f=>{
+      const record=local.records?.[f.form_code],s=(local.toolSummaries||[]).find(x=>x.tool_code===f.form_code);
+      if(!record||!s)return false;
+      let sig={};try{sig=JSON.parse(s.source_signature||'{}')||{};}catch(_){}
+      const hash=api.sourceFingerprint(f.form_code,record);
+      return sig.findings!==hash||sig.recommendations!==hash;
+    });
+    const byCode=new Map((local.toolSummaries||[]).map(x=>[x.tool_code,x]));
+    const overallCheckpoint=byCode.get('overall');
+    const overallHash=api.fingerprint(local.forms.map(f=>{
+      const s=byCode.get(f.form_code);
+      return [f.form_code,f.status,s?.findings??null,s?.recommendations??null];
+    }));
+    let overallSignatures={};
+    try{overallSignatures=JSON.parse(overallCheckpoint?.source_signature||'{}')||{};}catch(_){}
+    const overallOutdated=!!local.summary&&
+      (overallSignatures.findings!==overallHash||overallSignatures.recommendations!==overallHash);
+    const notice=(updates.length?`<div style="margin-bottom:10px;padding:9px;border:1px solid #fedf89;background:#fffaeb;border-radius:9px;color:#93370d;font-size:11px">以下單項總結尚未確認最新原始評估：${updates.map(x=>escapeHTML(x.form_name)).join('、')}。仍可列印，內容以最後成功儲存的總結為準。</div>`:'')
+      +(overallOutdated?'<div style="margin-bottom:10px;padding:9px;border:1px solid #fedf89;background:#fffaeb;border-radius:9px;color:#93370d;font-size:11px">整體評估總結尚未確認最新單項總結；仍可列印最後成功儲存的版本。</div>':'');
+
+    return notice+`<div style="font-size:11px;color:#667085;line-height:1.6;margin-bottom:10px">
       預設勾選本次實際使用的全部評估工具；可取消不需要列印的項目。每個工具會自新頁開始。
     </div>
     <div style="display:flex;gap:7px;margin-bottom:10px">
@@ -499,10 +529,11 @@
 
   function buildHtml(selected){
     const sections=[];
-    if(selected.includes('summary')&&local.summary)sections.push(renderSummary());
     for(const form of local.forms){
       if(selected.includes(form.form_code))sections.push(renderTool(form));
     }
+    // 整體總結永遠放在所有已選評估工具之後。
+    if(selected.includes('summary')&&local.summary)sections.push(renderSummary());
     if(!sections.length)throw new Error('請至少選擇一項列印內容');
 
     const row=local.row,c=local.caseRow;
